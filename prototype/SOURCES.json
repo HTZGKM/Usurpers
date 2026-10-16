@@ -1,0 +1,60 @@
+{
+  "purpose": "课程餐厅原型的视觉参考，非本店实拍；所有业务数据为模拟",
+  "photos": [
+    {
+      "file": "assets/images/interior.jpg",
+      "source": "https://unsplash.com/fr/photos/une-salle-avec-tables-et-chaises-e4B5AvA7Jqo",
+      "image": "https://images.unsplash.com/photo-1667388969250-1c7220bf3f37",
+      "credit": "Glenov Brankovic / Unsplash",
+      "license": "https://unsplash.com/license"
+    },
+    {
+      "file": "assets/images/burger.jpg",
+      "source": "https://unsplash.com/photos/burger-with-lettuce-and-tomato-5ZR4DxAG3RQ",
+      "image": "https://images.unsplash.com/photo-1610970878459-a0e464d7592b",
+      "license": "https://unsplash.com/license"
+    },
+    {
+      "file": "assets/images/double-burger.jpg",
+      "source": "https://unsplash.com/photos/a-hamburger-sitting-on-top-of-a-wooden-cutting-board-MNHQqLNEvow",
+      "image": "https://images.unsplash.com/photo-1713330801172-03f8d1c0dde7",
+      "license": "https://unsplash.com/license"
+    },
+    {
+      "file": "assets/images/pizza.jpg",
+      "source": "https://unsplash.com/photos/a-close-up-of-a-pizza-on-a-pan-8sqq49ErTj0",
+      "image": "https://images.unsplash.com/photo-1646257097923-375777b79fb1",
+      "license": "https://unsplash.com/license"
+    },
+    {
+      "file": "assets/images/mushroom-pizza.jpg",
+      "source": "https://unsplash.com/photos/a-pizza-sitting-on-top-of-a-wooden-table-B-vBJzlAWLg",
+      "image": "https://images.unsplash.com/photo-1701283446315-ddb4b1a6f07a",
+      "license": "https://unsplash.com/license"
+    },
+    {
+      "file": "assets/images/shared-table.jpg",
+      "source": "https://www.pexels.com/photo/people-sitting-on-a-table-eating-pizza-6605245/",
+      "credit": "Kampus Production / Pexels",
+      "license": "https://www.pexels.com/license/"
+    },
+    {
+      "file": "assets/images/wood-burger.jpg",
+      "source": "https://www.pexels.com/photo/delicious-burgers-on-wooden-table-6605397/",
+      "credit": "Geraud pfeiffer / Pexels",
+      "license": "https://www.pexels.com/license/"
+    }
+  ],
+  "font": {
+    "name": "ZCOOL QingKe HuangYou / 站酷庆科黄油体",
+    "source": "https://github.com/google/fonts/tree/main/ofl/zcoolqingkehuangyou",
+    "license": "SIL Open Font License 1.1",
+    "file": "assets/fonts/OFL.txt"
+  },
+  "icons": {
+    "name": "Lucide",
+    "version": "0.468.0",
+    "source": "https://lucide.dev/",
+    "license": "ISC"
+  }
+}
