@@ -53,6 +53,7 @@ function homeRoute(view = (location.hash.slice(1) || 'home').split('/')[0]) {
   return view === 'home' || view === 'visit';
 }
 function syncHomeDots() {
+  homeDots.forEach((dot, index) => dot.addEventListener('click', () => setHomeStage(index)));
   homeDots.forEach((dot, index) => dot.classList.toggle('is-active', index === homeState.index));
 }
 function lockHomeScroll() {
