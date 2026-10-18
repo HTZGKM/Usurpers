@@ -29,8 +29,7 @@ let dialogOverflow = null;
 const homeShowcase = $('#home-showcase');
 const homePanels = $$('.home-panel');
 const homeDots = $$('.home-dot');
-const homeState = { index: 0, footerOpen: false, locked: false, touchStartY: 0 };
-let homeUnlockTimer;
+let homeScrollFrame = 0;
 
 function desktopMotion() { return desktopMotionMedia.matches && !reducedMotion(); }
 function cancelLocalMotion(element) {
@@ -52,75 +51,50 @@ function revealLocal(element, duration = 200, distance = 8) {
 function homeRoute(view = (location.hash.slice(1) || 'home').split('/')[0]) {
   return view === 'home' || view === 'visit';
 }
-function syncHomeDots() {
-  homeDots.forEach((dot, index) => dot.addEventListener('click', () => setHomeStage(index)));
-  homeDots.forEach((dot, index) => dot.classList.toggle('is-active', index === homeState.index));
-}
-function lockHomeScroll() {
-  clearTimeout(homeUnlockTimer);
-  homeState.locked = true;
-  homeUnlockTimer = setTimeout(() => { homeState.locked = false; }, reducedMotion() ? 0 : 400);
-}
-function applyHomeState(view = (location.hash.slice(1) || 'home').split('/')[0]) {
-  if (!homeShowcase) return;
-  const active = homeRoute(view);
-  document.body.classList.toggle('home-route', active);
-  document.body.classList.toggle('home-footer-open', active && homeState.footerOpen);
-  homeShowcase.style.setProperty('--home-index', String(homeState.index));
+// Observe native scrolling only; never consume wheel, touch or navigation keys.
+function updateHomePosition() {
+  homeScrollFrame = 0;
+  if (!homeRoute() || $('#page-home').hidden) return;
+  const midpoint = window.innerHeight / 2;
+  let current = 0;
   homePanels.forEach((panel, index) => {
-    panel.setAttribute('tabindex', active && index === homeState.index ? '0' : '-1');
-    panel.toggleAttribute('data-active', index === homeState.index);
+    if (panel.getBoundingClientRect().top <= midpoint) current = index;
   });
-  syncHomeDots();
+  homeDots.forEach((dot, index) => {
+    dot.classList.toggle('is-active', index === current);
+    if (index === current) dot.setAttribute('aria-current', 'location');
+    else dot.removeAttribute('aria-current');
+  });
+  const showcaseBottom = homeShowcase.getBoundingClientRect().bottom;
+  const overPhotos = showcaseBottom > midpoint;
+  document.body.classList.toggle('home-closing-visible', showcaseBottom <= $('.site-header').offsetHeight);
+  $$('[data-nav]').forEach(link => {
+    if (overPhotos && link.dataset.nav === homePanels[current].dataset.homeTarget) link.setAttribute('aria-current', 'location');
+    else link.removeAttribute('aria-current');
+  });
+  // Keep the indicators over the photographs, not over the footer.
+  $('.home-showcase-ui').hidden = !overPhotos;
 }
-function setHomeStage(index, footerOpen = false, view = (location.hash.slice(1) || 'home').split('/')[0], lock = true) {
-  const nextIndex = Math.max(0, Math.min(homePanels.length - 1, index));
-  if (homeState.index === nextIndex && homeState.footerOpen === footerOpen) {
-    applyHomeState(view);
-    return false;
-  }
-  homeState.index = nextIndex;
-  homeState.footerOpen = footerOpen && nextIndex === homePanels.length - 1;
-  applyHomeState(view);
-  if (lock) lockHomeScroll();
-  return true;
+function queueHomePosition() {
+  if (!homeScrollFrame) homeScrollFrame = requestAnimationFrame(updateHomePosition);
 }
 function syncHomeRoute(view) {
-  if (!homeShowcase) return;
-  clearTimeout(homeUnlockTimer);
-  homeState.locked = false;
-  if (view === 'visit') setHomeStage(1, false, view, false);
-  else if (view === 'home') setHomeStage(0, false, view, false);
-  else {
-    homeState.footerOpen = false;
-    applyHomeState(view);
-  }
-}
-function moveHomeStage(direction) {
-  if (!homeRoute() || homeState.locked || $$('dialog').some(dialog => dialog.open)) return false;
-  if (direction > 0) {
-    if (homeState.index < homePanels.length - 1) return setHomeStage(homeState.index + 1);
-    if (!homeState.footerOpen) return setHomeStage(homeState.index, true);
-    return false;
-  }
-  if (direction < 0) {
-    if (homeState.footerOpen) return setHomeStage(homeState.index, false);
-    if (homeState.index > 0) return setHomeStage(homeState.index - 1);
-  }
-  return false;
+  document.body.classList.toggle('home-route', homeRoute(view));
+  if (!homeRoute(view)) document.body.classList.remove('home-closing-visible');
+  queueHomePosition();
 }
 
 function setRoute() {
   const [page, category] = (location.hash.slice(1) || 'home').split('/');
-  const view = ['home', 'menu', 'booking', 'visit'].includes(page) ? page : 'home';
+  const view = ['home', 'menu', 'booking', 'delivery', 'account', 'visit'].includes(page) ? page : 'home';
   $$('.page').forEach(section => section.hidden = section.id !== `page-${view === 'visit' ? 'home' : view}`);
   $$('[data-nav]').forEach(link => link.dataset.nav === view ? link.setAttribute('aria-current', 'page') : link.removeAttribute('aria-current'));
-  document.title = `${view === 'menu' ? '菜单' : view === 'booking' ? '选桌订座' : '汉堡与披萨'} · 双份`;
+  document.title = `${view === 'menu' ? '菜单' : view === 'booking' ? '选桌订座' : view === 'delivery' ? '外送' : view === 'account' ? '登录账号' : '汉堡与披萨'} · 双份`;
   if (view !== 'menu' && state.editingCartId !== null) clearDish();
   if (view === 'menu' && ['burger', 'pizza', 'sides', 'drinks'].includes(category)) selectCategory(category);
   updateMobileActions();
   syncHomeRoute(view);
-  if (!homeRoute(view)) window.scrollTo({ top: 0, behavior: 'instant' });
+  window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
 function selectCategory(category) {
@@ -504,34 +478,8 @@ function bookingSummary() { return `${dateLabel()} · ${state.time} · ${$('#boo
 function reducedMotion() { return systemMotionMedia.matches; }
 desktopMotionMedia.addEventListener('change', settleReducedMotion);
 systemMotionMedia.addEventListener('change', settleReducedMotion);
-window.addEventListener('wheel', event => {
-  if (!homeRoute() || !homeShowcase) return;
-  if ($$('dialog').some(dialog => dialog.open) || Math.abs(event.deltaY) < 18) return;
-  event.preventDefault();
-  moveHomeStage(Math.sign(event.deltaY));
-}, { passive: false });
-window.addEventListener('keydown', event => {
-  if (!homeRoute() || $$('dialog').some(dialog => dialog.open)) return;
-  if (document.activeElement?.closest('a, button, input, select, textarea, dialog')) return;
-  const forward = ['ArrowDown', 'PageDown', ' '];
-  const backward = ['ArrowUp', 'PageUp'];
-  if (forward.includes(event.key)) {
-    event.preventDefault();
-    moveHomeStage(1);
-  } else if (backward.includes(event.key)) {
-    event.preventDefault();
-    moveHomeStage(-1);
-  }
-});
-homeShowcase?.addEventListener('touchstart', event => {
-  homeState.touchStartY = event.changedTouches[0]?.clientY ?? 0;
-}, { passive: true });
-homeShowcase?.addEventListener('touchend', event => {
-  const endY = event.changedTouches[0]?.clientY ?? homeState.touchStartY;
-  const deltaY = homeState.touchStartY - endY;
-  if (Math.abs(deltaY) < 36) return;
-  moveHomeStage(Math.sign(deltaY));
-}, { passive: true });
+window.addEventListener('scroll', queueHomePosition, { passive: true });
+window.addEventListener('resize', queueHomePosition);
 $$('.category-nav button').forEach(button => button.addEventListener('click', () => selectCategory(button.dataset.category)));
 $('.category-nav').addEventListener('keydown', event => {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -550,6 +498,12 @@ $('#add-to-cart').addEventListener('click', addToCart);
 $('#open-cart').addEventListener('click', openCart); $('#toast-cart').addEventListener('click', openCart);
 $('#mobile-open-cart').addEventListener('click', openCart);
 $('#open-credits').addEventListener('click', () => openDialog($('#credits-dialog')));
+$$('[data-open-credits]').forEach(button => button.addEventListener('click', () => openDialog($('#credits-dialog'))));
+$('#footer-open-cart').addEventListener('click', openCart);
+$$('[data-customer-help]').forEach(button => button.addEventListener('click', () => {
+  $$('[data-help-answer]').forEach(answer => { answer.open = answer.dataset.helpAnswer === button.dataset.customerHelp; });
+  openDialog($('#customer-help-dialog'));
+}));
 $$('dialog').forEach(dialog => {
   $('[data-close]', dialog).addEventListener('click', () => closeDialog(dialog));
   dialog.addEventListener('cancel', event => { event.preventDefault(); closeDialog(dialog); });
