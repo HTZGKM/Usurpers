@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 88" fill="none">
+  <title>双份：两个人，一张桌</title>
+  <g stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 72c1-14 4-24 13-29l10 1 9 14M87 72c-1-14-5-24-13-29l-10 1-9 14"/>
+    <path d="M22 43v-8m10 9-1-9m43 8v-8m-10 9 1-9"/>
+    <path d="M19 19c-4 8-1 21 8 22 6 0 8-6 8-12l4-2-5-6M77 19c4 8 1 21-8 22-6 0-8-6-8-12l-4-2 5-6"/>
+    <path d="M16 19c-1-10 10-16 18-10l3 9-8-2-6 7-7-4Z" fill="currentColor" stroke="none"/>
+    <path d="M80 21c5-8-2-17-12-15-8 1-10 8-8 15l8-6 6 2 6 4Z" fill="currentColor" stroke="none"/>
+    <path d="M30 25h.5m35 0h.5M31 33l3-1m31 1-3-1M20 51l7 13 13-5m36-8-7 13-13-5"/>
+    <path d="M40 59l4-3m12 3-4-3M27 66l-1 13m43-13 1 13"/>
+    <ellipse cx="48" cy="68" rx="25" ry="6"/>
+    <path d="M48 74v10m-10 0h20"/>
+    <path d="M39 62c0-5 18-5 18 0M39 62h18m-17 3h16M45 51c-2-2 2-3 0-5m6 5c-2-2 2-3 0-5"/>
+  </g>
+</svg>

@@ -43,6 +43,150 @@
       "source": "https://www.pexels.com/photo/delicious-burgers-on-wooden-table-6605397/",
       "credit": "Geraud pfeiffer / Pexels",
       "license": "https://www.pexels.com/license/"
+    },
+    {
+      "file": "assets/images/album/burger-table.jpg",
+      "source": "https://www.pexels.com/photo/person-holding-a-burger-4109236/",
+      "image": "https://images.pexels.com/photos/4109236/pexels-photo-4109236.jpeg?auto=compress&cs=tinysrgb&w=1800",
+      "credit": "Polina Tankilevitch / Pexels",
+      "license": "https://www.pexels.com/license/",
+      "title": "双人汉堡与薯条",
+      "category": "菜品",
+      "use": "首页 · 订座",
+      "note": "白底、两只汉堡与分享动作，适合浅色主视觉。",
+      "verified": "2026-10-18"
+    },
+    {
+      "file": "assets/images/album/pizza-table.jpg",
+      "source": "https://www.pexels.com/photo/pizzas-on-white-table-5848276/",
+      "image": "https://images.pexels.com/photos/5848276/pexels-photo-5848276.jpeg?auto=compress&cs=tinysrgb&w=1800",
+      "credit": "Polina Tankilevitch / Pexels",
+      "license": "https://www.pexels.com/license/",
+      "title": "分享披萨",
+      "category": "菜品",
+      "use": "首页 · 点菜",
+      "note": "俯拍、切分的披萨，保留桌面留白。",
+      "verified": "2026-10-18"
+    },
+    {
+      "file": "assets/images/album/takeaway-pizza.jpg",
+      "source": "https://www.pexels.com/photo/a-pizza-on-brown-cardboard-box-5848270/",
+      "image": "https://images.pexels.com/photos/5848270/pexels-photo-5848270.jpeg?auto=compress&cs=tinysrgb&w=1800",
+      "credit": "Polina Tankilevitch / Pexels",
+      "license": "https://www.pexels.com/license/",
+      "title": "纸盒装披萨",
+      "category": "菜品",
+      "use": "首页 · 外送",
+      "note": "浅色桌面与牛皮纸盒，用于外带包装场景。",
+      "verified": "2026-10-18"
+    },
+    {
+      "file": "assets/images/album/lemonade.jpg",
+      "source": "https://www.pexels.com/photo/glass-of-lemonade-18142613/",
+      "image": "https://images.pexels.com/photos/18142613/pexels-photo-18142613.jpeg?auto=compress&cs=tinysrgb&w=1800",
+      "credit": "Denys Gromov / Pexels",
+      "license": "https://www.pexels.com/license/",
+      "title": "冰柠檬饮品",
+      "category": "菜品",
+      "use": "首页 · 账号",
+      "note": "单杯、干净背景，为第四个入口提供轻盈的画面。",
+      "verified": "2026-10-18"
+    },
+    {
+      "file": "assets/images/album/burger-beige.jpg",
+      "source": "https://www.pexels.com/photo/delicious-hamburger-with-patty-and-melted-cheese-on-beige-background-7828570/",
+      "image": "https://images.pexels.com/photos/7828570/pexels-photo-7828570.jpeg?auto=compress&cs=tinysrgb&w=1800",
+      "credit": "Mary Nikitina / Pexels",
+      "license": "https://www.pexels.com/license/",
+      "title": "米色背景汉堡",
+      "category": "菜品",
+      "use": "备用 · 菜品特写",
+      "note": "自然米色背景，竖图上方有较大留白。",
+      "verified": "2026-10-18"
+    },
+    {
+      "file": "assets/images/album/pizza-white.jpg",
+      "source": "https://www.pexels.com/photo/italian-pizza-on-white-background-5419303/",
+      "image": "https://images.pexels.com/photos/5419303/pexels-photo-5419303.jpeg?auto=compress&cs=tinysrgb&w=1800",
+      "credit": "Polina Tankilevitch / Pexels",
+      "license": "https://www.pexels.com/license/",
+      "title": "圆形切片披萨",
+      "category": "菜品",
+      "use": "备用 · 菜品特写",
+      "note": "白底俯拍，适合浅色界面的局部产品图。",
+      "verified": "2026-10-18"
+    },
+    {
+      "file": "assets/images/album/pizza-grey.jpg",
+      "source": "https://www.pexels.com/photo/top-view-of-pizza-19260834/",
+      "image": "https://images.pexels.com/photos/19260834/pexels-photo-19260834.jpeg?auto=compress&cs=tinysrgb&w=1800",
+      "credit": "Giona Mason / Pexels",
+      "license": "https://www.pexels.com/license/",
+      "title": "披萨边缘特写",
+      "category": "菜品",
+      "use": "备用 · 菜品细节",
+      "note": "近距离呈现饼底和配料，适合局部裁切。",
+      "verified": "2026-10-18"
+    },
+    {
+      "file": "assets/images/album/pizza-box.jpg",
+      "source": "https://www.pexels.com/photo/pizza-on-brown-cardboard-box-9353420/",
+      "image": "https://images.pexels.com/photos/9353420/pexels-photo-9353420.jpeg?auto=compress&cs=tinysrgb&w=1800",
+      "credit": "PNW Production / Pexels",
+      "license": "https://www.pexels.com/license/",
+      "title": "两盒披萨",
+      "category": "菜品",
+      "use": "备用 · 聚餐场景",
+      "note": "图案较多，适合相册，不作为当前首页背景。",
+      "verified": "2026-10-18"
+    },
+    {
+      "file": "assets/images/album/dining-room.jpg",
+      "source": "https://www.pexels.com/photo/modern-cafe-interior-with-wooden-chairs-30294332/",
+      "image": "https://images.pexels.com/photos/30294332/pexels-photo-30294332.jpeg?auto=compress&cs=tinysrgb&w=1800",
+      "credit": "Drayhanz / Pexels",
+      "license": "https://www.pexels.com/license/",
+      "title": "木椅用餐区",
+      "category": "空间",
+      "use": "空间氛围参考",
+      "note": "木椅、藤编与自然光。与下方门面不是同一家店。",
+      "verified": "2026-10-18"
+    },
+    {
+      "file": "assets/images/album/window-seats.jpg",
+      "source": "https://www.pexels.com/photo/high-wooden-chairs-on-window-pane-9409793/",
+      "image": "https://images.pexels.com/photos/9409793/pexels-photo-9409793.jpeg?auto=compress&cs=tinysrgb&w=1800",
+      "credit": "Elizabeth Zernetska / Pexels",
+      "license": "https://www.pexels.com/license/",
+      "title": "窗边座位",
+      "category": "空间",
+      "use": "座位氛围参考",
+      "note": "展示自然光和窗边座椅，不用于说明实际可选桌位。",
+      "verified": "2026-10-18"
+    },
+    {
+      "file": "assets/images/album/storefront.jpg",
+      "source": "https://www.pexels.com/photo/potted-plants-next-to-an-entrance-13426809/",
+      "image": "https://images.pexels.com/photos/13426809/pexels-photo-13426809.jpeg?auto=compress&cs=tinysrgb&w=1800",
+      "credit": "Antoine Maurin / Pexels",
+      "license": "https://www.pexels.com/license/",
+      "title": "绿植门店入口",
+      "category": "空间",
+      "use": "门店入口参考",
+      "note": "真实门店的入口摄影，仅用作氛围参考。",
+      "verified": "2026-10-18"
+    },
+    {
+      "file": "assets/images/album/pizza-oven.jpg",
+      "source": "https://www.pexels.com/photo/photo-of-pizza-in-furnace-3343624/",
+      "image": "https://images.pexels.com/photos/3343624/pexels-photo-3343624.jpeg?auto=compress&cs=tinysrgb&w=1800",
+      "credit": "Arthur Brognoli / Pexels",
+      "license": "https://www.pexels.com/license/",
+      "title": "披萨烤炉",
+      "category": "设施",
+      "use": "厨房设施参考",
+      "note": "烤炉及制作氛围参考，不代表已确定本店使用此设备。",
+      "verified": "2026-10-18"
     }
   ],
   "font": {
@@ -56,5 +200,10 @@
     "version": "0.468.0",
     "source": "https://lucide.dev/",
     "license": "ISC"
+  },
+  "album": {
+    "page": "album.html",
+    "note": "素材相册用于课程原型选图，不是本店实拍记录；空间照片来自不同场所，不构成统一店址或设施承诺。",
+    "treatment": "保留摄影原文件；首页通过 CSS 调整裁切、亮度与底色混合。未使用生成式图片。"
   }
 }
