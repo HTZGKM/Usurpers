@@ -29,7 +29,10 @@ let dialogOverflow = null;
 const homeShowcase = $('#home-showcase');
 const homePanels = $$('.home-panel');
 const homeDots = $$('.home-dot');
+const homeClosing = $('.customer-closing');
+const homeState = { locked: false, touchStartY: 0 };
 let homeScrollFrame = 0;
+let homeUnlockTimer;
 
 function desktopMotion() { return desktopMotionMedia.matches && !reducedMotion(); }
 function cancelLocalMotion(element) {
@@ -51,28 +54,63 @@ function revealLocal(element, duration = 200, distance = 8) {
 function homeRoute(view = (location.hash.slice(1) || 'home').split('/')[0]) {
   return view === 'home' || view === 'visit';
 }
-// Observe native scrolling only; never consume wheel, touch or navigation keys.
+function homeStages() {
+  return [...homePanels, homeClosing].filter(Boolean);
+}
+function homeStageTop(index) {
+  const stage = homeStages()[index];
+  if (!stage) return 0;
+  return Math.max(0, Math.round(stage.getBoundingClientRect().top + window.scrollY));
+}
+function currentHomeStage() {
+  const stages = homeStages();
+  if (!stages.length) return 0;
+  const current = window.scrollY;
+  let closestIndex = 0;
+  let closestDistance = Infinity;
+  stages.forEach((stage, index) => {
+    const distance = Math.abs(homeStageTop(index) - current);
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestIndex = index;
+    }
+  });
+  return closestIndex;
+}
+function lockHomeScroll() {
+  clearTimeout(homeUnlockTimer);
+  homeState.locked = true;
+  homeUnlockTimer = setTimeout(() => { homeState.locked = false; }, reducedMotion() ? 0 : 950);
+}
+function moveHomeStage(direction) {
+  if (!homeRoute() || !homeShowcase || homeState.locked || $$('dialog').some(dialog => dialog.open)) return false;
+  const stages = homeStages();
+  if (!stages.length) return false;
+  const current = currentHomeStage();
+  const next = Math.max(0, Math.min(stages.length - 1, current + direction));
+  if (next === current) return false;
+  lockHomeScroll();
+  window.scrollTo({ top: homeStageTop(next), behavior: reducedMotion() ? 'instant' : 'smooth' });
+  queueHomePosition();
+  return true;
+}
 function updateHomePosition() {
   homeScrollFrame = 0;
   if (!homeRoute() || $('#page-home').hidden) return;
-  const midpoint = window.innerHeight / 2;
-  let current = 0;
-  homePanels.forEach((panel, index) => {
-    if (panel.getBoundingClientRect().top <= midpoint) current = index;
-  });
+  const current = currentHomeStage();
+  const overPhotos = current < homePanels.length;
   homeDots.forEach((dot, index) => {
-    dot.classList.toggle('is-active', index === current);
-    if (index === current) dot.setAttribute('aria-current', 'location');
+    const active = overPhotos && index === current;
+    dot.classList.toggle('is-active', active);
+    if (active) dot.setAttribute('aria-current', 'location');
     else dot.removeAttribute('aria-current');
   });
-  const showcaseBottom = homeShowcase.getBoundingClientRect().bottom;
-  const overPhotos = showcaseBottom > midpoint;
-  document.body.classList.toggle('home-closing-visible', showcaseBottom <= $('.site-header').offsetHeight);
+  document.body.classList.toggle('home-closing-visible', !overPhotos);
   $$('[data-nav]').forEach(link => {
-    if (overPhotos && link.dataset.nav === homePanels[current].dataset.homeTarget) link.setAttribute('aria-current', 'location');
+    if (overPhotos && link.dataset.nav === homePanels[current]?.dataset.homeTarget) link.setAttribute('aria-current', 'location');
     else link.removeAttribute('aria-current');
   });
-  // Keep the indicators over the photographs, not over the footer.
+  // Keep the indicators over the photographs, not over the closing section.
   $('.home-showcase-ui').hidden = !overPhotos;
 }
 function queueHomePosition() {
@@ -81,6 +119,8 @@ function queueHomePosition() {
 function syncHomeRoute(view) {
   document.body.classList.toggle('home-route', homeRoute(view));
   if (!homeRoute(view)) document.body.classList.remove('home-closing-visible');
+  clearTimeout(homeUnlockTimer);
+  homeState.locked = false;
   queueHomePosition();
 }
 
@@ -625,6 +665,41 @@ function bookingSummary() { return `${dateLabel()} · ${state.time} · ${$('#boo
 function reducedMotion() { return systemMotionMedia.matches; }
 desktopMotionMedia.addEventListener('change', settleReducedMotion);
 systemMotionMedia.addEventListener('change', settleReducedMotion);
+window.addEventListener('wheel', event => {
+  if (!homeRoute() || !homeShowcase) return;
+  if ($$('dialog').some(dialog => dialog.open) || Math.abs(event.deltaY) < 18) return;
+  event.preventDefault();
+  moveHomeStage(Math.sign(event.deltaY));
+}, { passive: false });
+window.addEventListener('keydown', event => {
+  if (!homeRoute() || $$('dialog').some(dialog => dialog.open)) return;
+  if (document.activeElement?.closest('input, select, textarea, dialog, [contenteditable="true"]')) return;
+  if (event.key === ' ' && document.activeElement?.closest('a, button')) return;
+  const forward = ['ArrowDown', 'PageDown', ' '];
+  const backward = ['ArrowUp', 'PageUp'];
+  if (forward.includes(event.key)) {
+    event.preventDefault();
+    moveHomeStage(1);
+  } else if (backward.includes(event.key)) {
+    event.preventDefault();
+    moveHomeStage(-1);
+  } else if (event.key === 'Home') {
+    event.preventDefault();
+    window.scrollTo({ top: homeStageTop(0), behavior: reducedMotion() ? 'instant' : 'smooth' });
+    lockHomeScroll();
+  }
+});
+window.addEventListener('touchstart', event => {
+  if (!homeRoute()) return;
+  homeState.touchStartY = event.changedTouches[0]?.clientY ?? 0;
+}, { passive: true });
+window.addEventListener('touchend', event => {
+  if (!homeRoute()) return;
+  const endY = event.changedTouches[0]?.clientY ?? homeState.touchStartY;
+  const deltaY = homeState.touchStartY - endY;
+  if (Math.abs(deltaY) < 36) return;
+  moveHomeStage(Math.sign(deltaY));
+}, { passive: true });
 window.addEventListener('scroll', queueHomePosition, { passive: true });
 window.addEventListener('resize', queueHomePosition);
 $$('.category-nav button').forEach(button => button.addEventListener('click', () => selectCategory(button.dataset.category)));
