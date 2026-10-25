@@ -1,0 +1,2 @@
+class DiningSession:
+    pass
