@@ -4102,6 +4102,65 @@ body.home-route.home-closing-visible .site-header:not(:has(:focus-visible)) { tr
 .auth-form .field-label:first-of-type { margin-top: 0; }
 .auth-form .button { margin-top: 18px; }
 .auth-form .small { margin-top: 8px; }
+.register-type-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.register-type-options,
+.register-role-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.register-type-option,
+.register-role-option {
+  border: 1px solid #a9b39e;
+  min-height: 42px;
+  padding: 10px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.register-copy {
+  font-size: inherit;
+  margin-left: 0;
+}
+
+.register-role-option input {
+  margin: 0;
+}
+
+.register-copy-staff,
+.register-staff-fields {
+  display: none;
+}
+
+#register-type-customer:checked ~ .register-type-options label[for="register-type-customer"],
+#register-type-staff:checked ~ .register-type-options label[for="register-type-staff"] {
+  background: #385d43;
+  border-color: #385d43;
+  color: #f6f1e8;
+}
+
+#register-type-staff:checked ~ .field-label .register-copy-customer {
+  display: none;
+}
+
+#register-type-staff:checked ~ .field-label .register-copy-staff {
+  display: inline;
+  margin-left: 0;
+}
+
+#register-type-staff:checked ~ .register-staff-fields {
+  display: block;
+}
 .demo-accounts { display: grid; gap: 8px; width: min(100%, 360px); }
 .demo-accounts button {
   border: 1px solid #a9b39e;

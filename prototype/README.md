@@ -29,7 +29,7 @@ python3 -m http.server 8765 --bind 127.0.0.1 --directory prototype
 prototype/
   index.html        页面结构
   styles.css        设计变量、布局、响应式样式及 CSS 动效
-  app.js            演示数据和交互状态
+  main.js           演示数据和交互状态
   assets/images/   摄影素材
   assets/fonts/    招牌字体及其许可证
   assets/vendor/   本地图标脚本及其许可证

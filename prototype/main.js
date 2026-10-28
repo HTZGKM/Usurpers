@@ -1,9 +1,14 @@
 'use strict';
 
+/* ==========================================================================
+   工具函数*/
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const money = value => `¥${value}`;
 const icons = () => window.lucide?.createIcons({ attrs: { 'aria-hidden': 'true' } });
+const API_BASE = 'http://127.0.0.1:5000';
+/* ==========================================================================
+   数据与状态*/
 const menu = [
   { id: 'burger', category: 'burger', name: '芝士牛肉堡', description: '牛肉饼、车达芝士、生菜、番茄与酸黄瓜。', price: 38, image: 'wood-burger.jpg', alt: '白盘上的牛肉汉堡，配生菜和番茄', kind: 'burger' },
   { id: 'double', category: 'burger', name: '双层芝士牛肉堡', description: '双层牛肉饼，双份车达芝士。', price: 48, image: 'double-burger.jpg', alt: '木板上的双层芝士牛肉汉堡', kind: 'burger' },
@@ -20,20 +25,16 @@ const tableData = [
   { id: 'A1', seats: 2, location: '窗边', round: true }, { id: 'A2', seats: 2, location: '窗边', round: true }, { id: 'A3', seats: 4, location: '窗边' },
   { id: 'B1', seats: 4, location: '内侧' }, { id: 'B2', seats: 6, location: '内侧' }, { id: 'B3', seats: 6, location: '内侧' }
 ];
-let toastTimer, addTimer;
+
+/* ==========================================================================
+   动效基础设施*/
 const desktopMotionMedia = matchMedia('(min-width:761px)');
 const systemMotionMedia = matchMedia('(prefers-reduced-motion:reduce)');
 const localMotions = new Map();
 const dialogMotions = new WeakMap();
 let dialogOverflow = null;
-const homeShowcase = $('#home-showcase');
-const homePanels = $$('.home-panel');
-const homeDots = $$('.home-dot');
-const homeClosing = $('.customer-closing');
-const homeState = { locked: false, touchStartY: 0 };
-let homeScrollFrame = 0;
-let homeUnlockTimer;
 
+function reducedMotion() { return systemMotionMedia.matches; }
 function desktopMotion() { return desktopMotionMedia.matches && !reducedMotion(); }
 function cancelLocalMotion(element) {
   localMotions.get(element)?.cancel();
@@ -50,6 +51,32 @@ function revealLocal(element, duration = 200, distance = 8) {
   const release = () => { if (localMotions.get(element) === animation) localMotions.delete(element); };
   animation.finished.then(release, release);
 }
+function settleReducedMotion() {
+  if (desktopMotion()) return;
+  localMotions.forEach(animation => animation.cancel());
+  localMotions.clear();
+  $$('dialog').forEach(dialog => {
+    const motion = dialogMotions.get(dialog);
+    if (!motion) return;
+    if (motion.phase === 'closing') motion.finishClose?.();
+    else if (motion.phase === 'opening') {
+      ++motion.revision;
+      stopDialogAnimation(motion);
+      motion.phase = 'open';
+      dialog.dataset.motionState = 'open';
+    }
+  });
+}
+
+/* ==========================================================================
+   首页滚轮锁屏*/
+const homeShowcase = $('#home-showcase');
+const homePanels = $$('.home-panel');
+const homeDots = $$('.home-dot');
+const homeClosing = $('.customer-closing');
+const homeState = { locked: false, touchStartY: 0 };
+let homeScrollFrame = 0;
+let homeUnlockTimer;
 
 function homeRoute(view = (location.hash.slice(1) || 'home').split('/')[0]) {
   return view === 'home' || view === 'visit';
@@ -94,11 +121,13 @@ function moveHomeStage(direction) {
   queueHomePosition();
   return true;
 }
+// 更新首页位置
 function updateHomePosition() {
   homeScrollFrame = 0;
   if (!homeRoute() || $('#page-home').hidden) return;
   const current = currentHomeStage();
   const overPhotos = current < homePanels.length;
+
   homeDots.forEach((dot, index) => {
     const active = overPhotos && index === current;
     dot.classList.toggle('is-active', active);
@@ -124,15 +153,16 @@ function syncHomeRoute(view) {
   queueHomePosition();
 }
 
+/* ==========================================================================
+   账号与登录*/
 const sessionKey = 'shuangfen.session';
-const registeredKey = 'shuangfen.registeredUsers';
 const roleLabels = { customer: '顾客', admin: '管理员', frontdesk: '前台', kitchen: '厨房' };
-const demoAccounts = [
-  { username: 'customer', password: '123456', name: '林小满', role: 'customer' },
-  { username: 'admin', password: '123456', name: '陈店长', role: 'admin' },
-  { username: 'frontdesk', password: '123456', name: '周前台', role: 'frontdesk' },
-  { username: 'kitchen', password: '123456', name: '韩厨房', role: 'kitchen' }
-];
+const demoCredentials = {
+  customer: { username: '13900000001', password: '123456' },
+  admin: { username: 'admin@shuangfen.local', password: '123456' },
+  frontdesk: { username: 'frontdesk@shuangfen.local', password: '123456' },
+  kitchen: { username: 'kitchen@shuangfen.local', password: '123456' }
+};
 const workspaces = {
   admin: {
     english: 'The house',
@@ -177,18 +207,13 @@ function currentUser() {
   return session;
 }
 function isStaff(user) { return Boolean(user) && user.role !== 'customer'; }
-function registeredUsers() {
-  const users = readStored(registeredKey, []);
-  return Array.isArray(users) ? users : [];
-}
-function findAccount(username) {
-  const key = username.trim().toLowerCase();
-  return demoAccounts.find(account => account.username === key)
-    || registeredUsers().find(account => account.username === key)
-    || null;
-}
+function clearLocalSession() { localStorage.removeItem(sessionKey); }
 function saveSession(account) {
-  localStorage.setItem(sessionKey, JSON.stringify({ username: account.username, name: account.name, role: account.role }));
+  localStorage.setItem(sessionKey, JSON.stringify({
+     username: account.username, 
+     name: account.name, 
+     role: account.role 
+    }));
 }
 function enterSession(account) {
   saveSession(account);
@@ -196,8 +221,16 @@ function enterSession(account) {
   if (location.hash === target) setRoute();
   else location.hash = target;
 }
-function logout() {
-  localStorage.removeItem(sessionKey);
+async function logout() {
+  try {
+    await fetch(`${API_BASE}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+  } catch (error) {
+    console.warn('退出登录时未连接到后端。', error);
+  }
+  clearLocalSession();
   $('#login-form').reset();
   $('#register-form').reset();
   setAuthMode('login');
@@ -240,24 +273,99 @@ function renderAccount(user) {
   $('#customer-lead').textContent = `${user.name}，你现在是顾客。点菜和订座可以继续用。`;
 }
 function renderWorkspace(user) {
-  const workspace = workspaces[user.role];
+  const workspace = workspaces[user.role] || workspaces.admin;
   $('#workspace-english').textContent = workspace.english;
   $('#workspace-title').textContent = workspace.title;
   $('#workspace-lead').innerHTML = workspace.lead;
   const session = document.createElement('span');
   session.className = 'muted';
-  session.textContent = `${user.name} · ${roleLabels[user.role]}。登录状态保存在这台浏览器。`;
+  session.textContent = `${user.name} · ${roleLabels[user.role]}。登录状态由后端会话维护。`;
   $('#workspace-lead').append(document.createElement('br'), session);
   $('#workspace-tasks').innerHTML = workspace.tasks.map(task => `<article class="workspace-card"><h2>${task.title}</h2><p>${task.text}</p><span>尚未接入</span></article>`).join('');
 }
-function loginWith(username, password) {
-  const account = findAccount(username);
+async function restoreSessionFromServer() {
+  try {
+    const response = await fetch(`${API_BASE}/auth/me`, {
+      credentials: 'include'
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.ok || !result.user) {
+      clearLocalSession();
+      return null;
+    }
+    saveSession(result.user);
+    return result.user;
+  } catch (error) {
+    clearLocalSession();
+    return null;
+  }
+}
+// 登录校验
+async function loginWith(username, password) {
   if (!username.trim() || !password) return '请填写用户名和密码。';
-  if (!account || account.password !== password) return '用户名或密码不正确。';
-  enterSession(account);
-  return '';
+
+  try {
+    const response = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: username.trim(),
+        password
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.ok) {
+      return result.message || '登录失败，请稍后再试。';
+    }
+
+    enterSession(result.user);
+    return '';
+  } catch (error) {
+    return '暂时无法连接后端，请检查服务是否启动。';
+  }
 }
 
+async function registerWith(name, phone, password, passwordAgain) {
+  if (!name || !phone || !password || !passwordAgain) {
+    return '请把姓名、手机号和密码都填上。';
+  }
+
+  if (name.length > 20) return '称呼请控制在 20 个字以内。';
+  if (!/^\d{11}$/.test(phone)) return '手机号请填写 11 位数字。';
+  if (password.length < 6) return '密码至少 6 位。';
+  if (password !== passwordAgain) return '两次密码不一致。';
+
+  try {
+    const response = await fetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        phone,
+        password,
+        role: 'customer'
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.ok) {
+      return result.message || '注册失败，请稍后再试。';
+    }
+
+    enterSession(result.user);
+    return '';
+  } catch (error) {
+    return '暂时无法连接后端，请检查服务是否启动。';
+  }
+}
+
+/* ==========================================================================
+   路由*/ 
 function setRoute() {
   const [page, category] = (location.hash.slice(1) || 'home').split('/');
   let view = ['home', 'menu', 'booking', 'delivery', 'account', 'workspace', 'visit'].includes(page) ? page : 'home';
@@ -283,6 +391,10 @@ function setRoute() {
   syncHomeRoute(view);
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
+
+/* ==========================================================================
+   菜单与购物车*/   
+let toastTimer, addTimer;
 
 function selectCategory(category) {
   const changed = state.category !== category;
@@ -476,6 +588,9 @@ function openCart(message = '') {
   $('#cart-feedback').textContent = typeof message === 'string' ? message : '';
   openDialog($('#cart-dialog'));
 }
+
+/* ==========================================================================
+   弹窗动效*/
 function dialogMotion(dialog) {
   if (!dialogMotions.has(dialog)) dialogMotions.set(dialog, { phase: 'closed', revision: 0, intent: 0, opener: null, animation: null, closePromise: null, resolveClose: null, finishClose: null });
   return dialogMotions.get(dialog);
@@ -592,23 +707,9 @@ async function browseFromCart() {
   setRoute();
   $('.category-nav [aria-selected="true"]')?.focus({ preventScroll: true });
 }
-function settleReducedMotion() {
-  if (desktopMotion()) return;
-  localMotions.forEach(animation => animation.cancel());
-  localMotions.clear();
-  $$('dialog').forEach(dialog => {
-    const motion = dialogMotions.get(dialog);
-    if (!motion) return;
-    if (motion.phase === 'closing') motion.finishClose?.();
-    else if (motion.phase === 'opening') {
-      ++motion.revision;
-      stopDialogAnimation(motion);
-      motion.phase = 'open';
-      dialog.dataset.motionState = 'open';
-    }
-  });
-}
 
+/* ==========================================================================
+   订座选桌*/
 const localDate = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const today = new Date(); today.setHours(0, 0, 0, 0);
 const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
@@ -662,9 +763,9 @@ function chooseTable(id) {
 }
 function bookingSummary() { return `${dateLabel()} · ${state.time} · ${$('#booking-people').value} 位<br>${state.selectedTable.id} 桌 / ${state.selectedTable.location}`; }
 
-function reducedMotion() { return systemMotionMedia.matches; }
-desktopMotionMedia.addEventListener('change', settleReducedMotion);
-systemMotionMedia.addEventListener('change', settleReducedMotion);
+/* ==========================================================================
+   事件绑定与初始化*/
+/* ---- 首页：滚轮 / 键盘 / 触屏 ---- */
 window.addEventListener('wheel', event => {
   if (!homeRoute() || !homeShowcase) return;
   if ($$('dialog').some(dialog => dialog.open) || Math.abs(event.deltaY) < 18) return;
@@ -702,6 +803,12 @@ window.addEventListener('touchend', event => {
 }, { passive: true });
 window.addEventListener('scroll', queueHomePosition, { passive: true });
 window.addEventListener('resize', queueHomePosition);
+
+/* ---- 动效偏好监听 ---- */
+desktopMotionMedia.addEventListener('change', settleReducedMotion);
+systemMotionMedia.addEventListener('change', settleReducedMotion);
+
+/* ---- 菜单分类与菜品 ---- */
 $$('.category-nav button').forEach(button => button.addEventListener('click', () => selectCategory(button.dataset.category)));
 $('.category-nav').addEventListener('keydown', event => {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -713,35 +820,17 @@ $('.category-nav').addEventListener('keydown', event => {
 $('#dish-list').addEventListener('click', event => { const button = event.target.closest('[data-dish]'); if (button) selectDish(button.dataset.dish); });
 $('#close-customizer').addEventListener('click', () => state.editingCartId === null ? clearDish(true) : cancelCartEdit());
 $('#cancel-cart-edit').addEventListener('click', cancelCartEdit);
+
+/* ---- 定制面板与数量 ---- */
 $('#custom-options').addEventListener('change', () => updatePrice());
 $('#qty-minus').addEventListener('click', () => { state.quantity = Math.max(1, state.quantity - 1); updatePrice(false); });
 $('#qty-plus').addEventListener('click', () => { state.quantity = Math.min(state.editingCartId === null ? 10 : maxCartQuantity, state.quantity + 1); updatePrice(false); });
 $('#add-to-cart').addEventListener('click', addToCart);
+
+/* ---- 购物车 ---- */
 $('#open-cart').addEventListener('click', openCart); $('#toast-cart').addEventListener('click', openCart);
 $('#mobile-open-cart').addEventListener('click', openCart);
-$('#open-credits').addEventListener('click', () => openDialog($('#credits-dialog')));
-$$('[data-open-credits]').forEach(button => button.addEventListener('click', () => openDialog($('#credits-dialog'))));
 $('#footer-open-cart').addEventListener('click', openCart);
-$$('[data-customer-help]').forEach(button => button.addEventListener('click', () => {
-  $$('[data-help-answer]').forEach(answer => { answer.open = answer.dataset.helpAnswer === button.dataset.customerHelp; });
-  openDialog($('#customer-help-dialog'));
-}));
-$$('dialog').forEach(dialog => {
-  $('[data-close]', dialog).addEventListener('click', () => closeDialog(dialog));
-  dialog.addEventListener('cancel', event => { event.preventDefault(); closeDialog(dialog); });
-  dialog.addEventListener('close', () => {
-    // A queued native close event must not cancel a dialog that has since reopened.
-    if (dialog.open) return;
-    const motion = dialogMotion(dialog);
-    ++motion.revision;
-    stopDialogAnimation(motion);
-    motion.phase = 'closed';
-    delete dialog.dataset.motionState;
-    settleDialogClose(motion, false);
-    syncDialogScrollLock();
-  });
-  dialog.addEventListener('click', event => { if (event.target !== dialog) return; const rect = dialog.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) closeDialog(dialog); });
-});
 $('#cart-content').addEventListener('click', event => {
   const change = event.target.closest('[data-cart-change]'), remove = event.target.closest('[data-remove]'), edit = event.target.closest('[data-edit]');
   let focusTarget;
@@ -773,6 +862,32 @@ $('#place-order').addEventListener('click', () => {
   $('#cart-bottom').hidden = true; state.cart = []; updateCartBadge(); icons();
   $('#empty-browse').focus();
 });
+
+/* ---- 弹窗 ---- */
+$('#open-credits').addEventListener('click', () => openDialog($('#credits-dialog')));
+$$('[data-open-credits]').forEach(button => button.addEventListener('click', () => openDialog($('#credits-dialog'))));
+$$('[data-customer-help]').forEach(button => button.addEventListener('click', () => {
+  $$('[data-help-answer]').forEach(answer => { answer.open = answer.dataset.helpAnswer === button.dataset.customerHelp; });
+  openDialog($('#customer-help-dialog'));
+}));
+$$('dialog').forEach(dialog => {
+  $('[data-close]', dialog).addEventListener('click', () => closeDialog(dialog));
+  dialog.addEventListener('cancel', event => { event.preventDefault(); closeDialog(dialog); });
+  dialog.addEventListener('close', () => {
+    // A queued native close event must not cancel a dialog that has since reopened.
+    if (dialog.open) return;
+    const motion = dialogMotion(dialog);
+    ++motion.revision;
+    stopDialogAnimation(motion);
+    motion.phase = 'closed';
+    delete dialog.dataset.motionState;
+    settleDialogClose(motion, false);
+    syncDialogScrollLock();
+  });
+  dialog.addEventListener('click', event => { if (event.target !== dialog) return; const rect = dialog.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) closeDialog(dialog); });
+});
+
+/* ---- 订座选桌 ---- */
 ['#booking-date', '#booking-people'].forEach(selector => $(selector).addEventListener('change', renderTables));
 $$('[data-time]').forEach(button => button.addEventListener('click', () => { if (state.time === button.dataset.time) return; state.time = button.dataset.time; $$('[data-time]').forEach(item => item.setAttribute('aria-pressed', String(item === button))); renderTables(); }));
 function setArea(area) {
@@ -816,38 +931,53 @@ $('#contact-form').addEventListener('submit', event => {
   $('#finish-booking').addEventListener('click', () => closeDialog($('#booking-dialog'))); $('#finish-booking').focus();
 });
 ['name', 'phone'].forEach(field => $(`#contact-${field}`).addEventListener('input', () => { $(`#${field}-error`).hidden = true; $(`#contact-${field}`).removeAttribute('aria-invalid'); }));
+
+/* ---- 账号与登录 ---- */
 $('#show-login').addEventListener('click', () => setAuthMode('login'));
 $('#show-register').addEventListener('click', () => setAuthMode('register'));
-$('#login-form').addEventListener('submit', event => {
+
+$('#login-form').addEventListener('submit', async event => {
   event.preventDefault();
-  showAuthError('#login-error', loginWith($('#login-username').value, $('#login-password').value));
+  const message = await loginWith(
+    $('#login-username').value,
+    $('#login-password').value
+  );
+  showAuthError('#login-error', message);
 });
-$('#register-form').addEventListener('submit', event => {
+
+$('#register-form').addEventListener('submit', async event => {
   event.preventDefault();
-  const name = $('#register-name').value.trim();
-  const username = $('#register-username').value.trim().toLowerCase();
-  const password = $('#register-password').value;
-  const passwordAgain = $('#register-password-again').value;
-  let message = '';
-  if (!name || !username || !password || !passwordAgain) message = '请把姓名、用户名和密码都填上。';
-  else if (name.length > 20) message = '称呼请控制在 20 个字以内。';
-  else if (!/^[\w\u4e00-\u9fff]{2,20}$/.test(username)) message = '用户名用 2–20 位字母、数字或中文。';
-  else if (password.length < 6) message = '密码至少 6 位。';
-  else if (password !== passwordAgain) message = '两次密码不一致。';
-  else if (findAccount(username)) message = '这个用户名已经有了。';
+  const message = await registerWith(
+    $('#register-name').value.trim(),
+    $('#register-username').value.trim(),
+    $('#register-password').value,
+    $('#register-password-again').value
+  );
   showAuthError('#register-error', message);
-  if (message) return;
-  const account = { username, password, name, role: 'customer' };
-  localStorage.setItem(registeredKey, JSON.stringify([...registeredUsers(), account]));
-  enterSession(account);
 });
+
 ['#login-username', '#login-password'].forEach(selector => $(selector).addEventListener('input', () => showAuthError('#login-error', '')));
 ['#register-name', '#register-username', '#register-password', '#register-password-again'].forEach(selector => $(selector).addEventListener('input', () => showAuthError('#register-error', '')));
-$$('[data-demo]').forEach(button => button.addEventListener('click', () => {
-  const account = demoAccounts.find(item => item.username === button.dataset.demo);
-  enterSession(account);
+$$('[data-demo]').forEach(button => button.addEventListener('click', async () => {
+  const credentials = demoCredentials[button.dataset.demo];
+  if (!credentials) return;
+  setAuthMode('login');
+  $('#login-username').value = credentials.username;
+  $('#login-password').value = credentials.password;
+  const message = await loginWith(credentials.username, credentials.password);
+  showAuthError('#login-error', message);
 }));
 $('#logout-customer').addEventListener('click', logout);
 $('#logout-workspace').addEventListener('click', logout);
+
+
+/* ---- 路由与初始化 ---- */
 window.addEventListener('hashchange', setRoute);
-selectCategory('burger'); renderTables(); setRoute(); icons();
+async function bootstrapApp() {
+  await restoreSessionFromServer();
+  selectCategory('burger');
+  renderTables();
+  setRoute();
+  icons();
+}
+bootstrapApp();

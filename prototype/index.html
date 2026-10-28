@@ -11,7 +11,7 @@
   <link rel="preload" href="assets/fonts/restaurant-sign-subset.ttf?v=20261014" as="font" type="font/ttf" crossorigin>
   <link rel="stylesheet" href="styles.css?v=20261020-auth3">
   <script src="assets/vendor/lucide.min.js" defer></script>
-  <script src="app.js?v=20261020-auth3" defer></script>
+  <script src="main.js?v=20261028-session1" defer></script>
 </head>
 
 <body>
@@ -246,39 +246,69 @@
         <small class="muted">原型占位页面，尚未接入配送服务。</small>
       </div>
     </section>
+
     <section class="page entry-page" id="page-account" aria-labelledby="account-title" hidden>
       <img class="entry-photo" src="assets/images/album/lemonade.jpg" alt="冰柠檬饮品" loading="lazy">
       <div class="entry-copy" id="auth-guest">
         <span class="serif section-english">Welcome back</span>
         <h1 id="account-title">登录账号</h1>
-        <p>先用演示账号进入不同角色。项目还没有数据库，这四个账号写在页面里。</p>
+        <p>可以用数据库里的演示账号进入不同角色，也可以注册新的顾客或员工账号。</p>
         <div class="auth-modes" role="group" aria-label="登录或注册">
           <button type="button" id="show-login" aria-pressed="true">登录</button>
           <button type="button" id="show-register" aria-pressed="false">注册</button>
         </div>
+        
         <form id="login-form" class="auth-form" novalidate>
-          <label class="field-label" for="login-username">用户名</label>
-          <input id="login-username" name="username" autocomplete="username" inputmode="text">
+          <label class="field-label" for="login-username" >账号</label>
+          <input id="login-username" name="username" autocomplete="username" inputmode="text" placeholder="员工用邮箱 / 顾客用手机号">
           <label class="field-label" for="login-password">密码</label>
           <input id="login-password" name="password" type="password" autocomplete="current-password">
           <p id="login-error" class="field-error" role="alert" hidden></p>
           <button class="button primary" type="submit">登录 <i data-lucide="arrow-right" aria-hidden="true"></i></button>
         </form>
+
         <form id="register-form" class="auth-form" novalidate hidden>
-          <label class="field-label" for="register-name">怎么称呼你</label>
+          <p class="field-label">注册身份</p>
+          <input id="register-type-customer" class="register-type-input" name="registerType" type="radio" value="customer" checked>
+          <input id="register-type-staff" class="register-type-input" name="registerType" type="radio" value="staff">
+          <div class="register-type-options" role="radiogroup" aria-label="注册身份">
+            <label class="register-type-option" for="register-type-customer">顾客</label>
+            <label class="register-type-option" for="register-type-staff">员工</label>
+          </div>
+          <label class="field-label" for="register-name">
+            <span class="register-copy register-copy-customer">昵称</span>
+            <span class="register-copy register-copy-staff">姓名</span>
+          </label>
           <input id="register-name" name="name" autocomplete="name">
-          <label class="field-label" for="register-username">用户名</label>
-          <input id="register-username" name="username" autocomplete="username">
+          <label class="field-label" for="register-username">手机号</label>
+          <input id="register-username" name="phone" inputmode="tel" autocomplete="tel">
+          <div class="register-staff-fields">
+            <label class="field-label">角色</label>
+            <div class="register-role-options" role="radiogroup" aria-label="员工角色">
+              <label class="register-role-option">
+                <input name="staffRole" type="radio" value="frontdesk" checked>
+                <span>前台</span>
+              </label>
+              <label class="register-role-option">
+                <input name="staffRole" type="radio" value="kitchen">
+                <span>后厨</span>
+              </label>
+            </div>
+            <label class="field-label" for="register-staff-email">邮箱</label>
+            <input id="register-staff-email" name="email" type="email" autocomplete="email">
+          </div>
           <label class="field-label" for="register-password">密码</label>
           <input id="register-password" name="password" type="password" autocomplete="new-password">
           <label class="field-label" for="register-password-again">再输入一次密码</label>
           <input id="register-password-again" name="passwordAgain" type="password" autocomplete="new-password">
           <p id="register-error" class="field-error" role="alert" hidden></p>
           <button class="button primary" type="submit">注册并进入 <i data-lucide="arrow-right" aria-hidden="true"></i></button>
-          <p class="muted small">注册只会创建顾客。管理员、前台和厨房使用下面的演示账号。</p>
+          <p class="muted small">表单字段已按顾客和员工拆分；下面的演示账号也会通过后端接口直接登录。</p>
         </form>
+
+        
         <div class="demo-accounts">
-          <p class="muted small">演示账号的密码都是 123456。点一下就以该身份进入。</p>
+          <p class="muted small">演示账号的密码都是 123456。点一下会走真实登录接口。</p>
           <button type="button" data-demo="customer">顾客 · customer</button>
           <button type="button" data-demo="admin">管理员 · admin</button>
           <button type="button" data-demo="frontdesk">前台 · frontdesk</button>
@@ -289,7 +319,7 @@
         <span class="serif section-english">Your table</span>
         <h1 id="customer-title">我的账号</h1>
         <p id="customer-lead">你现在是顾客。</p>
-        <p class="muted">点菜和订座仍只留在这台浏览器里。自己注册的顾客账号也保存在本地，清除站点数据后会消失。</p>
+        <p class="muted">登录和注册已接入后端会话与 SQLite；点菜和订座内容仍是本地演示数据。</p>
         <a class="button primary" href="#booking">去订座 <i data-lucide="arrow-up-right" aria-hidden="true"></i></a>
         <a class="text-link" href="#menu">先看看菜单</a>
         <button class="text-link" type="button" id="logout-customer">退出登录</button>
@@ -401,7 +431,7 @@
     <p>摄影采用 <a href="https://www.pexels.com/license/" target="_blank" rel="noreferrer">Pexels License</a> 与 <a
         href="https://unsplash.com/license" target="_blank" rel="noreferrer">Unsplash License</a>。标题字体为站酷庆科黄油体（SIL
       OFL），图标为 Lucide（ISC）。</p>
-    <p class="muted small">前端使用 HTML、CSS、JavaScript。登录是浏览器内的演示账号，不含后端、数据库或真实支付。前台、厨房和管理员只有工作台占位页。</p>
+    <p class="muted small">前端使用 HTML、CSS、JavaScript；账号登录与注册已接入 Flask 和 SQLite。订单、订座流转与角色工作台仍是演示占位页。</p>
   </dialog>
 </body>
 
