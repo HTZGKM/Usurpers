@@ -4094,3 +4094,31 @@ body.home-route .site-footer { color: #171714; border-color: #d7d6cb; }
 
 /* Let the customer links take over once the photo navigation has left view. */
 body.home-route.home-closing-visible .site-header:not(:has(:focus-visible)) { transform: translateY(-100%); pointer-events: none; }
+
+.auth-modes { display: flex; gap: 22px; }
+.auth-modes button { border: 0; padding: 0 0 6px; border-bottom: 1px solid transparent; font-size: 15px; }
+.auth-modes button[aria-pressed="true"] { border-bottom-color: currentColor; }
+.auth-form { width: min(100%, 360px); }
+.auth-form .field-label:first-of-type { margin-top: 0; }
+.auth-form .button { margin-top: 18px; }
+.auth-form .small { margin-top: 8px; }
+.demo-accounts { display: grid; gap: 8px; width: min(100%, 360px); }
+.demo-accounts button {
+  border: 1px solid #a9b39e;
+  min-height: 42px;
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 14px;
+}
+.demo-accounts button:hover { background: var(--linen); }
+.workspace-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.workspace-card { border: 1px solid var(--rule); padding: 22px 20px; display: grid; gap: 10px; align-content: start; }
+.workspace-card h2 { font-family: SFSign, SFSignFull, sans-serif; font-size: 28px; font-weight: 400; }
+.workspace-card p { font-size: 14px; line-height: 1.7; color: var(--muted); }
+.workspace-card span { font-size: 12px; letter-spacing: .04em; }
+.workspace-actions { display: flex; align-items: center; gap: 22px; margin-top: 28px; }
+#auth-customer .text-link,
+.workspace-actions .text-link { font-size: 14px; }
+@media (max-width: 900px) {
+  .workspace-grid { grid-template-columns: 1fr; }
+}

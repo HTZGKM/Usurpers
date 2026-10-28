@@ -84,14 +84,161 @@ function syncHomeRoute(view) {
   queueHomePosition();
 }
 
+const sessionKey = 'shuangfen.session';
+const registeredKey = 'shuangfen.registeredUsers';
+const roleLabels = { customer: '顾客', admin: '管理员', frontdesk: '前台', kitchen: '厨房' };
+const demoAccounts = [
+  { username: 'customer', password: '123456', name: '林小满', role: 'customer' },
+  { username: 'admin', password: '123456', name: '陈店长', role: 'admin' },
+  { username: 'frontdesk', password: '123456', name: '周前台', role: 'frontdesk' },
+  { username: 'kitchen', password: '123456', name: '韩厨房', role: 'kitchen' }
+];
+const workspaces = {
+  admin: {
+    english: 'The house',
+    title: '管理员',
+    lead: '账号、菜单和店铺设置会归在这里。<br><span class="muted">还没有数据库。下面只说明以后各自做什么。</span>',
+    tasks: [
+      { title: '用户与角色', text: '顾客、管理员、前台、厨房。权限还不能在这里修改。' },
+      { title: '菜单与价格', text: '顾客看到的仍是原型里的模拟菜单。' },
+      { title: '店铺设置', text: '营业时间、桌位规则尚未开放。' }
+    ]
+  },
+  frontdesk: {
+    english: 'The floor',
+    title: '前台',
+    lead: '订座、桌位和到店订单会归在这里。<br><span class="muted">顾客刚提交的内容还不会传过来。</span>',
+    tasks: [
+      { title: '今日订座', text: '订座仍停在顾客页面的演示里。' },
+      { title: '桌位', text: 'A1 到 B3 是写死的演示桌，前台还不能改状态。' },
+      { title: '到店订单', text: '堂食下单还不会出现在前台。' }
+    ]
+  },
+  kitchen: {
+    english: 'The pass',
+    title: '厨房',
+    lead: '制作队列和售罄会归在这里。<br><span class="muted">现在还收不到顾客点的菜。</span>',
+    tasks: [
+      { title: '制作队列', text: '还没有从点菜传过来的订单。' },
+      { title: '售罄', text: '菜单里的洋葱圈标了今日售完，厨房还不能改。' },
+      { title: '出餐', text: '做好之后通知前台，这一步尚未开放。' }
+    ]
+  }
+};
+let authMode = 'login';
+
+function readStored(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
+  catch { return fallback; }
+}
+function currentUser() {
+  const session = readStored(sessionKey, null);
+  if (!session?.username || !roleLabels[session.role]) return null;
+  return session;
+}
+function isStaff(user) { return Boolean(user) && user.role !== 'customer'; }
+function registeredUsers() {
+  const users = readStored(registeredKey, []);
+  return Array.isArray(users) ? users : [];
+}
+function findAccount(username) {
+  const key = username.trim().toLowerCase();
+  return demoAccounts.find(account => account.username === key)
+    || registeredUsers().find(account => account.username === key)
+    || null;
+}
+function saveSession(account) {
+  localStorage.setItem(sessionKey, JSON.stringify({ username: account.username, name: account.name, role: account.role }));
+}
+function enterSession(account) {
+  saveSession(account);
+  const target = account.role === 'customer' ? '#account' : '#workspace';
+  if (location.hash === target) setRoute();
+  else location.hash = target;
+}
+function logout() {
+  localStorage.removeItem(sessionKey);
+  $('#login-form').reset();
+  $('#register-form').reset();
+  setAuthMode('login');
+  if (location.hash === '#account') setRoute();
+  else location.hash = '#account';
+}
+function showAuthError(id, message) {
+  const error = $(id);
+  error.hidden = !message;
+  error.textContent = message || '';
+}
+function setAuthMode(mode) {
+  authMode = mode;
+  $('#login-form').hidden = mode !== 'login';
+  $('#register-form').hidden = mode !== 'register';
+  $('#show-login').setAttribute('aria-pressed', String(mode === 'login'));
+  $('#show-register').setAttribute('aria-pressed', String(mode === 'register'));
+}
+function renderSessionChrome(user) {
+  const label = user ? user.name : '登录账号';
+  $('#account-nav').textContent = label;
+  $('#footer-account-link').textContent = label;
+  $('#home-account-title').textContent = label;
+  $('#home-account-note').textContent = user ? `已登录 · ${roleLabels[user.role]}` : '你的订单与预订。';
+  $('#home-account').setAttribute('aria-label', user ? `进入${user.name}的账号` : '进入登录账号模块');
+  $('#account-nav').href = isStaff(user) ? '#workspace' : '#account';
+  document.body.classList.toggle('session-staff', isStaff(user));
+}
+function renderAccount(user) {
+  const signedInCustomer = user?.role === 'customer';
+  $('#auth-guest').hidden = signedInCustomer;
+  $('#auth-customer').hidden = !signedInCustomer;
+  $('#page-account').setAttribute('aria-labelledby', signedInCustomer ? 'customer-title' : 'account-title');
+  if (!signedInCustomer) {
+    showAuthError('#login-error', '');
+    showAuthError('#register-error', '');
+    return;
+  }
+  $('#customer-title').textContent = user.name;
+  $('#customer-lead').textContent = `${user.name}，你现在是顾客。点菜和订座可以继续用。`;
+}
+function renderWorkspace(user) {
+  const workspace = workspaces[user.role];
+  $('#workspace-english').textContent = workspace.english;
+  $('#workspace-title').textContent = workspace.title;
+  $('#workspace-lead').innerHTML = workspace.lead;
+  const session = document.createElement('span');
+  session.className = 'muted';
+  session.textContent = `${user.name} · ${roleLabels[user.role]}。登录状态保存在这台浏览器。`;
+  $('#workspace-lead').append(document.createElement('br'), session);
+  $('#workspace-tasks').innerHTML = workspace.tasks.map(task => `<article class="workspace-card"><h2>${task.title}</h2><p>${task.text}</p><span>尚未接入</span></article>`).join('');
+}
+function loginWith(username, password) {
+  const account = findAccount(username);
+  if (!username.trim() || !password) return '请填写用户名和密码。';
+  if (!account || account.password !== password) return '用户名或密码不正确。';
+  enterSession(account);
+  return '';
+}
+
 function setRoute() {
   const [page, category] = (location.hash.slice(1) || 'home').split('/');
-  const view = ['home', 'menu', 'booking', 'delivery', 'account', 'visit'].includes(page) ? page : 'home';
+  let view = ['home', 'menu', 'booking', 'delivery', 'account', 'workspace', 'visit'].includes(page) ? page : 'home';
+  const user = currentUser();
+  if (view === 'workspace' && !isStaff(user)) {
+    view = 'account';
+    history.replaceState(null, '', '#account');
+  } else if (view === 'account' && isStaff(user)) {
+    view = 'workspace';
+    history.replaceState(null, '', '#workspace');
+  }
   $$('.page').forEach(section => section.hidden = section.id !== `page-${view === 'visit' ? 'home' : view}`);
-  $$('[data-nav]').forEach(link => link.dataset.nav === view ? link.setAttribute('aria-current', 'page') : link.removeAttribute('aria-current'));
-  document.title = `${view === 'menu' ? '菜单' : view === 'booking' ? '选桌订座' : view === 'delivery' ? '外送' : view === 'account' ? '登录账号' : '汉堡与披萨'} · 双份`;
+  const navView = view === 'workspace' ? 'account' : view;
+  $$('[data-nav]').forEach(link => link.dataset.nav === navView ? link.setAttribute('aria-current', 'page') : link.removeAttribute('aria-current'));
+  const titles = { menu: '菜单', booking: '选桌订座', delivery: '外送', account: user?.role === 'customer' ? user.name : '登录账号', workspace: user ? roleLabels[user.role] : '工作台' };
+  document.title = `${titles[view] || '汉堡与披萨'} · 双份`;
   if (view !== 'menu' && state.editingCartId !== null) clearDish();
   if (view === 'menu' && ['burger', 'pizza', 'sides', 'drinks'].includes(category)) selectCategory(category);
+  renderSessionChrome(user);
+  if (view === 'account') renderAccount(user);
+  if (view === 'workspace' && user) renderWorkspace(user);
   updateMobileActions();
   syncHomeRoute(view);
   window.scrollTo({ top: 0, behavior: 'instant' });
@@ -594,5 +741,38 @@ $('#contact-form').addEventListener('submit', event => {
   $('#finish-booking').addEventListener('click', () => closeDialog($('#booking-dialog'))); $('#finish-booking').focus();
 });
 ['name', 'phone'].forEach(field => $(`#contact-${field}`).addEventListener('input', () => { $(`#${field}-error`).hidden = true; $(`#contact-${field}`).removeAttribute('aria-invalid'); }));
+$('#show-login').addEventListener('click', () => setAuthMode('login'));
+$('#show-register').addEventListener('click', () => setAuthMode('register'));
+$('#login-form').addEventListener('submit', event => {
+  event.preventDefault();
+  showAuthError('#login-error', loginWith($('#login-username').value, $('#login-password').value));
+});
+$('#register-form').addEventListener('submit', event => {
+  event.preventDefault();
+  const name = $('#register-name').value.trim();
+  const username = $('#register-username').value.trim().toLowerCase();
+  const password = $('#register-password').value;
+  const passwordAgain = $('#register-password-again').value;
+  let message = '';
+  if (!name || !username || !password || !passwordAgain) message = '请把姓名、用户名和密码都填上。';
+  else if (name.length > 20) message = '称呼请控制在 20 个字以内。';
+  else if (!/^[\w\u4e00-\u9fff]{2,20}$/.test(username)) message = '用户名用 2–20 位字母、数字或中文。';
+  else if (password.length < 6) message = '密码至少 6 位。';
+  else if (password !== passwordAgain) message = '两次密码不一致。';
+  else if (findAccount(username)) message = '这个用户名已经有了。';
+  showAuthError('#register-error', message);
+  if (message) return;
+  const account = { username, password, name, role: 'customer' };
+  localStorage.setItem(registeredKey, JSON.stringify([...registeredUsers(), account]));
+  enterSession(account);
+});
+['#login-username', '#login-password'].forEach(selector => $(selector).addEventListener('input', () => showAuthError('#login-error', '')));
+['#register-name', '#register-username', '#register-password', '#register-password-again'].forEach(selector => $(selector).addEventListener('input', () => showAuthError('#register-error', '')));
+$$('[data-demo]').forEach(button => button.addEventListener('click', () => {
+  const account = demoAccounts.find(item => item.username === button.dataset.demo);
+  enterSession(account);
+}));
+$('#logout-customer').addEventListener('click', logout);
+$('#logout-workspace').addEventListener('click', logout);
 window.addEventListener('hashchange', setRoute);
 selectCategory('burger'); renderTables(); setRoute(); icons();
