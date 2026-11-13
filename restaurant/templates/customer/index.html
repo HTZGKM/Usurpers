@@ -8,13 +8,17 @@
   <title>双份 · 汉堡与披萨</title>
   <link rel="icon" href="data:,">
   <meta name="description" content="双份餐厅课程原型：浏览菜单、定制堂食餐点、选择桌位。">
-  <link rel="preload" href="assets/fonts/restaurant-sign-subset.ttf?v=20261014" as="font" type="font/ttf" crossorigin>
-  <link rel="stylesheet" href="styles.css?v=20261020-auth3">
-  <script src="assets/vendor/lucide.min.js" defer></script>
-  <script src="main.js?v=20261028-session1" defer></script>
+  <link rel="preload" href="{{ url_for('static', filename='fonts/restaurant-sign-subset.ttf', v='20261014') }}" as="font" type="font/ttf" crossorigin>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css', v='20261020-auth3') }}">
+  <script src="{{ url_for('static', filename='vendor/lucide.min.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/main.js', v='20261028-session1') }}" defer></script>
 </head>
 
-<body>
+<body data-image-base="{{ url_for('static', filename='images/') }}"
+      data-login-url="{{ url_for('auth.login') }}"
+      data-register-url="{{ url_for('auth.register') }}"
+      data-session-url="{{ url_for('auth.me') }}"
+      data-logout-url="{{ url_for('auth.logout') }}">
   <a class="skip-link" href="#main">跳到主要内容</a>
   <header class="site-header shell">
     <a class="wordmark" href="#home" aria-label="双份首页"><svg class="brand-mark" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 88" fill="none">
@@ -43,7 +47,7 @@
     <section class="page home-page" id="page-home" aria-label="首页">
       <div class="home-showcase" id="home-showcase" aria-label="首页功能入口">
         <a class="home-panel home-panel-booking" id="visit" href="#booking" data-home-target="booking" aria-label="进入订座模块">
-          <img src="assets/images/album/burger-table.jpg" alt="两只汉堡与薯条，一只手拿起其中的汉堡" fetchpriority="high">
+          <img src="{{ url_for('static', filename='images/album/burger-table.jpg') }}" alt="两只汉堡与薯条，一只手拿起其中的汉堡" fetchpriority="high">
           <div class="home-panel-copy">
             <h1>订座</h1>
             <p class="home-panel-note">选个时间，一起吃饭。</p>
@@ -51,7 +55,7 @@
           </div>
         </a>
         <a class="home-panel home-panel-menu" id="home-menu" href="#menu" data-home-target="menu" aria-label="进入点菜模块">
-          <img src="assets/images/album/pizza-table.jpg" alt="浅色桌面上切好待分享的两份披萨" loading="lazy">
+          <img src="{{ url_for('static', filename='images/album/pizza-table.jpg') }}" alt="浅色桌面上切好待分享的两份披萨" loading="lazy">
           <div class="home-panel-copy">
             <h2>点菜</h2>
             <p class="home-panel-note">汉堡、披萨，再来点小食。</p>
@@ -59,7 +63,7 @@
           </div>
         </a>
         <a class="home-panel home-panel-delivery" id="home-delivery" href="#delivery" data-home-target="delivery" aria-label="进入外送模块">
-          <img src="assets/images/album/takeaway-pizza.jpg" alt="牛皮纸外带盒里的披萨" loading="lazy">
+          <img src="{{ url_for('static', filename='images/album/takeaway-pizza.jpg') }}" alt="牛皮纸外带盒里的披萨" loading="lazy">
           <div class="home-panel-copy">
             <h2>外送</h2>
             <p class="home-panel-note">想在家吃，看看外送。</p>
@@ -67,7 +71,7 @@
           </div>
         </a>
         <a class="home-panel home-panel-account" id="home-account" href="#account" data-home-target="account" aria-label="进入登录账号模块">
-          <img src="assets/images/album/lemonade.jpg" alt="浅色背景上的冰柠檬饮品" loading="lazy">
+          <img src="{{ url_for('static', filename='images/album/lemonade.jpg') }}" alt="浅色背景上的冰柠檬饮品" loading="lazy">
           <div class="home-panel-copy">
             <h2 id="home-account-title">登录账号</h2>
             <p class="home-panel-note" id="home-account-note">你的订单与预订。</p>
@@ -137,7 +141,7 @@
             <p>点开菜品，选好口味和数量，<br>再加入购物车。</p>
           </aside>
           <aside class="customizer" id="customizer" aria-labelledby="custom-title" hidden><img id="custom-image"
-              class="custom-image" src="assets/images/wood-burger.jpg" alt="芝士牛肉堡" width="1000" height="628">
+              class="custom-image" src="{{ url_for('static', filename='images/wood-burger.jpg') }}" alt="芝士牛肉堡" width="1000" height="628">
             <div class="custom-content">
               <div class="custom-heading"><button class="custom-close" id="close-customizer" aria-label="收起定制，返回菜品"><i
                     data-lucide="x" aria-hidden="true"></i></button><span class="muted small"
@@ -236,7 +240,7 @@
       </div>
     </section>
     <section class="page entry-page" id="page-delivery" aria-labelledby="delivery-title" hidden>
-      <img class="entry-photo" src="assets/images/album/takeaway-pizza.jpg" alt="纸盒里的外带披萨" loading="lazy">
+      <img class="entry-photo" src="{{ url_for('static', filename='images/album/takeaway-pizza.jpg') }}" alt="纸盒里的外带披萨" loading="lazy">
       <div class="entry-copy"><span class="serif section-english">To your door</span>
         <h1 id="delivery-title">外送</h1>
         <p>外送服务筹备中。</p>
@@ -248,7 +252,7 @@
     </section>
 
     <section class="page entry-page" id="page-account" aria-labelledby="account-title" hidden>
-      <img class="entry-photo" src="assets/images/album/lemonade.jpg" alt="冰柠檬饮品" loading="lazy">
+      <img class="entry-photo" src="{{ url_for('static', filename='images/album/lemonade.jpg') }}" alt="冰柠檬饮品" loading="lazy">
       <div class="entry-copy" id="auth-guest">
         <span class="serif section-english">Welcome back</span>
         <h1 id="account-title">登录账号</h1>
@@ -416,7 +420,7 @@
     </div>
     <p>这是「双份」的课程设计预览。照片为真实摄影素材，用于表达氛围与菜品类型，并非本店实拍。菜品、配料、价格、桌位和可订状态均为模拟数据。店址、营业时间及正式订座政策尚待确认。</p>
     <ul>
-      <li><a href="album.html">本轮餐厅相册 · 查看全部照片、作者与许可</a></li>
+      <li><a href="{{ url_for('album') }}">本轮餐厅相册 · 查看全部照片、作者与许可</a></li>
       <li><a href="https://unsplash.com/fr/photos/une-salle-avec-tables-et-chaises-e4B5AvA7Jqo" target="_blank"
           rel="noreferrer">餐厅环境摄影 · Glenov Brankovic / Unsplash</a></li>
       <li><a href="https://www.pexels.com/photo/people-sitting-on-a-table-eating-pizza-6605245/" target="_blank"

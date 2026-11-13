@@ -2,50 +2,50 @@
   "purpose": "课程餐厅原型的视觉参考，非本店实拍；所有业务数据为模拟",
   "photos": [
     {
-      "file": "assets/images/interior.jpg",
+      "file": "static/images/interior.jpg",
       "source": "https://unsplash.com/fr/photos/une-salle-avec-tables-et-chaises-e4B5AvA7Jqo",
       "image": "https://images.unsplash.com/photo-1667388969250-1c7220bf3f37",
       "credit": "Glenov Brankovic / Unsplash",
       "license": "https://unsplash.com/license"
     },
     {
-      "file": "assets/images/burger.jpg",
+      "file": "static/images/burger.jpg",
       "source": "https://unsplash.com/photos/burger-with-lettuce-and-tomato-5ZR4DxAG3RQ",
       "image": "https://images.unsplash.com/photo-1610970878459-a0e464d7592b",
       "license": "https://unsplash.com/license"
     },
     {
-      "file": "assets/images/double-burger.jpg",
+      "file": "static/images/double-burger.jpg",
       "source": "https://unsplash.com/photos/a-hamburger-sitting-on-top-of-a-wooden-cutting-board-MNHQqLNEvow",
       "image": "https://images.unsplash.com/photo-1713330801172-03f8d1c0dde7",
       "license": "https://unsplash.com/license"
     },
     {
-      "file": "assets/images/pizza.jpg",
+      "file": "static/images/pizza.jpg",
       "source": "https://unsplash.com/photos/a-close-up-of-a-pizza-on-a-pan-8sqq49ErTj0",
       "image": "https://images.unsplash.com/photo-1646257097923-375777b79fb1",
       "license": "https://unsplash.com/license"
     },
     {
-      "file": "assets/images/mushroom-pizza.jpg",
+      "file": "static/images/mushroom-pizza.jpg",
       "source": "https://unsplash.com/photos/a-pizza-sitting-on-top-of-a-wooden-table-B-vBJzlAWLg",
       "image": "https://images.unsplash.com/photo-1701283446315-ddb4b1a6f07a",
       "license": "https://unsplash.com/license"
     },
     {
-      "file": "assets/images/shared-table.jpg",
+      "file": "static/images/shared-table.jpg",
       "source": "https://www.pexels.com/photo/people-sitting-on-a-table-eating-pizza-6605245/",
       "credit": "Kampus Production / Pexels",
       "license": "https://www.pexels.com/license/"
     },
     {
-      "file": "assets/images/wood-burger.jpg",
+      "file": "static/images/wood-burger.jpg",
       "source": "https://www.pexels.com/photo/delicious-burgers-on-wooden-table-6605397/",
       "credit": "Geraud pfeiffer / Pexels",
       "license": "https://www.pexels.com/license/"
     },
     {
-      "file": "assets/images/album/burger-table.jpg",
+      "file": "static/images/album/burger-table.jpg",
       "source": "https://www.pexels.com/photo/person-holding-a-burger-4109236/",
       "image": "https://images.pexels.com/photos/4109236/pexels-photo-4109236.jpeg?auto=compress&cs=tinysrgb&w=1800",
       "credit": "Polina Tankilevitch / Pexels",
@@ -57,7 +57,7 @@
       "verified": "2026-10-18"
     },
     {
-      "file": "assets/images/album/pizza-table.jpg",
+      "file": "static/images/album/pizza-table.jpg",
       "source": "https://www.pexels.com/photo/pizzas-on-white-table-5848276/",
       "image": "https://images.pexels.com/photos/5848276/pexels-photo-5848276.jpeg?auto=compress&cs=tinysrgb&w=1800",
       "credit": "Polina Tankilevitch / Pexels",
@@ -69,7 +69,7 @@
       "verified": "2026-10-18"
     },
     {
-      "file": "assets/images/album/takeaway-pizza.jpg",
+      "file": "static/images/album/takeaway-pizza.jpg",
       "source": "https://www.pexels.com/photo/a-pizza-on-brown-cardboard-box-5848270/",
       "image": "https://images.pexels.com/photos/5848270/pexels-photo-5848270.jpeg?auto=compress&cs=tinysrgb&w=1800",
       "credit": "Polina Tankilevitch / Pexels",
@@ -81,7 +81,7 @@
       "verified": "2026-10-18"
     },
     {
-      "file": "assets/images/album/lemonade.jpg",
+      "file": "static/images/album/lemonade.jpg",
       "source": "https://www.pexels.com/photo/glass-of-lemonade-18142613/",
       "image": "https://images.pexels.com/photos/18142613/pexels-photo-18142613.jpeg?auto=compress&cs=tinysrgb&w=1800",
       "credit": "Denys Gromov / Pexels",
@@ -93,7 +93,7 @@
       "verified": "2026-10-18"
     },
     {
-      "file": "assets/images/album/burger-beige.jpg",
+      "file": "static/images/album/burger-beige.jpg",
       "source": "https://www.pexels.com/photo/delicious-hamburger-with-patty-and-melted-cheese-on-beige-background-7828570/",
       "image": "https://images.pexels.com/photos/7828570/pexels-photo-7828570.jpeg?auto=compress&cs=tinysrgb&w=1800",
       "credit": "Mary Nikitina / Pexels",
@@ -105,7 +105,7 @@
       "verified": "2026-10-18"
     },
     {
-      "file": "assets/images/album/pizza-white.jpg",
+      "file": "static/images/album/pizza-white.jpg",
       "source": "https://www.pexels.com/photo/italian-pizza-on-white-background-5419303/",
       "image": "https://images.pexels.com/photos/5419303/pexels-photo-5419303.jpeg?auto=compress&cs=tinysrgb&w=1800",
       "credit": "Polina Tankilevitch / Pexels",
@@ -117,7 +117,7 @@
       "verified": "2026-10-18"
     },
     {
-      "file": "assets/images/album/pizza-grey.jpg",
+      "file": "static/images/album/pizza-grey.jpg",
       "source": "https://www.pexels.com/photo/top-view-of-pizza-19260834/",
       "image": "https://images.pexels.com/photos/19260834/pexels-photo-19260834.jpeg?auto=compress&cs=tinysrgb&w=1800",
       "credit": "Giona Mason / Pexels",
@@ -129,7 +129,7 @@
       "verified": "2026-10-18"
     },
     {
-      "file": "assets/images/album/pizza-box.jpg",
+      "file": "static/images/album/pizza-box.jpg",
       "source": "https://www.pexels.com/photo/pizza-on-brown-cardboard-box-9353420/",
       "image": "https://images.pexels.com/photos/9353420/pexels-photo-9353420.jpeg?auto=compress&cs=tinysrgb&w=1800",
       "credit": "PNW Production / Pexels",
@@ -141,7 +141,7 @@
       "verified": "2026-10-18"
     },
     {
-      "file": "assets/images/album/dining-room.jpg",
+      "file": "static/images/album/dining-room.jpg",
       "source": "https://www.pexels.com/photo/modern-cafe-interior-with-wooden-chairs-30294332/",
       "image": "https://images.pexels.com/photos/30294332/pexels-photo-30294332.jpeg?auto=compress&cs=tinysrgb&w=1800",
       "credit": "Drayhanz / Pexels",
@@ -153,7 +153,7 @@
       "verified": "2026-10-18"
     },
     {
-      "file": "assets/images/album/window-seats.jpg",
+      "file": "static/images/album/window-seats.jpg",
       "source": "https://www.pexels.com/photo/high-wooden-chairs-on-window-pane-9409793/",
       "image": "https://images.pexels.com/photos/9409793/pexels-photo-9409793.jpeg?auto=compress&cs=tinysrgb&w=1800",
       "credit": "Elizabeth Zernetska / Pexels",
@@ -165,7 +165,7 @@
       "verified": "2026-10-18"
     },
     {
-      "file": "assets/images/album/storefront.jpg",
+      "file": "static/images/album/storefront.jpg",
       "source": "https://www.pexels.com/photo/potted-plants-next-to-an-entrance-13426809/",
       "image": "https://images.pexels.com/photos/13426809/pexels-photo-13426809.jpeg?auto=compress&cs=tinysrgb&w=1800",
       "credit": "Antoine Maurin / Pexels",
@@ -177,7 +177,7 @@
       "verified": "2026-10-18"
     },
     {
-      "file": "assets/images/album/pizza-oven.jpg",
+      "file": "static/images/album/pizza-oven.jpg",
       "source": "https://www.pexels.com/photo/photo-of-pizza-in-furnace-3343624/",
       "image": "https://images.pexels.com/photos/3343624/pexels-photo-3343624.jpeg?auto=compress&cs=tinysrgb&w=1800",
       "credit": "Arthur Brognoli / Pexels",
@@ -193,7 +193,7 @@
     "name": "ZCOOL QingKe HuangYou / 站酷庆科黄油体",
     "source": "https://github.com/google/fonts/tree/main/ofl/zcoolqingkehuangyou",
     "license": "SIL Open Font License 1.1",
-    "file": "assets/fonts/OFL.txt"
+    "file": "static/fonts/OFL.txt"
   },
   "icons": {
     "name": "Lucide",
@@ -202,7 +202,7 @@
     "license": "ISC"
   },
   "album": {
-    "page": "album.html",
+    "page": "templates/customer/album.html",
     "note": "素材相册用于课程原型选图，不是本店实拍记录；空间照片来自不同场所，不构成统一店址或设施承诺。",
     "treatment": "保留摄影原文件；首页通过 CSS 调整裁切、亮度与底色混合。未使用生成式图片。"
   }

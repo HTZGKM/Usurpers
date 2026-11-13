@@ -2,19 +2,20 @@
 
 COMP3019J 小组餐厅网站项目（Topic 2 — Restaurant Booking and Ordering Website）。
 
-当前可运行的「双份」前端原型在 [`prototype/`](prototype/)：中文界面、桌面优先，使用 HTML、CSS 和 JavaScript。
+「双份」前端由 Flask 提供：页面在 [`restaurant/templates/customer/`](restaurant/templates/customer/)，样式、脚本和素材在 [`restaurant/static/`](restaurant/static/)。
 
 ## 本地运行
 
 在仓库根目录执行：
 
 ```bash
-python3 -m http.server 8765 --bind 127.0.0.1 --directory prototype
+python -m pip install Flask
+python app.py
 ```
 
-浏览器打开 <http://127.0.0.1:8765/>。详细功能、素材来源和演示边界见 [原型说明](prototype/README.md)。
+浏览器打开 <http://127.0.0.1:5000/>；摄影相册位于 <http://127.0.0.1:5000/album>。页面和登录接口使用同一个 Flask 服务，无需另外启动静态文件服务器。
 
-后续计划接入 Flask/Jinja；当前版本没有后端、真实订单或真实预订服务。
+账号登录和注册使用 SQLite。菜单、订座和下单仍是前端演示。详细功能、素材来源和演示边界见 [前端说明](restaurant/README.md)。
 
 ## SQLite 初始化
 

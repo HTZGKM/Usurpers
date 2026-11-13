@@ -1,6 +1,6 @@
 @font-face {
   font-family: SFSign;
-  src: url('assets/fonts/restaurant-sign-subset.ttf?v=20261014') format('truetype');
+  src: url('../fonts/restaurant-sign-subset.ttf?v=20261014') format('truetype');
   font-display: swap;
   font-weight: 400
 }
@@ -3835,7 +3835,7 @@ body.home-route .toast {
 /* Shared navigation; the home photograph continues behind the same frame. */
 @font-face {
   font-family: SFSignFull;
-  src: url('assets/fonts/restaurant-sign.ttf') format('truetype');
+  src: url('../fonts/restaurant-sign.ttf') format('truetype');
   font-display: swap;
   font-weight: 400;
 }
