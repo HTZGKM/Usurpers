@@ -6,7 +6,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const money = value => `¥${value}`;
 const icons = () => window.lucide?.createIcons({ attrs: { 'aria-hidden': 'true' } });
-const API_BASE = 'http://127.0.0.1:5000';
+const { imageBase, loginUrl, registerUrl, sessionUrl, logoutUrl } = document.body.dataset;
 /* ==========================================================================
    数据与状态*/
 const menu = [
@@ -223,7 +223,7 @@ function enterSession(account) {
 }
 async function logout() {
   try {
-    await fetch(`${API_BASE}/auth/logout`, {
+    await fetch(logoutUrl, {
       method: 'POST',
       credentials: 'include'
     });
@@ -285,7 +285,7 @@ function renderWorkspace(user) {
 }
 async function restoreSessionFromServer() {
   try {
-    const response = await fetch(`${API_BASE}/auth/me`, {
+    const response = await fetch(sessionUrl, {
       credentials: 'include'
     });
     const result = await response.json().catch(() => ({}));
@@ -305,7 +305,7 @@ async function loginWith(username, password) {
   if (!username.trim() || !password) return '请填写用户名和密码。';
 
   try {
-    const response = await fetch(`${API_BASE}/auth/login`, {
+    const response = await fetch(loginUrl, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -339,7 +339,7 @@ async function registerWith(name, phone, password, passwordAgain) {
   if (password !== passwordAgain) return '两次密码不一致。';
 
   try {
-    const response = await fetch(`${API_BASE}/auth/register`, {
+    const response = await fetch(registerUrl, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -412,7 +412,7 @@ function selectCategory(category) {
 function renderDishes() {
   $('#dish-list').innerHTML = menu.filter(dish => dish.category === state.category).map(dish => `
     <article class="dish ${dish.id === state.dish?.id ? 'selected' : ''} ${dish.sold ? 'sold' : ''}">
-      ${dish.image ? `<img class="dish-img" src="assets/images/${dish.image}" alt="${dish.alt}" width="118" height="104">` : `<div class="dish-symbol" aria-hidden="true"><i data-lucide="${dish.icon}"></i></div>`}
+      ${dish.image ? `<img class="dish-img" src="${imageBase}${dish.image}" alt="${dish.alt}" width="118" height="104">` : `<div class="dish-symbol" aria-hidden="true"><i data-lucide="${dish.icon}"></i></div>`}
       <div><h3>${dish.name}</h3><p class="dish-description">${dish.description}</p><span class="dish-price">${money(dish.price)}${dish.kind !== 'simple' ? '<small>起</small>' : ''}</span>${dish.sold ? '<span class="sold-label">今日售完</span>' : ''}</div>
       <button class="dish-select" data-dish="${dish.id}" ${dish.sold ? 'disabled' : `aria-pressed="${dish.id === state.dish?.id}"`}>${dish.sold ? '已售完' : dish.id === state.dish?.id ? '已选' : dish.kind === 'simple' ? '选择' : '定制'}${!dish.sold && dish.id !== state.dish?.id ? '<i data-lucide="arrow-up-right"></i>' : ''}</button>
     </article>`).join('');
@@ -454,7 +454,7 @@ function selectDish(id, reveal = true) {
   $('#custom-title').textContent = dish.name;
   $('#custom-description').textContent = dish.description;
   $('#custom-image').hidden = !dish.image;
-  if (dish.image) { $('#custom-image').src = `assets/images/${dish.image}`; $('#custom-image').alt = dish.alt; }
+  if (dish.image) { $('#custom-image').src = `${imageBase}${dish.image}`; $('#custom-image').alt = dish.alt; }
   const choice = (name, label, options) => `<fieldset><legend>${label}</legend><div class="choice-group">${options.map((option, index) => `<label class="choice"><input type="radio" name="${name}" value="${option.price}" data-label="${option.label}" ${index === 0 ? 'checked' : ''}><span>${option.label}<small>${option.price ? '+ ¥' + option.price : '原价'}</small></span></label>`).join('')}</div></fieldset>`;
   const addon = (label, price) => `<label class="addon"><span><input type="checkbox" value="${price}" data-label="${label}">${label}</span><span>+ ¥${price}</span></label>`;
   let options = '';
@@ -576,7 +576,7 @@ function renderCart() {
   if (!state.cart.length) {
     $('#cart-content').innerHTML = '<div class="cart-empty"><i data-lucide="shopping-bag"></i><h3>这一餐，还没选好</h3><p>去菜单看看，挑一份喜欢的。</p><button class="button primary" id="empty-browse">看看菜单 <i data-lucide="arrow-right"></i></button></div>';
   } else {
-    $('#cart-content').innerHTML = state.cart.map(item => `<article class="cart-item">${item.image ? `<img src="assets/images/${item.image}" alt="${item.name}">` : `<div class="dish-symbol" style="width:64px;height:67px"><i data-lucide="${item.icon}"></i></div>`}<div><h3 class="cart-item-title">${item.name}</h3><p>${item.labels.join('，') || '标准份'}</p><button class="edit-item" data-edit="${item.id}" aria-label="修改${item.name}${item.labels.length ? '口味' : '数量'}">${item.labels.length ? '修改口味' : '修改数量'}</button><div class="quantity-control"><button data-cart-change="-1" data-id="${item.id}" aria-label="减少${item.name}数量" ${item.quantity === 1 ? 'disabled' : ''}><i data-lucide="minus"></i></button><output>${item.quantity}</output><button data-cart-change="1" data-id="${item.id}" aria-label="增加${item.name}数量" ${item.quantity >= maxCartQuantity ? 'disabled' : ''}><i data-lucide="plus"></i></button></div></div><div class="item-end"><span class="item-price">${money(item.unitPrice * item.quantity)}</span><button class="remove-item" data-remove="${item.id}" aria-label="移除${item.name}">移除</button></div></article>`).join('');
+    $('#cart-content').innerHTML = state.cart.map(item => `<article class="cart-item">${item.image ? `<img src="${imageBase}${item.image}" alt="${item.name}">` : `<div class="dish-symbol" style="width:64px;height:67px"><i data-lucide="${item.icon}"></i></div>`}<div><h3 class="cart-item-title">${item.name}</h3><p>${item.labels.join('，') || '标准份'}</p><button class="edit-item" data-edit="${item.id}" aria-label="修改${item.name}${item.labels.length ? '口味' : '数量'}">${item.labels.length ? '修改口味' : '修改数量'}</button><div class="quantity-control"><button data-cart-change="-1" data-id="${item.id}" aria-label="减少${item.name}数量" ${item.quantity === 1 ? 'disabled' : ''}><i data-lucide="minus"></i></button><output>${item.quantity}</output><button data-cart-change="1" data-id="${item.id}" aria-label="增加${item.name}数量" ${item.quantity >= maxCartQuantity ? 'disabled' : ''}><i data-lucide="plus"></i></button></div></div><div class="item-end"><span class="item-price">${money(item.unitPrice * item.quantity)}</span><button class="remove-item" data-remove="${item.id}" aria-label="移除${item.name}">移除</button></div></article>`).join('');
   }
   $('#cart-total').textContent = money(state.cart.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0));
   icons();

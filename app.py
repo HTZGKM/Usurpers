@@ -1,17 +1,28 @@
-from flask import Flask, jsonify
-from flask_cors import CORS
+from flask import Flask, jsonify, render_template
 
 from restaurant.auth.routes import auth_bp
 from restaurant.db import ensure_database
 
 def create_app() -> Flask:
-    app = Flask(__name__)
+    app = Flask(
+        __name__,
+        template_folder="restaurant/templates",
+        static_folder="restaurant/static",
+        static_url_path="/static",
+    )
 
     app.config["SECRET_KEY"] = "dev-secret-key"
-    CORS(app, supports_credentials=True)
 
     ensure_database()
     app.register_blueprint(auth_bp)
+
+    @app.get("/")
+    def home():
+        return render_template("customer/index.html")
+
+    @app.get("/album")
+    def album():
+        return render_template("customer/album.html")
 
     @app.get("/health")
     def health():
