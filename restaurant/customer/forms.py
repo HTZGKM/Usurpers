@@ -13,49 +13,49 @@ from wtforms.validators import InputRequired, Length, NumberRange, Optional, Val
 
 class BookingForm(FlaskForm):
     booking_date = DateField(
-        "用餐日期",
+        "Dining date",
         format="%Y-%m-%d",
-        validators=[InputRequired("请选择用餐日期。")],
+        validators=[InputRequired("Select a dining date.")],
     )
     time_slot_id = IntegerField(
-        "用餐时段",
-        validators=[InputRequired("请选择用餐时段。"), NumberRange(min=1)],
+        "Time slot",
+        validators=[InputRequired("Select a time slot."), NumberRange(min=1)],
     )
     party_size = IntegerField(
-        "用餐人数",
-        validators=[InputRequired("请输入用餐人数。"), NumberRange(min=1)],
+        "Party size",
+        validators=[InputRequired("Enter the party size."), NumberRange(min=1)],
     )
-    submit = SubmitField("确认订座")
+    submit = SubmitField("Confirm Booking")
 
 
 class BookingEditForm(BookingForm):
-    submit = SubmitField("保存预订修改")
+    submit = SubmitField("Save Booking Changes")
 
 
 class CancelBookingForm(FlaskForm):
-    submit = SubmitField("取消预订")
+    submit = SubmitField("Cancel Booking")
 
 
 class OrderItemForm(Form):
     dish_id = IntegerField(
-        "菜品编号",
-        validators=[InputRequired("缺少菜品编号。"), NumberRange(min=1)],
+        "Dish ID",
+        validators=[InputRequired("A dish ID is required."), NumberRange(min=1)],
     )
     quantity = IntegerField(
-        "数量",
-        validators=[InputRequired("请输入数量。"), NumberRange(min=1)],
+        "Quantity",
+        validators=[InputRequired("Enter a quantity."), NumberRange(min=1)],
     )
-    note = StringField("备注", validators=[Optional(), Length(max=200)])
+    note = StringField("Notes", validators=[Optional(), Length(max=200)])
 
 
 class OrderForm(FlaskForm):
     items = FieldList(FormField(OrderItemForm))
-    submit = SubmitField("确认下单")
+    submit = SubmitField("Place Order")
 
     def validate_items(self, items):
         if not items.entries:
-            raise ValidationError("请至少选择一道菜。")
+            raise ValidationError("Select at least one dish.")
 
 
 class PaymentForm(FlaskForm):
-    submit = SubmitField("确认付款")
+    submit = SubmitField("Confirm Payment")
