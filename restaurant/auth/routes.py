@@ -1,211 +1,139 @@
-from flask import Blueprint, jsonify, request, session
+from contextlib import closing
+from hmac import compare_digest
+from sqlite3 import IntegrityError
+
+from flask import Blueprint, flash, jsonify, redirect, render_template, session, url_for
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from restaurant.db.database import get_connection, hash_password
 
+from .forms import LoginForm, LogoutForm, RegisterForm
+
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
-STAFF_ROLES = { "frontdesk", "kitchen"}
 
-def find_user(account: str, password: str) -> dict[str, str] | None:
-    account = account.strip()
-    password = hash_password(password)
-    
-    with get_connection() as connection:
-        staff = connection.execute(
-            """
-            SELECT email, name, role, password
-            FROM staff
-            WHERE email = ?
-            """,
-            (account,),
-        ).fetchone()
 
-        if staff and staff["password"] == password:
-            return {
-                "username": staff["email"],
-                "name": staff["name"],
-                "role": staff["role"],
-            }
-        
-        customer = connection.execute(
-            """
-            SELECT customer_phone, name, password
-            FROM customers
-            WHERE customer_phone = ?
-            """,
-            (account,),
-        ).fetchone()
+def _is_active_staff(member):
+    return member is not None and (
+        "is_active" not in member.keys() or member["is_active"] == 1
+    )
 
-        if customer and customer["password"] == password:
-            return {
-                "username": customer["customer_phone"],
-                "name": customer["name"],
-                "role": "customer",
-            }
+
+def _authenticate(account, password):
+    with closing(get_connection()) as connection, connection:
+        if "@" in account:
+            member = connection.execute(
+                "SELECT * FROM staff WHERE email = ?",
+                (account.lower(),),
+            ).fetchone()
+            if not _is_active_staff(member):
+                return None
+            identity = {"staff_id": member["staff_id"]}
+            update_password = "UPDATE staff SET password = ? WHERE staff_id = ? AND password = ?"
+            key = member["staff_id"]
+        else:
+            member = connection.execute(
+                "SELECT customer_phone, password FROM customers WHERE customer_phone = ?",
+                (account,),
+            ).fetchone()
+            identity = {"customer_phone": account}
+            update_password = "UPDATE customers SET password = ? WHERE customer_phone = ? AND password = ?"
+            key = account
+
+        if member is None:
+            return None
+
+        stored_password = member["password"]
+        if "$" in stored_password:
+            return identity if check_password_hash(stored_password, password) else None
+        if not compare_digest(stored_password, hash_password(password)):
+            return None
+
+        connection.execute(update_password, (generate_password_hash(password), key, stored_password))
+        return identity
+
+
+def current_account():
+    identity = session.get("account")
+    if not identity:
+        return None
+
+    with closing(get_connection()) as connection:
+        if "staff_id" in identity:
+            member = connection.execute(
+                "SELECT * FROM staff WHERE staff_id = ?",
+                (identity["staff_id"],),
+            ).fetchone()
+            if _is_active_staff(member):
+                return {"username": member["email"], "name": member["name"], "role": member["role"]}
+        else:
+            customer = connection.execute(
+                "SELECT customer_phone, name FROM customers WHERE customer_phone = ?",
+                (identity["customer_phone"],),
+            ).fetchone()
+            if customer:
+                return {
+                    "username": customer["customer_phone"],
+                    "name": customer["name"],
+                    "role": "customer",
+                }
+
+    session.pop("account", None)
     return None
 
 
-def new_user(name: str, phone: str, role: str, email: str, password: str) -> dict[str, str] | None:
-    name = name.strip()
-    phone = phone.strip()
-    role = role.strip().lower()
-    email = email.strip().lower()
-    password = hash_password(password)
-
-    with get_connection() as connection:
-        if role == "customer":
-            existing_customer = connection.execute(
-                """
-                SELECT 1
-                FROM customers
-                WHERE customer_phone = ?
-                """,
-                (phone,),
-            ).fetchone()
-            if existing_customer:
-                return None
-
-            connection.execute(
-                """
-                INSERT INTO customers (customer_phone, name, password)
-                VALUES (:customer_phone, :name, :password)
-                """,
-                {
-                    "customer_phone": phone,
-                    "name": name,
-                    "password": password,
-                },
-            )
-            connection.commit()
-            return {
-                "username": phone,
-                "name": name,
-                "role": "customer",
-            }
-
-        if role in STAFF_ROLES:
-            existing_staff = connection.execute(
-                """
-                SELECT 1
-                FROM staff
-                WHERE email = ? OR phone = ?
-                """,
-                (email, phone),
-            ).fetchone()
-            if existing_staff:
-                return None
-
-            connection.execute(
-                """
-                INSERT INTO staff (name, role, phone, email, password)
-                VALUES (:name, :role, :phone, :email, :password)
-                """,
-                {
-                    "name": name,
-                    "role": role,
-                    "phone": phone,
-                    "email": email,
-                    "password": password,
-                },
-            )
-            connection.commit()
-            return {
-                "username": email,
-                "name": name,
-                "role": role,
-            }
-
-    return None
-
-@auth_bp.post("/login")
+@auth_bp.route("/login", methods=["GET", "POST"])
 def login():
-    data = request.get_json(silent=True) or {}
-    username = (data.get("username") or "").strip()
-    password = data.get("password") or ""
+    form = LoginForm()
+    if form.validate_on_submit():
+        identity = _authenticate(form.account.data, form.password.data)
+        if identity is not None:
+            session.clear()
+            session["account"] = identity
+            user = current_account()
+            if user:
+                section = "account" if user["role"] == "customer" else "workspace"
+                return redirect(url_for("home", _anchor=section), code=303)
+        form.account.errors.append("Invalid account or password.")
 
-    if not username or not password:
-        return jsonify({
-            "ok": False,
-            "message": "请填写用户名和密码。"
-        }), 400
+    return render_template("auth/form.html", form=form, title="Log In", endpoint="auth.login")
 
-    user = find_user(username, password)
-    if not user:
-        return jsonify({
-            "ok": False,
-            "message": "用户名或密码不正确。"
-        }), 401
 
-    session["user"] = user
-
-    return jsonify({
-        "ok": True,
-        "user": user
-    })
-
-@auth_bp.post("/register")
+@auth_bp.route("/register", methods=["GET", "POST"])
 def register():
-    data = request.get_json(silent=True) or {}
-    name = (data.get("name") or "").strip()
-    phone = (data.get("phone") or "").strip()
-    email = (data.get("email") or "").strip()
-    password = data.get("password") or ""
-    role = (data.get("role") or "customer").strip().lower()
+    form = RegisterForm()
+    if form.validate_on_submit():
+        try:
+            with closing(get_connection()) as connection, connection:
+                connection.execute(
+                    """
+                    INSERT INTO customers (customer_phone, name, password)
+                    VALUES (?, ?, ?)
+                    """,
+                    (form.phone_number.data, form.name.data, generate_password_hash(form.password.data)),
+                )
+        except IntegrityError:
+            form.phone_number.errors.append("This phone number is already registered.")
+        else:
+            flash("Your account was created. Please log in.", "success")
+            return redirect(url_for("auth.login"), code=303)
 
-    if not name or not password:
-        return jsonify({
-            "ok": False,
-            "message": "请填写姓名和密码。"
-        }), 400
+    return render_template(
+        "auth/form.html", form=form, title="Create a Customer Account", endpoint="auth.register"
+    )
 
-    if role == "customer" and not phone:
-        return jsonify({
-            "ok": False,
-            "message": "顾客注册需要填写手机号。"
-        }), 400
 
-    if role in STAFF_ROLES and (not phone or not email):
-        return jsonify({
-            "ok": False,
-            "message": "员工注册需要填写手机号和邮箱。"
-        }), 400
-
-    if role != "customer" and role not in STAFF_ROLES:
-        return jsonify({
-            "ok": False,
-            "message": "角色不合法。"
-        }), 400
-
-    user = new_user(name, phone, role, email, password)
-    if not user:
-        return jsonify({
-            "ok": False,
-            "message": "账号已存在，或注册信息不完整。"
-        }), 409
-
-    session["user"] = user
-
-    return jsonify({
-        "ok": True,
-        "user": user
-    }), 201
-
-#session管理
 @auth_bp.get("/me")
 def me():
-    user = session.get("user")
-    if not user:
-        return jsonify({
-            "ok": False,
-            "message": "未登录。"
-        }), 401
+    user = current_account()
+    if user is None:
+        return jsonify(ok=False, message="You are not logged in."), 401
+    return jsonify(ok=True, user=user)
 
-    return jsonify({
-        "ok": True,
-        "user": user
-    })
+
 @auth_bp.post("/logout")
 def logout():
-    session.pop("user", None)
-    return jsonify({
-        "ok": True
-    })
+    form = LogoutForm()
+    if not form.validate_on_submit():
+        return "Invalid logout request.", 400
+    session.clear()
+    return redirect(url_for("auth.login"), code=303)
