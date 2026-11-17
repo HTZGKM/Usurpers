@@ -9,7 +9,7 @@ COMP3019J 小组餐厅网站项目（Topic 2 — Restaurant Booking and Ordering
 在仓库根目录执行：
 
 ```bash
-python -m pip install Flask
+python -m pip install Flask Flask-WTF
 python app.py
 ```
 

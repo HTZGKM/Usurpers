@@ -1,108 +1,157 @@
-# 前台工作首页
-def dashboard():
-    pass
+from flask import Blueprint, abort, redirect, url_for
+
+from restaurant.auth.routes import current_account
+
+from .forms import (
+    CancelBookingForm,
+    CancelOrderItemForm,
+    CheckInForm,
+    CloseVisitForm,
+    ConfirmPaymentForm,
+    ServeItemForm,
+    StaffBookingEditForm,
+    StaffBookingForm,
+    StaffOrderForm,
+    WalkInForm,
+)
+
+frontdesk_bp = Blueprint("frontdesk", __name__, url_prefix="/frontdesk")
 
 
-# 查看和筛选订座记录
+@frontdesk_bp.before_request
+def require_frontdesk_role():
+    account = current_account()
+    if account is None:
+        return redirect(url_for("auth.login"), code=303)
+    if account["role"] != "frontdesk":
+        abort(403)
+
+
+@frontdesk_bp.get("/bookings")
 def bookings():
+    # TODO: Filter bookings and table availability.
     pass
 
 
-# 代顾客创建订座
+@frontdesk_bp.get("/bookings/new")
+def new_booking():
+    # TODO: Show the staff booking form.
+    pass
+
+
+@frontdesk_bp.post("/bookings")
 def create_booking():
-    pass
+    form = StaffBookingForm()
+    if form.validate_on_submit():
+        # TODO: Create the guest booking.
+        pass
+
+    # TODO: Handle form errors.
 
 
-# 代顾客修改订座
+@frontdesk_bp.route("/bookings/<int:booking_id>/edit", methods=["GET", "POST"])
 def edit_booking(booking_id):
-    pass
+    form = StaffBookingEditForm()
+    if form.validate_on_submit():
+        # TODO: Update the booking.
+        pass
+
+    # TODO: Load the existing booking. Show the form or errors.
 
 
-# 代顾客取消订座
+@frontdesk_bp.post("/bookings/<int:booking_id>/cancel")
 def cancel_booking(booking_id):
-    pass
+    form = CancelBookingForm()
+    if form.validate_on_submit():
+        # TODO: Cancel the booking.
+        pass
+
+    # TODO: Handle form errors.
 
 
-# 查看餐桌和时段占用情况
-def tables():
-    pass
-
-
-# 登记预约顾客到店
+@frontdesk_bp.post("/bookings/<int:booking_id>/check-in")
 def register_arrival(booking_id):
-    pass
+    form = CheckInForm()
+    if form.validate_on_submit():
+        # TODO: Check in the guest.
+        pass
+
+    # TODO: Handle form errors.
 
 
-# 登记没有预约的现场顾客
+@frontdesk_bp.post("/walk-ins")
 def register_walk_in():
-    pass
+    form = WalkInForm()
+    if form.validate_on_submit():
+        # TODO: Register the walk-in.
+        pass
+
+    # TODO: Handle form errors.
 
 
-# 为堂食顾客分配餐桌
-def assign_table(dining_session_id):
-    pass
-
-
-# 修改餐桌状态
-def update_table_status(table_id):
-    pass
-
-
-# 结束堂食并释放餐桌
-def close_dining_session(dining_session_id):
-    pass
-
-
-# 查看和筛选订单
-def orders():
-    pass
-
-
-# 代顾客提前订菜
-def create_preorder():
-    pass
-
-
-# 代顾客提交堂食订单
-def create_dine_in_order(dining_session_id):
-    pass
-
-
-# 代顾客修改订单
-def edit_order(order_id):
-    pass
-
-
-# 代顾客取消订单
-def cancel_order(order_id):
-    pass
-
-
-# 查看菜单管理页面
+@frontdesk_bp.get("/menu")
 def menu():
+    # TODO: Show the current menu.
     pass
 
 
-# 调整菜品价格
-def update_menu_price(menu_item_id):
+@frontdesk_bp.get("/orders")
+def orders():
+    # TODO: Filter guest orders.
     pass
 
 
-# 调整菜品上架和供应状态
-def update_menu_availability(menu_item_id):
+@frontdesk_bp.get("/orders/<int:order_id>")
+def order_detail(order_id):
+    # TODO: Show the order details.
     pass
 
 
-# 查看正在制作的菜品
-def cooking_items():
-    pass
+@frontdesk_bp.post("/orders")
+def create_dine_in_order():
+    form = StaffOrderForm()
+    if form.validate_on_submit():
+        # TODO: Create the dine-in order.
+        pass
+
+    # TODO: Handle form errors.
 
 
-# 按菜品状态查询已经制作完成、等待上桌的菜品
-def ready_items():
-    pass
+@frontdesk_bp.post("/orders/<int:order_id>/items/<int:order_item_id>/cancel")
+def cancel_order_item(order_id, order_item_id):
+    form = CancelOrderItemForm()
+    if form.validate_on_submit():
+        # TODO: Cancel the order item.
+        pass
+
+    # TODO: Handle form errors.
 
 
-# 确认菜品已经上桌
-def serve_item(order_item_id):
-    pass
+@frontdesk_bp.post("/orders/<int:order_id>/items/<int:order_item_id>/serve")
+def serve_item(order_id, order_item_id):
+    form = ServeItemForm()
+    if form.validate_on_submit():
+        # TODO: Mark the item as served.
+        pass
+
+    # TODO: Handle form errors.
+
+
+@frontdesk_bp.post("/orders/<int:order_id>/pay")
+def confirm_payment(order_id):
+    form = ConfirmPaymentForm()
+    if form.validate_on_submit():
+        # TODO: Record the in-person payment.
+        pass
+
+    # TODO: Handle form errors.
+
+
+@frontdesk_bp.post("/visits/<int:visit_id>/close")
+def close_dining_session(visit_id):
+    form = CloseVisitForm()
+    if form.validate_on_submit():
+        # TODO: Close the visit and release the table.
+        pass
+
+    # TODO: Handle form errors.

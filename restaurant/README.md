@@ -7,7 +7,7 @@
 在仓库根目录运行：
 
 ```bash
-python -m pip install Flask
+python -m pip install Flask Flask-WTF
 python app.py
 ```
 
