@@ -1,4 +1,6 @@
-from flask import Blueprint
+from flask import Blueprint, abort, redirect, url_for
+
+from restaurant.auth.routes import current_account
 
 from .forms import (
     CancelBookingForm,
@@ -15,7 +17,14 @@ from .forms import (
 
 frontdesk_bp = Blueprint("frontdesk", __name__, url_prefix="/frontdesk")
 
-# TODO: Require the frontdesk role.
+
+@frontdesk_bp.before_request
+def require_frontdesk_role():
+    account = current_account()
+    if account is None:
+        return redirect(url_for("auth.login"), code=303)
+    if account["role"] != "frontdesk":
+        abort(403)
 
 
 @frontdesk_bp.get("/bookings")

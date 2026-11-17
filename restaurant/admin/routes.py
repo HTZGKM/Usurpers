@@ -1,4 +1,6 @@
-from flask import Blueprint
+from flask import Blueprint, abort, redirect, url_for
+
+from restaurant.auth.routes import current_account
 
 from .forms import (
     ArchiveDishForm,
@@ -11,7 +13,14 @@ from .forms import (
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
-# TODO: Require the admin role.
+
+@admin_bp.before_request
+def require_admin_role():
+    account = current_account()
+    if account is None:
+        return redirect(url_for("auth.login"), code=303)
+    if account["role"] != "admin":
+        abort(403)
 
 
 @admin_bp.get("/orders")

@@ -1,10 +1,19 @@
-from flask import Blueprint
+from flask import Blueprint, abort, redirect, url_for
+
+from restaurant.auth.routes import current_account
 
 from .forms import DishAvailabilityForm, FinishCookingForm
 
 kitchen_bp = Blueprint("kitchen", __name__, url_prefix="/kitchen")
 
-# TODO: Require the kitchen role.
+
+@kitchen_bp.before_request
+def require_kitchen_role():
+    account = current_account()
+    if account is None:
+        return redirect(url_for("auth.login"), code=303)
+    if account["role"] != "kitchen":
+        abort(403)
 
 
 @kitchen_bp.get("/menu")
