@@ -1,58 +1,93 @@
-# 顾客首页
-def home():
-    pass
+from flask import Blueprint
+
+from .forms import (
+    BookingEditForm,
+    BookingForm,
+    CancelBookingForm,
+    OrderForm,
+    PaymentForm,
+)
+
+customer_bp = Blueprint("customer", __name__)
+
+# TODO: Check customer access and record ownership.
 
 
-# 查看菜谱和菜品信息
+@customer_bp.get("/menu")
 def menu():
+    # TODO: Show the menu.
     pass
 
 
-# 填写并提交网页订座
-def booking():
+@customer_bp.get("/bookings")
+def bookings():
+    # TODO: List the customer's bookings.
     pass
 
 
-# 修改自己的订座
+@customer_bp.get("/bookings/new")
+def new_booking():
+    # TODO: Show the booking form and time slots.
+    pass
+
+
+@customer_bp.post("/bookings")
+def create_booking():
+    form = BookingForm()
+    if form.validate_on_submit():
+        # TODO: Create the booking.
+        pass
+
+    # TODO: Handle form errors.
+
+
+@customer_bp.route("/bookings/<int:booking_id>/edit", methods=["GET", "POST"])
 def edit_booking(booking_id):
-    pass
+    form = BookingEditForm()
+    if form.validate_on_submit():
+        # TODO: Update the customer's booking.
+        pass
+
+    # TODO: Load the existing booking. Show the form or errors.
 
 
-# 取消自己的订座
+@customer_bp.post("/bookings/<int:booking_id>/cancel")
 def cancel_booking(booking_id):
+    form = CancelBookingForm()
+    if form.validate_on_submit():
+        # TODO: Cancel the customer's booking.
+        pass
+
+    # TODO: Handle form errors.
+
+
+@customer_bp.get("/orders")
+def orders():
+    # TODO: List the customer's orders.
     pass
 
 
-# 订座后提前点菜
-def preorder(booking_id):
-    pass
-
-
-# 外送点菜
-def delivery_order():
-    pass
-
-
-# 到店堂食点餐
-def dine_in_order():
-    pass
-
-
-# 确认并提交点菜订单
+@customer_bp.post("/orders")
 def confirm_order():
-    pass
+    form = OrderForm()
+    if form.validate_on_submit():
+        # TODO: Create the order.
+        pass
+
+    # TODO: Handle form errors.
 
 
-# 修改自己的订单
-def edit_order(order_id):
-    pass
-
-
-# 取消自己的订单
-def cancel_order(order_id):
-    pass
-
-
-# 查看自己的订单详情、制作状态和预计等待信息
+@customer_bp.get("/orders/<int:order_id>")
 def order_status(order_id):
+    # TODO: Show the customer's order progress.
     pass
+
+
+@customer_bp.post("/pay/<int:order_id>")
+def pay_order(order_id):
+    form = PaymentForm()
+    if form.validate_on_submit():
+        # TODO: Record the simulated payment.
+        pass
+
+    # TODO: Handle form errors.
