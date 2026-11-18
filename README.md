@@ -17,6 +17,14 @@ python app.py
 
 账号登录和注册使用 SQLite。菜单、订座和下单仍是前端演示。详细功能、素材来源和演示边界见 [前端说明](restaurant/README.md)。
 
+### 顾客账号联调
+
+1. 打开 `/#account`，选择 **Register**，使用新的 11 位测试手机号注册。
+2. 在 **Sign in** 先输入错误密码检查提示，再用正确密码登录。刷新页面，访问 `/auth/me` 可看到当前顾客。
+3. 在账户页点击 **Sign out**，再次访问 `/auth/me` 应返回 HTTP 401。也可以从 `/auth/register` 和 `/auth/login` 直接测试原生 Jinja 表单。
+
+菜单有 14 道示例菜品。订座、购物袋和模拟付款保存在当前浏览器标签页，前台与厨房暂时收不到这些记录。
+
 ## SQLite 初始化
 
 项目已补充最小可运行的 SQLite 初始化脚本。首次执行会自动创建 `restaurant/data/shuangfen.db`，并写入默认员工、顾客、餐桌、菜品、订单和订单明细。

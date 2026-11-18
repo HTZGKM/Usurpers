@@ -1,0 +1,17 @@
+<section class="page booking-page" id="page-booking" aria-labelledby="booking-title" hidden>
+  {% from 'customer/_components.html' import poster %}
+  {{ poster('Book a table', '', 'atelier/editorial/reservation.webp', 'A quiet table set for two beside the window') }}
+  <h1 class="sr-only" id="booking-title">Book a table</h1>
+  <div class="booking-sheet dark-panel"><span class="eyebrow" lang="en">Reservation</span><h2 id="booking-form-title">Reserve a table</h2>
+    <form id="reservation-form">
+      <div class="booking-fields"><label>Date<input type="date" name="booking_date" id="booking-date" required></label>
+      <label>Party size<select name="party_size" id="booking-people">{% for n in range(1,7) %}<option value="{{ n }}" {% if n == 2 %}selected{% endif %}>{{ n }} {{ 'guest' if n == 1 else 'guests' }}</option>{% endfor %}</select></label></div>
+      <fieldset><legend>Arrival time</legend><div class="slot-options">{% for t in ('17:30','18:00','19:30') %}<label><input type="radio" name="time_slot_id" required value="{{ t }}" {% if loop.first %}checked{% endif %}><span>{{ t }}</span></label>{% endfor %}</div></fieldset>
+      <p class="muted">Check in with the host when you arrive.</p>
+      <button class="button primary wide" id="continue-booking">Confirm reservation <i data-lucide="arrow-right"></i></button>
+      <p class="small muted">This demo saves your reservation in this tab.</p>
+      <p role="status" id="booking-feedback"></p>
+      <a class="text-link" href="#account">My reservations</a>
+    </form>
+  </div>
+</section>

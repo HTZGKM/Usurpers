@@ -1,0 +1,17 @@
+{% macro photo(name, alt, eager=false, cls='') -%}
+<img class="{{ cls }}" src="{{ url_for('static', filename='images/' ~ name) }}" alt="{{ alt }}" {% if eager %}fetchpriority="high"{% else %}loading="lazy"{% endif %}>
+{%- endmacro %}
+
+{% macro poster(title, translation, image, alt) -%}
+<div class="poster">
+  {{ photo(image, alt, true) }}
+  <div class="poster-title">{% if translation %}<span>{{ translation }}</span>{% endif %}<p lang="en">{{ title }}</p></div>
+</div>
+{%- endmacro %}
+
+{% macro entry_card(target, label, image, alt) -%}
+<a href="#{{ target }}" class="entry-card">
+  {{ photo(image, alt) }}
+  <span class="cut-corner">{{ label }} <span class="round-arrow" aria-hidden="true"><i data-lucide="arrow-right"></i></span></span>
+</a>
+{%- endmacro %}

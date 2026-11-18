@@ -4,10 +4,10 @@ filters.forEach(button => button.addEventListener('click', () => {
   filters.forEach(item => item.setAttribute('aria-pressed', String(item === button)));
   let count = 0;
   cards.forEach(card => {
-    card.hidden = button.dataset.filter !== '全部' && card.dataset.category !== button.dataset.filter;
+    card.hidden = button.dataset.filter !== 'All' && card.dataset.category !== button.dataset.filter;
     if (!card.hidden) count++;
   });
-  document.getElementById('album-count').textContent = `${count} 张照片`;
+  document.getElementById('album-count').textContent = `${count} photographs`;
 }));
 const dialog = document.querySelector('dialog');
 document.querySelectorAll('[data-photo]').forEach(button => button.addEventListener('click', () => {
@@ -17,7 +17,7 @@ document.querySelectorAll('[data-photo]').forEach(button => button.addEventListe
   document.getElementById('photo-title').textContent = button.dataset.title;
   const source = document.getElementById('photo-source');
   source.href = button.dataset.source;
-  source.textContent = `${button.dataset.credit} · 查看原图来源 ↗`;
+  source.textContent = `${button.dataset.credit} · View original ↗`;
   dialog.showModal();
 }));
 document.querySelector('.close').addEventListener('click', () => dialog.close());

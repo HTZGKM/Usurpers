@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · Double Portion</title>
+</head>
+<body>
+  <main>
+    <h1>{{ title }}</h1>
+    {% for message in get_flashed_messages() %}<p role="status">{{ message }}</p>{% endfor %}
+    <form action="{{ url_for(endpoint) }}" method="post">
+      {{ form.hidden_tag() }}
+      {% for field in form if field.type not in ('CSRFTokenField', 'HiddenField', 'SubmitField') %}
+        <p>{{ field.label }} {{ field() }}</p>
+      {% endfor %}
+      {% for errors in form.errors.values() %}{% for error in errors %}
+        <p role="alert" data-form-error>{{ error }}</p>
+      {% endfor %}{% endfor %}
+      {{ form.submit() }}
+    </form>
+    <p><a href="{{ url_for('auth.register') if endpoint == 'auth.login' else url_for('auth.login') }}">{{ 'Create an account' if endpoint == 'auth.login' else 'Sign in' }}</a></p>
+    <a href="{{ url_for('home', _anchor='home') }}">The restaurant</a>
+  </main>
+</body>
+</html>

@@ -1,0 +1,63 @@
+{% from 'customer/_components.html' import photo, poster %}
+{% set sections = [('home','The Restaurant'),('menu','Menu'),('booking','Reservation'),('delivery','Delivery'),('journal','Journal')] %}
+<section class="page focus-page" id="page-index" aria-label="Double Portion restaurant directory">
+  <div class="focus-frame">
+    <h1 class="focus-signature">Double Portion</h1>
+    <nav class="focus-links" aria-label="Enter the restaurant">{% for route, label in sections %}
+      <a href="#{{ route }}">{{ label }}</a>{% endfor %}
+    </nav>
+  </div>
+</section>
+<section class="page focus-page" id="page-navigation" aria-label="House navigation" hidden>
+  <div class="focus-frame">
+    <a class="index-close" id="index-close" href="#home" aria-label="Close navigation"><i data-lucide="x"></i></a>
+    <h1 class="focus-signature">Double Portion</h1>
+    <nav class="focus-links" aria-label="House navigation">{% for route, label in sections %}
+      <a href="#{{ route }}">{{ label }}</a>{% endfor %}<a href="#account" id="account-nav">Your Table</a>
+    </nav>
+  </div>
+</section>
+
+<section class="page editorial-page" id="page-delivery" aria-label="Delivery" hidden>
+  {{ poster('Delivery', '', 'atelier/editorial/delivery-cover.webp', 'A white pizza inside a partly open takeaway box on dark marble') }}
+  <div class="delivery-grid">
+    <section class="folio-panel delivery-panel"><h2 class="ornament-title">Delivery hours</h2>
+      <dl class="delivery-facts"><div><dt>Lunch</dt><dd>Coming soon</dd></div><div><dt>Dinner</dt><dd>Coming soon</dd></div></dl>
+    </section>
+    <div class="kitchen-grid">{{ photo('atelier/editorial/delivery-mosaic.webp','Wrapping paper, thyme, a takeaway bag tied by hand and rosemary') }}</div>
+    <section class="folio-panel service-area"><i data-lucide="map-pin" aria-hidden="true"></i><h2>Service area</h2><p>Our neighbourhood delivery area will appear here when the service opens.</p></section>
+    <section class="folio-panel delivery-panel"><h2 class="ornament-title">From the kitchen</h2><p>For now, join us at the table. The full menu is available for dine-in.</p><a class="folio-link" href="#menu">Explore the menu <span>↗</span></a><a class="folio-link" href="#booking">Book a table <span>↗</span></a></section>
+  </div>
+</section>
+
+{% set stories = [
+  {'slug':'the-last-leaf','date':'18 Nov 2026','iso':'2026-11-18','category':'Pizza','title':'The last leaf goes on cold','intro':'The Margherita gets one last ingredient on its way to the table.','image':'journal-basil','thumb':'note-basil','thumb_alt':'Fresh basil on marble','alt':'A chef placing a basil leaf on a freshly baked pizza','dish':'pizza','link':'Explore the pizzas','body':[
+    ('Tomato, mozzarella, heat','The edge of the dough colours first. A few dark blisters rise, the cheese softens into the tomato, and a little oil gathers in the centre. That is the moment the pizza comes out.'),
+    ('Basil comes last','A fresh leaf folds in the warmth of the slice. Tear it and the green, peppery scent arrives at once. We leave that last part to the heat already in the pizza.'),
+    ('At the table','We like the first slice just as it is. For the second, drag the crust through the little pool of tomato left on the plate.')]},
+  {'slug':'double-cheddar','date':'12 Nov 2026','iso':'2026-11-12','category':'Burgers','title':'A second layer of cheddar','intro':'Two thin patties give the Double Cheddar its crisp edges.','image':'journal-cheddar','thumb':'note-cheddar','thumb_alt':'A small wedge of aged cheddar','alt':'A cook slicing aged cheddar with a steel knife','dish':'burger','link':'Explore the burgers','body':[
+    ('The edge of the griddle','A thin patty meets the griddle across a broad surface. The edges brown while the centre stays juicy. A second patty gives each bite another seam of that crust.'),
+    ('Between the layers','The cheddar goes on while the beef is still hot. Melted between the patties, it holds them together as the toasted bun gives way. A cold pickle finishes the bite.')]},
+  {'slug':'tea-over-ice','date':'06 Nov 2026','iso':'2026-11-06','category':'Drinks','title':'Tea over ice','intro':'A tall amber glass to go with the salt and heat of dinner.','image':'black-tea-pour','thumb':'note-tea','thumb_alt':'Loose tea in a tasting spoon','alt':'Amber tea poured over ice against a near-black backdrop','dish':'drinks','link':'Explore the drinks','body':[
+    ('An amber pour','Ice cracks as the black tea hits the glass. Against a dark table the colour catches the light at its edges, changing from deep copper to amber.'),
+    ('Something cold alongside','A little sweetness rounds out the tea. Try a sip after a hot, salty fry, while the glass is still beaded with condensation.')]}
+] %}
+<section class="page editorial-page" id="page-journal" aria-labelledby="journal-heading" hidden>
+  {{ poster('Journal', '', 'atelier/editorial/journal-cover.webp','Two cooks reviewing their kitchen notes at the pass') }}
+  <div class="folio-panel journal-panel">
+    <h1 class="ornament-title" id="journal-heading">Kitchen notes<br>&amp; new dishes</h1>
+    <div class="journal-list">{% for s in stories %}<a href="#story/{{ s.slug }}" class="journal-row">
+      {{ photo('atelier/editorial/' ~ s.thumb ~ '.webp',s.thumb_alt) }}
+      <div><time datetime="{{ s.iso }}">{{ s.date }}</time><h2>{{ s.title }}</h2><p>{{ s.intro }}</p></div>
+    </a>{% endfor %}</div>
+  </div>
+</section>
+{% for s in stories %}
+<section class="page editorial-page story-page" data-story="{{ s.slug }}" id="page-story-{{ s.slug }}" aria-labelledby="title-{{ s.slug }}" hidden>
+  <div class="poster story-photo">{{ photo('atelier/editorial/' ~ s.image ~ '.webp',s.alt) }}</div>
+  <article class="folio-panel story-panel">
+    <header><time datetime="{{ s.iso }}">{{ s.date }}</time><h1 id="title-{{ s.slug }}">{{ s.title }}</h1><span class="divider-mark" aria-hidden="true">◇</span></header>
+    {% for heading, paragraph in s.body %}<section><h2>{{ heading }}</h2><p>{{ paragraph }}</p></section>{% endfor %}
+    <footer><a class="folio-link" href="#journal">← Journal</a><a class="folio-link" href="#menu/{{ s.dish }}">{{ s.link }} ↗</a></footer>
+  </article>
+</section>{% endfor %}
