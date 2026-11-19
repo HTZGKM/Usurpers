@@ -1,0 +1,116 @@
+[
+  {
+    "key": "burger",
+    "category": "burger",
+    "name": "House Cheeseburger",
+    "price": 38,
+    "description": "Grilled beef, cheddar, lettuce, tomato and pickles.",
+    "extraPatty": true,
+    "sold": false
+  },
+  {
+    "key": "double",
+    "category": "burger",
+    "name": "Double Cheddar",
+    "price": 48,
+    "description": "Two seared beef patties with aged cheddar.",
+    "extraPatty": true,
+    "sold": false
+  },
+  {
+    "key": "chicken",
+    "category": "burger",
+    "name": "Herb Chicken",
+    "price": 42,
+    "description": "Herb-grilled chicken, butter lettuce and lemon yoghurt.",
+    "sold": false
+  },
+  {
+    "key": "portobello",
+    "category": "burger",
+    "name": "Portobello",
+    "price": 40,
+    "description": "Grilled portobello, baby greens and roasted garlic.",
+    "sold": false
+  },
+  {
+    "key": "fish",
+    "category": "burger",
+    "name": "Crisp Fish",
+    "price": 46,
+    "description": "Crumbed white fish, tartar sauce and shredded lettuce.",
+    "sold": false
+  },
+  {
+    "key": "pizza",
+    "category": "pizza",
+    "name": "Margherita",
+    "price": 58,
+    "description": "Blistered crust, tomato, mozzarella and fresh basil.",
+    "sold": false
+  },
+  {
+    "key": "mushroom",
+    "category": "pizza",
+    "name": "Mushroom & Pepper",
+    "price": 62,
+    "description": "Roasted mushrooms, sweet peppers and mozzarella over tomato.",
+    "sold": false
+  },
+  {
+    "key": "bianca",
+    "category": "pizza",
+    "name": "Bianca",
+    "price": 60,
+    "description": "A white pizza with ricotta, mozzarella and garden herbs.",
+    "sold": false
+  },
+  {
+    "key": "olive",
+    "category": "pizza",
+    "name": "Olive & Oregano",
+    "price": 56,
+    "description": "Black olives, tomato and oregano on a thin crust.",
+    "sold": false
+  },
+  {
+    "key": "potato",
+    "category": "pizza",
+    "name": "Potato & Rosemary",
+    "price": 64,
+    "description": "Thinly sliced potato, rosemary and a little sea salt.",
+    "sold": false
+  },
+  {
+    "key": "fries",
+    "category": "sides",
+    "name": "Sea Salt Fries",
+    "price": 18,
+    "description": "Sea salt, with tomato ketchup on the side.",
+    "sold": false
+  },
+  {
+    "key": "onion",
+    "category": "sides",
+    "name": "Crispy Onion Rings",
+    "price": 22,
+    "description": "Crisp onion rings with garlic sauce.",
+    "sold": true
+  },
+  {
+    "key": "lemon",
+    "category": "drinks",
+    "name": "Lemon Soda",
+    "price": 16,
+    "description": "Fresh lemon and sparkling water poured over ice.",
+    "sold": false
+  },
+  {
+    "key": "tea",
+    "category": "drinks",
+    "name": "Iced Black Tea",
+    "price": 14,
+    "description": "Lightly sweetened black tea, served over ice.",
+    "sold": false
+  }
+]

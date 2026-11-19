@@ -1,0 +1,11 @@
+{% macro floor_map(tables, staff=false) -%}
+<div class="floor{{ ' desk-floor' if staff }}" role="group" aria-label="Table map">
+  <span class="wall-label">Window seats</span><span class="bar-label">Service bar</span><span class="entry-label">Entrance</span>
+  {% for id, seats, x, y in tables %}
+  <button type="button" class="seat {{ 'small' if seats == 2 else 'long' if seats == 6 }}"
+          {% if staff %}data-desk-table="{{ id }}"{% else %}data-action="seat:{{ id }}"{% endif %}
+          aria-label="Table {{ id }}, {{ seats }} seats" aria-pressed="false"
+          style="left:{{ x }}%;top:{{ y }}%">{{ id }}</button>
+  {% endfor %}
+</div>
+{%- endmacro %}
