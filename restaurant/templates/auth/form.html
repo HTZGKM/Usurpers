@@ -14,8 +14,8 @@
       {% for field in form if field.type not in ('CSRFTokenField', 'HiddenField', 'SubmitField') %}
         <p>{{ field.label }} {{ field() }}</p>
       {% endfor %}
-      {% for errors in form.errors.values() %}{% for error in errors %}
-        <p role="alert" data-form-error>{{ error }}</p>
+      {% for field_name, errors in form.errors.items() %}{% for error in errors %}
+        <p role="alert" data-form-error="{{ field_name }}">{{ error }}</p>
       {% endfor %}{% endfor %}
       {{ form.submit() }}
     </form>

@@ -1,0 +1,137 @@
+{% from 'customer/_guest_parts.html' import sign_out %}
+{% from '_floor_map.html' import floor_map %}
+<div class="frontdesk" data-frontdesk>
+  <div class="desk-bar">
+    <button type="button" class="desk-brand" data-action="Home">Double Portion</button>
+    {{ sign_out(logout_form) }}
+  </div>
+  <div class="desk-heading">
+    <h1 tabindex="-1">Front desk</h1>
+    <div class="desk-heading-meta">
+      <time data-desk-date></time>
+      <span class="desk-demo">Demo workspace</span>
+    </div>
+  </div>
+
+  <div class="desk-grid">
+    <section class="desk-panel" aria-labelledby="desk-floor-title">
+      <div class="desk-panel-heading">
+        <h2 id="desk-floor-title">Dining room</h2>
+        <span data-desk-occupied></span>
+      </div>
+      {{ floor_map(tables, staff=true) }}
+      <ul class="desk-legend" aria-label="Table statuses">
+        <li><span data-tone="available"></span>Available</li>
+        <li><span data-tone="reserved"></span>Reserved</li>
+        <li><span data-tone="occupied"></span>Occupied</li>
+      </ul>
+      <div class="desk-floor-tools">
+        <p class="desk-floor-feedback" data-desk-floor-feedback role="status"></p>
+        <button type="button" class="desk-subtle" data-desk-open="walk-in" hidden>Seat walk-in</button>
+        <button type="button" class="desk-subtle" data-desk-open="service" hidden>Open table service</button>
+      </div>
+    </section>
+
+    <section class="desk-panel" aria-labelledby="desk-bookings-title">
+      <div class="desk-panel-heading">
+        <h2 id="desk-bookings-title">Today's reservations</h2>
+        <button type="button" class="desk-subtle" data-desk-open="new">New booking</button>
+      </div>
+      <div class="desk-filters">
+        <label>Date <input type="date" data-desk-view-date required></label>
+        <label>Time slot
+          <select data-desk-slot>
+            <option value="">All times</option>
+            {% for slot in slots %}<option value="{{ slot }}">{{ slot }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>Phone number
+          <input type="search" inputmode="tel" data-desk-search placeholder="Find by phone">
+        </label>
+      </div>
+      <p class="desk-booking-count" data-desk-booking-count></p>
+      <ul class="desk-booking-list" data-desk-bookings></ul>
+      <p class="desk-empty" data-desk-empty hidden>No matching reservations.</p>
+
+      <section class="desk-arrival" aria-labelledby="desk-arrival-title">
+        <h3 id="desk-arrival-title">Check in</h3>
+        <p data-desk-arrival-copy></p>
+        <form class="desk-check-in" data-desk-check-in hidden>
+          <label>Actual table <select name="table_id" required></select></label>
+          <button type="submit" class="desk-confirm">Confirm arrival</button>
+        </form>
+        <div class="desk-arrival-actions" data-desk-booking-actions hidden>
+          <button type="button" class="desk-subtle" data-desk-open="edit">Edit booking</button>
+          <button type="button" class="desk-subtle desk-danger" data-desk-open="cancel">Cancel booking</button>
+        </div>
+        <p class="desk-arrival-feedback" data-desk-arrival-feedback role="status" hidden></p>
+      </section>
+    </section>
+  </div>
+
+  <section class="desk-panel desk-service" data-desk-service aria-labelledby="desk-service-title" hidden>
+    <div class="desk-panel-heading">
+      <h2 id="desk-service-title" tabindex="-1">Table service</h2>
+      <span data-service-visit></span>
+    </div>
+    <div class="desk-service-grid">
+      <div class="desk-service-section">
+        <h3>Place an order</h3>
+        <form class="desk-editor" data-service-form>
+          <div class="desk-editor-fields">
+            <label>Dish <select name="dish" required></select></label>
+            <label>Quantity <input type="number" name="quantity" min="1" max="99" value="1" required></label>
+          </div>
+          <label>Kitchen note (optional) <input name="note" maxlength="200"></label>
+          <button class="desk-subtle" type="submit">Add item</button>
+        </form>
+        <ul class="desk-service-list" data-service-draft></ul>
+        <button type="button" class="desk-confirm" data-place-desk-order>Place order</button>
+      </div>
+      <div class="desk-service-section">
+        <h3>Orders and payment</h3>
+        <div data-service-orders></div>
+        <p class="desk-floor-feedback" data-service-feedback role="status"></p>
+        <button type="button" class="desk-subtle" data-close-desk-visit>Close visit</button>
+        <div class="desk-arrival-actions" data-confirm-desk-close hidden>
+          <span>Release this table?</span>
+          <button type="button" class="desk-subtle" data-keep-desk-visit>Keep open</button>
+          <button type="button" class="desk-confirm" data-release-desk-table>Release table</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <dialog class="desk-dialog" aria-labelledby="desk-dialog-title">
+    <div class="desk-panel-heading">
+      <h2 id="desk-dialog-title"></h2>
+      <button class="desk-dialog-close" type="button" data-desk-close aria-label="Close dialog">×</button>
+    </div>
+    <p data-desk-dialog-copy hidden></p>
+    <form class="desk-editor" data-desk-editor hidden>
+      <fieldset class="desk-editor-fields" data-desk-contact>
+        <label>Contact name <input name="contact_name" required maxlength="60"></label>
+        <label>Contact phone <input type="tel" name="phone_number" required maxlength="24" placeholder="Digits with optional +"></label>
+      </fieldset>
+      <div class="desk-editor-fields">
+        <label>Booking date <input type="date" name="booking_date" required></label>
+        <label>Arrival time
+          <select name="time_slot" required>
+            {% for slot in slots %}<option value="{{ slot }}">{{ slot }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>Party size <input type="number" name="party_size" min="1" required></label>
+      </div>
+      <p class="desk-form-error" data-desk-editor-error role="alert" hidden></p>
+      <button type="submit" class="desk-confirm" data-desk-editor-submit>Save booking</button>
+    </form>
+    <form class="desk-editor" data-desk-walk-in hidden>
+      <label>Party size <input type="number" name="party_size" min="1" required></label>
+      <p class="desk-form-error" data-desk-walk-error role="alert" hidden></p>
+      <button type="submit" class="desk-confirm">Confirm seating</button>
+    </form>
+    <form class="desk-editor" data-desk-cancellation hidden>
+      <button type="submit" class="desk-confirm desk-destructive">Confirm cancellation</button>
+    </form>
+  </dialog>
+</div>

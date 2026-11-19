@@ -1,0 +1,27 @@
+{{ cover('delivery-cover', 'Delivery', 'Pizza in a partly open takeaway box on a dark marble counter') }}
+<div class="delivery-grid">
+  <section class="panel delivery-panel" aria-labelledby="delivery-hours">
+    <h2 class="delivery-heading" id="delivery-hours" tabindex="-1">Delivery hours</h2>
+    <dl class="delivery-hours">
+      <div><dt>Lunch</dt><dd>Coming soon</dd></div>
+      <div><dt>Dinner</dt><dd>Coming soon</dd></div>
+    </dl>
+  </section>
+  <figure class="delivery-photo">
+    <img src="{{ url_for('static', filename='images/atelier/editorial/delivery-mosaic.webp') }}"
+         alt="Wrapping paper, herbs, a metal tray and a takeaway bag being tied by hand">
+  </figure>
+  <section class="panel delivery-panel delivery-area" aria-labelledby="delivery-area">
+    <span class="delivery-pin" aria-hidden="true"></span>
+    <h2 id="delivery-area">Service area</h2>
+    <p>Coming soon</p>
+  </section>
+  <section class="panel delivery-panel" aria-labelledby="delivery-kitchen">
+    <h2 class="delivery-heading" id="delivery-kitchen">From the kitchen</h2>
+    <p>For now, join us for burgers and pizza at the restaurant.</p>
+    <div class="delivery-links">
+      <button type="button" class="secondary" data-action="Menu">Explore the menu <span aria-hidden="true">↗</span></button>
+      <button type="button" class="secondary" data-action="Book a table">Book a table <span aria-hidden="true">↗</span></button>
+    </div>
+  </section>
+</div>

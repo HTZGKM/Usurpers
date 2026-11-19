@@ -1,0 +1,123 @@
+{% from 'customer/_guest_parts.html' import sign_out %}
+{% from '_floor_map.html' import floor_map %}
+{% set nav_groups = [('Operations', [('overview', 'Overview'), ('orders', 'Orders'), ('queue', 'Kitchen queue'), ('tables', 'Tables')]), ('Management', [('accounts', 'Accounts'), ('dishes', 'Dishes')])] %}
+<div class="admin-workspace" data-admin>
+  <aside class="admin-sidebar">
+    <div class="admin-identity"><strong>Double Portion</strong><span>Administrator</span></div>
+    <nav class="admin-nav" aria-label="Administration">
+      {% for group, sections in nav_groups %}
+      <div class="admin-nav-group">
+        <p>{{ group }}</p>
+        {% for key, title in sections %}
+        <button type="button" data-admin-tab="{{ key }}" aria-controls="admin-{{ key }}" aria-pressed="{{ 'true' if key == 'overview' else 'false' }}">{{ title }}</button>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </nav>
+    <div class="admin-sign-out">{{ sign_out(logout_form) }}</div>
+  </aside>
+
+  <div class="admin-content">
+    <div class="admin-heading">
+      <h1 data-admin-title tabindex="-1">Overview</h1>
+      <div class="admin-heading-meta"><time data-admin-today></time><span class="admin-demo">Demo workspace</span></div>
+    </div>
+    <p data-admin-feedback role="status" class="admin-feedback" hidden></p>
+
+    <section id="admin-overview" aria-label="Overview">
+      <div class="admin-metrics" data-admin-metrics></div>
+      <div class="admin-overview-grid">
+        <section class="admin-panel" aria-labelledby="admin-chart-title">
+          <div class="admin-panel-heading"><h2 id="admin-chart-title">Order status</h2><span data-admin-order-chart-total></span></div>
+          <div class="admin-chart" data-admin-order-chart></div>
+        </section>
+        <section class="admin-panel" aria-labelledby="admin-dining-title">
+          <div class="admin-panel-heading"><h2 id="admin-dining-title">Dining room</h2><button type="button" class="admin-action" data-admin-go="tables">View tables</button></div>
+          <dl class="admin-dining-summary" data-admin-dining></dl>
+        </section>
+      </div>
+      <section class="admin-panel admin-recent" aria-labelledby="admin-recent-title">
+        <div class="admin-panel-heading"><h2 id="admin-recent-title">Recent orders</h2><button type="button" class="admin-action" data-admin-go="orders">View all orders</button></div>
+        <div data-admin-recent></div>
+      </section>
+    </section>
+
+    <section class="admin-panel" id="admin-orders" aria-label="Orders" hidden>
+      <div class="admin-filters" data-admin-order-filters>
+        <label>Order date <input type="date" name="date"></label>
+        <label>Order status
+          <select name="status"><option value="">All statuses</option><option>In queue</option><option>Ready</option><option>Served</option><option>Cancelled</option></select>
+        </label>
+        <label>Payment
+          <select name="payment"><option value="">All payments</option><option>Paid</option><option>Unpaid</option><option>Not required</option></select>
+        </label>
+      </div>
+      <div data-admin-order-list></div>
+    </section>
+
+    <section class="admin-panel" id="admin-queue" aria-label="Kitchen queue" hidden>
+      <div class="admin-panel-heading"><h2>Items awaiting preparation</h2><span class="admin-muted">Read only</span></div>
+      <div data-admin-queue></div>
+    </section>
+
+    <section class="admin-panel" id="admin-tables" aria-label="Tables" hidden>
+      <div class="admin-filters" data-admin-table-filters>
+        <label>Service date <input type="date" name="date" required></label>
+        <label>Time slot
+          <select name="slot"><option value="">All times</option>{% for slot in slots %}<option>{{ slot }}</option>{% endfor %}</select>
+        </label>
+      </div>
+      <div class="admin-tables-grid">
+        {{ floor_map(tables, staff=true) }}
+        <div data-admin-table-list></div>
+      </div>
+    </section>
+
+    <section class="admin-panel" id="admin-accounts" aria-label="Accounts" hidden>
+      <div class="admin-panel-heading">
+        <label>Role
+          <select data-admin-role><option value="">All roles</option><option value="customer">Customer</option><option value="frontdesk">Front desk</option><option value="kitchen">Kitchen</option></select>
+        </label>
+        <button type="button" class="admin-action admin-primary" data-admin-edit="account">New staff account</button>
+      </div>
+      <div data-admin-account-list></div>
+    </section>
+
+    <section class="admin-panel" id="admin-dishes" aria-label="Dishes" hidden>
+      <div class="admin-panel-heading">
+        <label>Menu status
+          <select data-admin-dish-filter><option value="">All dishes</option><option>Available</option><option>Unavailable</option><option>Archived</option></select>
+        </label>
+        <button type="button" class="admin-action admin-primary" data-admin-edit="dish">New dish</button>
+      </div>
+      <div data-admin-dish-list></div>
+    </section>
+  </div>
+
+  <dialog class="admin-dialog" aria-labelledby="admin-dialog-title">
+    <div class="admin-panel-heading"><h2 id="admin-dialog-title"></h2><button type="button" class="admin-action admin-dialog-close" data-admin-close aria-label="Close dialog">×</button></div>
+    <div data-admin-detail hidden></div>
+    <form class="admin-form" data-admin-account-form hidden>
+      <label>Name <input name="name" maxlength="60" required></label>
+      <label>Role <select name="role"><option value="frontdesk">Front desk</option><option value="kitchen">Kitchen</option></select></label>
+      <label>Phone number <input name="phone" type="tel" maxlength="24" required></label>
+      <label>Email address <input name="email" type="email" maxlength="100" required></label>
+      <label data-admin-password>Password <input name="password" type="password" autocomplete="new-password" required></label>
+      <button type="submit" class="admin-action admin-primary">Save staff account</button>
+    </form>
+    <form class="admin-form" data-admin-dish-form hidden>
+      <label>Dish name <input name="name" maxlength="80" required></label>
+      <label>Category <select name="category">{% for key, label in categories.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></label>
+      <label>Price (¥) <input name="price" type="number" min="0.01" step="0.01" required></label>
+      <label>Preparation time (minutes) <input name="minutes" type="number" min="1" required></label>
+      <label class="admin-form-wide">Ingredients <textarea name="ingredients" rows="2" maxlength="300" required></textarea></label>
+      <label class="admin-form-wide">Image path (optional) <input name="image" maxlength="180"></label>
+      <button type="submit" class="admin-action admin-primary">Save dish</button>
+    </form>
+    <form class="admin-form admin-confirm" data-admin-confirm hidden>
+      <p data-admin-confirm-copy></p>
+      <button type="submit" class="admin-action admin-danger" data-admin-confirm-submit>Confirm</button>
+    </form>
+    <p data-admin-error role="alert" class="admin-error" hidden></p>
+  </dialog>
+</div>

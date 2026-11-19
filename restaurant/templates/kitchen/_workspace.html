@@ -1,0 +1,41 @@
+{% from 'customer/_guest_parts.html' import sign_out %}
+<div class="kitchen-workspace" data-kitchen>
+  <div class="kitchen-bar">
+    <button type="button" class="kitchen-brand" data-action="Home">Double Portion</button>
+    {{ sign_out(logout_form) }}
+  </div>
+
+  <div class="kitchen-content">
+    <div class="kitchen-heading">
+      <h1 tabindex="-1">Kitchen</h1>
+      <p class="kitchen-demo">Demo workspace</p>
+    </div>
+    <nav class="kitchen-nav" aria-label="Kitchen workspace">
+      <button type="button" data-kitchen-view="queue" aria-controls="kitchen-queue" aria-pressed="true">Queue</button>
+      <button type="button" data-kitchen-view="availability" aria-controls="kitchen-availability" aria-pressed="false">Availability</button>
+    </nav>
+
+    <section id="kitchen-queue" aria-labelledby="kitchen-queue-title">
+      <div class="kitchen-section-heading">
+        <h2 id="kitchen-queue-title">Preparation queue</h2>
+        <p data-kitchen-count role="status" tabindex="-1"></p>
+      </div>
+      <div class="kitchen-ticket-grid" data-kitchen-tickets></div>
+    </section>
+
+    <section id="kitchen-availability" aria-labelledby="kitchen-availability-title" hidden>
+      <div class="kitchen-section-heading">
+        <h2 id="kitchen-availability-title">Menu availability</h2>
+        <p data-availability-count role="status"></p>
+      </div>
+      <div class="kitchen-menu-grid">
+        {% for category, label in categories.items() %}
+        <section class="kitchen-menu-group" aria-labelledby="kitchen-category-{{ category }}">
+          <h3 id="kitchen-category-{{ category }}">{{ label }}</h3>
+          <ul class="kitchen-item-list" data-kitchen-category="{{ category }}"></ul>
+        </section>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</div>
