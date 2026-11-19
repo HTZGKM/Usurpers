@@ -1,9 +1,6 @@
-from contextlib import closing
-
 from flask import Blueprint, abort, redirect, url_for
 
 from restaurant.auth.routes import current_account
-from restaurant.db.database import get_connection
 
 from .forms import (
     BookingEditForm,
@@ -28,13 +25,8 @@ def _check_customer_access(*, order_id=None, booking_id=None):
         abort(501, description="Booking ownership checks are not available yet.")
 
     if order_id is not None:
-        with closing(get_connection()) as connection:
-            order = connection.execute(
-                "SELECT 1 FROM orders WHERE order_id = ? AND customer_phone = ?",
-                (order_id, account["username"]),
-            ).fetchone()
-        if order is None:
-            abort(404)
+        # TODO: Verify order ownership through the agreed service interface.
+        abort(501, description="Order ownership checks are not available yet.")
 
     return None
 
