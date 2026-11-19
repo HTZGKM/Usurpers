@@ -1,0 +1,30 @@
+{% from '_floor_map.html' import floor_map %}
+<div class="cover floor-cover">
+  <img src="{{ url_for('static', filename='images/atelier/editorial/reservation.webp') }}" alt="">
+  {{ header() }}
+  <div class="room">
+    <small class="context">Double Portion</small><h1>Dining room</h1>
+    {{ floor_map(tables) }}
+    <div class="legend"><span>Available</span><span class="chosen">Selected</span><span class="unavailable">Unavailable</span></div>
+  </div>
+</div>
+{% call panel('Reservation','Book a table') %}
+  <form id="reservation">
+    <div class="twocol">
+      <label class="field">Date<input type="date" id="date" required></label>
+      <label class="field">Party size<select id="guests">
+        {% for n in range(1,7) %}<option value="{{ n }}">{{ n }} {{ 'guest' if n == 1 else 'guests' }}</option>{% endfor %}
+      </select></label>
+    </div>
+    <fieldset><legend>Arrival time</legend>
+      {% for slot in slots %}<button type="button" class="choice" data-action="time:{{ slot }}" aria-pressed="false">{{ slot }}</button>{% endfor %}
+    </fieldset>
+    <div class="twocol">
+      <label class="field">Guest name<input id="name" autocomplete="name" required maxlength="60"></label>
+      <label class="field">Phone<input type="tel" id="phone" autocomplete="tel" required minlength="6" maxlength="24"></label>
+    </div>
+    <p class="summary" id="summary" aria-live="polite"></p>
+    <button class="primary" type="submit">Confirm reservation</button>
+    <p class="statusline" role="status"></p>
+  </form>
+{% endcall %}

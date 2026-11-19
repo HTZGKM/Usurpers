@@ -1,0 +1,25 @@
+{{ cover('place-setting', 'Menu') }}
+<article class="panel menu-list" aria-label="Food and drink menu">
+  <nav class="menu-tools" aria-label="Menu categories">
+    {% for key, label in categories.items() %}{{ button(label, 'section:' ~ key, 'choice') }}{% endfor %}
+  </nav>
+  {% for key, label in categories.items() %}
+  <section class="menu-section" id="section-{{ key }}">
+    <h2>{{ label }}</h2>
+    {% for dish in catalog if dish.category == key %}
+    <button type="button" class="row" data-action="dish:{{ dish.key }}">
+      <img src="{{ url_for('static', filename='images/atelier/catalog/' ~ dish.key ~ '.webp') }}" alt="">
+      <span class="dish-copy">
+        <span class="dish-line">
+          <span class="dish-title">{{ dish.name }}</span>
+          <span class="leader" aria-hidden="true"></span>
+          <span class="cost">{{ 'Sold out' if dish.sold else '¥' ~ dish.price }}</span>
+        </span>
+        <small class="desc">{{ dish.description }}</small>
+      </span>
+    </button>
+    {% endfor %}
+  </section>
+  {% endfor %}
+  <div id="bag-entry"></div>
+</article>

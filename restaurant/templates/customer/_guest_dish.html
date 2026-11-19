@@ -1,0 +1,23 @@
+<dialog class="dish-modal" aria-labelledby="dish-name">
+  <button type="button" class="close" data-action="close-dish" aria-label="Close dish details">Close ✕</button>
+  <div class="dish-image"><img alt=""></div>
+  <div class="dish-info">
+    <small class="context"></small>
+    <h2 id="dish-name"></h2>
+    <p class="dish-description"></p>
+    <div class="dish-customization">
+      <div class="dish-configuration"></div>
+      <label class="field dish-note">Kitchen note (optional)
+        <textarea rows="2" maxlength="160" placeholder="e.g. No onions"></textarea>
+      </label>
+    </div>
+    <p class="dish-error" role="alert" hidden></p>
+    <div class="dish-order-controls">
+      <div class="dish-options">
+        <div data-dish-quantity></div>
+        <strong class="rolling-price" data-dish-total aria-live="polite" aria-atomic="true"></strong>
+      </div>
+      <button type="button" class="primary" data-action="add">Add to bag</button>
+    </div>
+  </div>
+</dialog>

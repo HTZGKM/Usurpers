@@ -4,6 +4,8 @@ COMP3019J 小组餐厅网站项目（Topic 2 — Restaurant Booking and Ordering
 
 「双份」前端由 Flask 提供：页面在 [`restaurant/templates/customer/`](restaurant/templates/customer/)，样式、脚本和素材在 [`restaurant/static/`](restaurant/static/)。
 
+顾客端的新对话请先读 [顾客前端交接与验收路径](restaurant/templates/customer/README.md)。当前首页由 Jinja 渲染，预览、修改和提交均以本仓库为准。
+
 ## 本地运行
 
 在仓库根目录执行：
@@ -13,9 +15,17 @@ python -m pip install Flask Flask-WTF
 python app.py
 ```
 
-浏览器打开 <http://127.0.0.1:5000/>；摄影相册位于 <http://127.0.0.1:5000/album>。页面和登录接口使用同一个 Flask 服务，无需另外启动静态文件服务器。
+浏览器打开 <http://127.0.0.1:5000/>。页面和登录接口使用同一个 Flask 服务，无需另外启动静态文件服务器。
 
-账号登录和注册使用 SQLite。菜单、订座和下单仍是前端演示。详细功能、素材来源和演示边界见 [前端说明](restaurant/README.md)。
+账号登录和注册使用 SQLite。菜单、订座和下单仍是前端演示。运行入口和演示边界见 [前端说明](restaurant/README.md)。
+
+### 顾客账号联调
+
+1. 打开 `/#account`，选择 **Register**，使用新的 11 位测试手机号注册。
+2. 在 **Sign in** 先输入错误密码检查提示，再用正确密码登录。刷新页面，访问 `/auth/me` 可看到当前顾客。
+3. 在账户页点击 **Sign out**，再次访问 `/auth/me` 应返回 HTTP 401。也可以从 `/auth/register` 和 `/auth/login` 直接测试原生 Jinja 表单。
+
+菜单有 14 道示例菜品。订座、购物袋和模拟付款保存在当前浏览器标签页，前台与厨房暂时收不到这些记录。
 
 ## SQLite 初始化
 
