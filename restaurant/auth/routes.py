@@ -2,7 +2,7 @@ from contextlib import closing
 from hmac import compare_digest
 from sqlite3 import IntegrityError
 
-from flask import Blueprint, flash, jsonify, redirect, render_template, session, url_for
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from restaurant.db.database import get_connection, hash_password
@@ -32,7 +32,7 @@ def _authenticate(account, password):
             key = member["staff_id"]
         else:
             member = connection.execute(
-                "SELECT customer_phone, password FROM customers WHERE customer_phone = ?",
+                "SELECT customer_phone, password FROM customers WHERE customer_phone = ? AND is_active = 1",
                 (account,),
             ).fetchone()
             identity = {"customer_phone": account}
@@ -67,7 +67,7 @@ def current_account():
                 return {"username": member["email"], "name": member["name"], "role": member["role"]}
         else:
             customer = connection.execute(
-                "SELECT customer_phone, name FROM customers WHERE customer_phone = ?",
+                "SELECT customer_phone, name FROM customers WHERE customer_phone = ? AND is_active = 1",
                 (identity["customer_phone"],),
             ).fetchone()
             if customer:
@@ -83,6 +83,19 @@ def current_account():
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
+    if request.is_json:
+        data=request.get_json(silent=True)
+        if not isinstance(data,dict): return jsonify(ok=False,error="VALIDATION_ERROR",message="请求体必须是 JSON 对象。"),400
+        account=data.get("account",data.get("username")); password=data.get("password") or ""
+        if not isinstance(account,str) or not account or not password:
+            return jsonify(ok=False,error="VALIDATION_ERROR",message="请填写账号和密码。"),400
+        identity=_authenticate(account,password)
+        if identity is None: return jsonify(ok=False,error="UNAUTHENTICATED",message="账号或密码不正确。"),401
+        session.clear(); session["account"]=identity
+        user=current_account()
+        if user is None: return jsonify(ok=False,error="UNAUTHENTICATED",message="账号或密码不正确。"),401
+        session["user"]=user
+        return jsonify(ok=True,user=user)
     form = LoginForm()
     if form.validate_on_submit():
         identity = _authenticate(form.account.data, form.password.data)
@@ -100,6 +113,15 @@ def login():
 
 @auth_bp.route("/register", methods=["GET", "POST"])
 def register():
+    if request.is_json:
+        from restaurant.services.auth_service import register_customer
+        from restaurant.services.common import ServiceError
+        data=request.get_json(silent=True)
+        if not isinstance(data,dict): return jsonify(ok=False,error="VALIDATION_ERROR",message="请求体必须是 JSON 对象。"),400
+        if data.get("role","customer")!="customer": raise ServiceError("公开注册仅支持顾客账号。",403,code="FORBIDDEN")
+        user=register_customer(data.get("name"),data.get("phone_number",data.get("phone")),data.get("password"))
+        session.clear(); session["account"]={"customer_phone":user["username"]}; session["user"]=user
+        return jsonify(ok=True,user=user),201
     form = RegisterForm()
     if form.validate_on_submit():
         try:
@@ -126,12 +148,23 @@ def register():
 def me():
     user = current_account()
     if user is None:
+        session.pop("user",None)
         return jsonify(ok=False, message="You are not logged in."), 401
+    if user["role"]=="customer":
+        with closing(get_connection()) as connection:
+            row=connection.execute("SELECT is_active FROM customers WHERE customer_phone=?",(user["username"],)).fetchone()
+        if not row or not row["is_active"]:
+            session.clear()
+            return jsonify(ok=False,error="FORBIDDEN",message="顾客账号已停用。"),403
+    session["user"]=user
     return jsonify(ok=True, user=user)
 
 
 @auth_bp.post("/logout")
 def logout():
+    if request.is_json:
+        session.clear()
+        return jsonify(ok=True)
     form = LogoutForm()
     if not form.validate_on_submit():
         return "Invalid logout request.", 400
