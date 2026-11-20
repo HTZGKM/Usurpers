@@ -69,6 +69,79 @@ header .toggle {
   min-inline-size: 40px;
   padding-inline: 0;
 }
+.staff-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-block: 14px;
+}
+.staff-toolbar .account-form {
+  margin: 0;
+}
+.admin-page .staff-toolbar {
+  padding-inline: clamp(15px, 3vw, 36px);
+}
+header.staff-compact-nav {
+  position: static;
+  width: fit-content;
+  max-inline-size: 100%;
+  flex-wrap: wrap;
+  min-inline-size: 0;
+  border: 1px solid #37362f;
+}
+.staff-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  min-inline-size: 0;
+  padding-inline-end: 4px;
+}
+header .staff-nav-link[aria-current="page"],
+header .staff-nav-link:hover {
+  color: #f4d9a8;
+  text-decoration: underline;
+  text-underline-offset: 0.28em;
+}
+#nav .staff-nav-link[aria-current="page"] {
+  color: #e2c898;
+}
+.seat-preview {
+  display: grid;
+  place-items: center;
+}
+.dish-preview-price {
+  font-weight: 700;
+}
+.customer-login-prompt {
+  width: min(450px, calc(100% - 24px));
+  padding: 25px 22px;
+}
+.customer-login-prompt h2 {
+  margin: 0 0 10px;
+  font-size: clamp(26px, 5vw, 34px);
+}
+.customer-login-prompt p {
+  color: #ccc0a5;
+}
+.customer-login-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 18px;
+}
+.customer-login-actions button:not(.close) {
+  margin: 0;
+  width: auto;
+  min-height: 42px;
+  padding: 7px 14px;
+  font: inherit;
+}
+.customer-login-actions button.primary:hover {
+  color: #15130d;
+}
 h1,
 h2,
 h3 {

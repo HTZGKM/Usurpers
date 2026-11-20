@@ -1,4 +1,4 @@
-function mountAdminWorkspace(workspace, tables, date, demo) {
+function mountAdminWorkspace(workspace, tables, date, demo, navigate) {
   const find = (selector) => workspace.querySelector(selector);
   const sections = [...workspace.querySelectorAll("[data-admin-tab]")];
   const statuses = ["In queue", "Ready", "Served", "Cancelled"];
@@ -305,18 +305,18 @@ function mountAdminWorkspace(workspace, tables, date, demo) {
     const button = event.target.closest("button");
     if (!button) return;
     const data = button.dataset;
-    const view = data.adminTab ?? data.adminGo;
+    const view = data.adminGo;
     if (view === "orders" && data.adminGo) {
       orderFilters.querySelector("[name=date]").value = data.metric ? date : "";
       orderFilters.querySelector("[name=status]").value = "";
       orderFilters.querySelector("[name=payment]").value = data.metric === "Paid orders today" ? "Paid" : "";
     }
-    if (view) show(view);
+    if (view) navigate(view);
     else if (data.adminChartStatus) {
       orderFilters.querySelector("[name=date]").value = date;
       orderFilters.querySelector("[name=status]").value = data.adminChartStatus;
       orderFilters.querySelector("[name=payment]").value = "";
-      show("orders");
+      navigate("orders");
     } else if (data.adminOrder) orderDetails(data.adminOrder);
     else if (data.deskTable) {
       selectedTable = data.deskTable;
@@ -336,5 +336,5 @@ function mountAdminWorkspace(workspace, tables, date, demo) {
     } else if ("adminClose" in data) dialog.close();
   });
 
-  show("overview", false);
+  return show;
 }

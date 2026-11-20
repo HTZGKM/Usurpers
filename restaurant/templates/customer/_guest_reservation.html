@@ -4,11 +4,14 @@
   {{ header() }}
   <div class="room">
     <small class="context">Double Portion</small><h1>Dining room</h1>
-    {{ floor_map(tables) }}
+    {{ floor_map(tables, preview=not account) }}
+    {% if account %}
     <div class="legend"><span>Available</span><span class="chosen">Selected</span><span class="unavailable">Unavailable</span></div>
+    {% endif %}
   </div>
 </div>
 {% call panel('Reservation','Book a table') %}
+  {% if account %}
   <form id="reservation">
     <div class="twocol">
       <label class="field">Date<input type="date" id="date" required></label>
@@ -27,4 +30,7 @@
     <button class="primary" type="submit">Confirm reservation</button>
     <p class="statusline" role="status"></p>
   </form>
+  {% else %}
+    {{ button('Check availability', 'customer-sign-in', 'primary') }}
+  {% endif %}
 {% endcall %}

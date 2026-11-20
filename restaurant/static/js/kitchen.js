@@ -59,14 +59,7 @@ function mountKitchenWorkspace(workspace, username, demo) {
   workspace.addEventListener("click", (event) => {
     const button = event.target.closest("button");
     if (!button || button.disabled) return;
-    const view = button.dataset.kitchenView;
-    if (view) {
-      for (const tab of workspace.querySelectorAll("[data-kitchen-view]")) {
-        const active = tab.dataset.kitchenView === view;
-        tab.setAttribute("aria-pressed", String(active));
-        workspace.querySelector("#" + tab.getAttribute("aria-controls")).hidden = !active;
-      }
-    } else if (button.matches("[data-complete]")) {
+    if (button.matches("[data-complete]")) {
       const order = demo.orders.find((entry) => entry.id === Number(button.closest("[data-kitchen-ticket]").dataset.kitchenTicket));
       const item = order?.items.find((entry) => entry.id === Number(button.dataset.complete));
       if (item?.status !== "Queued") return;
@@ -87,4 +80,11 @@ function mountKitchenWorkspace(workspace, username, demo) {
 
   renderQueue();
   renderAvailability();
+  return (view, focus) => {
+    const queue = workspace.querySelector("#kitchen-queue");
+    const availability = workspace.querySelector("#kitchen-availability");
+    queue.hidden = view !== "queue";
+    availability.hidden = view !== "availability";
+    if (focus) (view === "queue" ? queue : availability).querySelector("h2").focus();
+  };
 }

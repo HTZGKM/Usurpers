@@ -14,7 +14,7 @@ main.admin-page {
   --admin-gold: #e1c698;
   display: grid;
   grid-template-columns: 218px minmax(0, 1fr);
-  min-height: 100svh;
+  min-height: calc(100svh - 70px);
 }
 
 .admin-sidebar {
@@ -23,7 +23,7 @@ main.admin-page {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  height: 100svh;
+  height: calc(100svh - 70px);
   padding: 24px 15px;
   border-inline-end: 1px solid var(--admin-border);
   background: #151712;
@@ -33,10 +33,6 @@ main.admin-page {
   display: grid;
   gap: 3px;
   padding-inline: 10px;
-}
-
-.admin-identity strong {
-  font: 25px/1.1 var(--display-face);
 }
 
 .admin-identity span,
@@ -87,16 +83,6 @@ main.admin-page {
 .admin-nav button[aria-pressed="true"] {
   border-color: #655538;
   color: #f4d9a8;
-}
-
-.admin-sign-out {
-  margin-top: auto;
-  padding: 10px 4px 0;
-  border-top: 1px solid var(--admin-border);
-}
-
-.admin-sign-out .account-form {
-  margin: 0;
 }
 
 .admin-content {
@@ -559,9 +545,6 @@ main.admin-page {
   }
   .admin-nav button {
     min-height: 36px;
-  }
-  .admin-sign-out {
-    padding-top: 4px;
   }
   .admin-overview-grid,
   .admin-tables-grid {

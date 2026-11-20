@@ -2,6 +2,8 @@
 
 在首页 **My account** 用前台员工账号登录，进入 `/#workspace`。前台模板为 `_workspace.html`，样式和交互分别在 `restaurant/static/css/frontdesk.css` 与 `restaurant/static/js/frontdesk.js`。
 
+全屏目录和紧凑导航共用 **Reservations**、**Table service**、**Billing records**。可以从预约区的占用桌进入服务，也可以在 Table service 选择占用桌。账单列表从现有演示订单读取订单号、桌号、下单和付款时间、付款状态与金额。
+
 前台和顾客端共用 `restaurant/templates/_floor_map.html`、桌位坐标、容纳人数和桌子造型。前台用颜色区分 **Available**、**Reserved** 与 **Occupied**。日期和时段筛选同时更新列表与预订桌位，手机号筛选只更新列表。
 
 - 点 **New booking** 代订。演示按日期、时段与人数选择能容纳的空桌。找到预约后用 **Edit booking** 修改日期、时段或人数，原桌仍可用时保留原桌。用 **Cancel booking** 确认取消后释放预订桌位，列表保留 **Cancelled** 记录。

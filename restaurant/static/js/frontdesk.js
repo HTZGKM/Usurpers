@@ -1,4 +1,4 @@
-function mountFrontdeskWorkspace(workspace, username, tables, slots, date, demo) {
+function mountFrontdeskWorkspace(workspace, username, tables, slots, date, demo, navigate) {
   if (!demo.receptionMigrated) {
     const previous = readStaffPreview("double-portion-frontdesk-preview-v2." + username);
     const legacyArrivals = readStaffPreview("double-portion-frontdesk-preview-v1." + username + "." + date);
@@ -27,10 +27,19 @@ function mountFrontdeskWorkspace(workspace, username, tables, slots, date, demo)
   const walkInButton = workspace.querySelector('[data-desk-open="walk-in"]');
   const serviceButton = workspace.querySelector('[data-desk-open="service"]');
   const serviceSection = workspace.querySelector("[data-desk-service]");
+  const servicePicker = workspace.querySelector("[data-desk-service-picker]");
+  const deskViews = {
+    reservations: workspace.querySelector("[data-desk-reception]"),
+    service: workspace.querySelector("[data-desk-service-view]"),
+    billing: workspace.querySelector("[data-desk-billing]"),
+  };
+  let serviceTable = "";
   const renderService = mountDeskService(serviceSection, demo, (visit) => {
     visit.record.closedAt = new Date().toISOString();
     save();
+    serviceTable = "";
     select(null, visit.table);
+    navigate("reservations");
     announce(floorFeedback, "Visit closed. Table " + visit.table + " is available for its next booking.");
   });
   const bookingActions = workspace.querySelector("[data-desk-booking-actions]");
@@ -212,22 +221,45 @@ function mountFrontdeskWorkspace(workspace, username, tables, slots, date, demo)
     if (action === "walk-in") walkInForm.elements.party_size.focus();
   }
 
-  function openService() {
-    if (serviceButton.hidden) return;
-    const { booking, walkIn } = locatedAt(selectedTable);
+  function renderServiceView(focus) {
+    const occupied = tables.filter(([id]) => occupancy(id));
+    if (!occupied.some(([id]) => id === serviceTable)) serviceTable = "";
+    servicePicker.innerHTML = occupied.map(([id]) => {
+      const visit = occupancy(id);
+      return '<button type="button" class="desk-subtle" data-desk-service-table="' + esc(id) + '" aria-pressed="' +
+        (id === serviceTable) + '">Table ' + esc(id) + ' · ' + esc(visit.booking?.name ?? "Walk-in") + '</button>';
+    }).join("") || '<p class="desk-floor-feedback">No occupied tables. Check in a guest or seat a walk-in first.</p>';
+    const { booking, walkIn } = occupancy(serviceTable) ?? {};
     const record = booking ?? walkIn;
-    if (!record) return;
-    const key = booking ? "booking-" + booking.date + "-" + booking.id : "walk-in-" + walkIns.indexOf(walkIn);
-    renderService({ key, date, table: selectedTable, record,
-      label: (booking?.name ?? "Walk-in") + " · " + guestCount(record.guests),
-    });
-    serviceSection.querySelector("h2").focus();
+    if (record) {
+      const key = booking ? "booking-" + booking.date + "-" + booking.id : "walk-in-" + walkIns.indexOf(walkIn);
+      renderService({ key, date, table: serviceTable, record,
+        label: (booking?.name ?? "Walk-in") + " · " + guestCount(record.guests),
+      });
+    } else renderService(null);
+    if (focus) (record ? serviceSection.querySelector("h2") : workspace.querySelector("#desk-picker-title")).focus();
+  }
+
+  function renderBilling() {
+    const records = [...demo.orders].sort((a, b) => b.id - a.id);
+    const rows = records.map((order) => {
+      const status = order.paidAt ? "Paid" : staffOrderStatus(order) === "Cancelled" ? "Cancelled" : "Unpaid";
+      return '<tr><th scope="row">#' + order.id + '</th><td>' + esc(order.table) + '</td><td>' +
+        esc(order.date + " · " + order.time) + '</td><td>' + status + '</td><td>' +
+        (order.paidAt ? esc(new Date(order.paidAt).toLocaleString("en-GB")) : '—') + '</td><td>' +
+        staffPrice(staffOrderTotal(order)) + '</td></tr>';
+    }).join("");
+    workspace.querySelector("[data-desk-billing-list]").innerHTML = rows
+      ? '<table><thead><tr><th scope="col">Order</th><th scope="col">Table</th><th scope="col">Placed</th>' +
+        '<th scope="col">Payment</th><th scope="col">Paid at</th><th scope="col">Total</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<p>No billing records yet.</p>';
   }
 
   workspace.addEventListener("click", (event) => {
     const table = event.target.closest("[data-desk-table]");
     const booking = event.target.closest("[data-desk-booking]");
     const action = event.target.closest("[data-desk-open]");
+    const serviceChoice = event.target.closest("[data-desk-service-table]");
     if (table) {
       const tableId = table.dataset.deskTable;
       select(locatedAt(tableId).booking, tableId);
@@ -235,7 +267,13 @@ function mountFrontdeskWorkspace(workspace, username, tables, slots, date, demo)
       const id = booking.dataset.deskBooking;
       select(bookings.find((entry) => entry.id === Number(id)));
       list.querySelector('[data-desk-booking="' + id + '"]')?.focus({ preventScroll: true });
-    } else if (action?.dataset.deskOpen === "service") openService();
+    } else if (action?.dataset.deskOpen === "service" && !serviceButton.hidden) {
+      serviceTable = selectedTable;
+      navigate("service");
+    } else if (serviceChoice) {
+      serviceTable = serviceChoice.dataset.deskServiceTable;
+      renderServiceView(true);
+    }
     else if (action) openDialog(action.dataset.deskOpen);
     else if (event.target.closest("[data-desk-close]")) dialog.close();
   });
@@ -313,4 +351,12 @@ function mountFrontdeskWorkspace(workspace, username, tables, slots, date, demo)
   });
 
   select(selected);
+  return (view, focus) => {
+    for (const [key, element] of Object.entries(deskViews)) element.hidden = key !== view;
+    if (view === "service") renderServiceView(focus);
+    else if (view === "billing") {
+      renderBilling();
+      if (focus) workspace.querySelector("#desk-billing-title").focus();
+    } else if (focus) workspace.querySelector("h1").focus();
+  };
 }

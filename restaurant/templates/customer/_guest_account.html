@@ -10,22 +10,16 @@
   </div>
 {% endmacro %}
 
-{% set staff_roles = {'frontdesk': 'Front desk', 'kitchen': 'Kitchen', 'admin': 'Administrator'} %}
-{% set staff_role = staff_roles.get(account.role) if account else none %}
-{{ cover('account-cover', 'Workspace' if staff_role else 'My account') }}
-{% call panel('Double Portion', staff_role or ('My profile' if account else 'Sign in')) %}
+{{ cover('account-cover', 'My account') }}
+{% call panel('Double Portion', 'My profile' if account else 'Sign in') %}
   <div class="account-content">
     {% if account %}
       <dl class="account-details">
         <div><dt>Name</dt><dd>{{ account.name }}</dd></div>
-        <div><dt>{{ 'Email' if staff_role else 'Phone number' }}</dt><dd>{{ account.username }}</dd></div>
+        <div><dt>Phone number</dt><dd>{{ account.username }}</dd></div>
       </dl>
-      {% if staff_role %}
-        <p>Staff pages are in development.</p>
-      {% else %}
-        {{ button('View your table', 'Your table', 'primary') }}
-        <div class="guest-history" data-visit-history></div>
-      {% endif %}
+      {{ button('View your visit', 'Your table', 'primary') }}
+      <div class="guest-history" data-visit-history></div>
       {{ sign_out(logout_form) }}
     {% else %}
       <div class="account-modes" role="group" aria-label="Account options">

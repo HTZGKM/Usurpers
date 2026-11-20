@@ -7,32 +7,12 @@ main.frontdesk-page {
   font: 15px/1.45 system-ui, sans-serif;
 }
 
-.desk-bar,
 .desk-heading,
 .desk-panel-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-
-.desk-bar {
-  min-height: 70px;
-  border-bottom: 1px solid #343229;
-}
-
-.desk-brand {
-  padding: 0;
-  font: 24px/1.1 var(--display-face);
-  text-align: left;
-}
-
-.desk-bar .account-form {
-  margin: 0;
-}
-
-.desk-bar .secondary {
-  white-space: nowrap;
 }
 
 .desk-heading {
@@ -68,6 +48,9 @@ main.frontdesk-page {
   grid-template-columns: minmax(0, 1.14fr) minmax(0, 1fr);
   align-items: start;
   gap: 16px;
+}
+.desk-grid[hidden] {
+  display: none;
 }
 
 .desk-panel {
@@ -409,6 +392,38 @@ main.frontdesk-page {
 
 .desk-service {
   margin-top: 16px;
+}
+
+.desk-service-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.desk-service-picker [aria-pressed="true"] {
+  background: #32291b;
+  border-color: #bc9f68;
+}
+
+.desk-billing-scroll {
+  overflow: auto;
+}
+
+.desk-billing-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.desk-billing-scroll th,
+.desk-billing-scroll td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #38362c;
+  white-space: nowrap;
+}
+
+.desk-billing-scroll thead {
+  color: #cec3a9;
 }
 
 .desk-service-grid {

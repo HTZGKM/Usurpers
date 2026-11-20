@@ -1,10 +1,5 @@
-{% from 'customer/_guest_parts.html' import sign_out %}
 {% from '_floor_map.html' import floor_map %}
 <div class="frontdesk" data-frontdesk>
-  <div class="desk-bar">
-    <button type="button" class="desk-brand" data-action="Home">Double Portion</button>
-    {{ sign_out(logout_form) }}
-  </div>
   <div class="desk-heading">
     <h1 tabindex="-1">Front desk</h1>
     <div class="desk-heading-meta">
@@ -13,7 +8,7 @@
     </div>
   </div>
 
-  <div class="desk-grid">
+  <div class="desk-grid" data-desk-reception>
     <section class="desk-panel" aria-labelledby="desk-floor-title">
       <div class="desk-panel-heading">
         <h2 id="desk-floor-title">Dining room</h2>
@@ -69,6 +64,11 @@
     </section>
   </div>
 
+  <div data-desk-service-view hidden>
+  <section class="desk-panel" aria-labelledby="desk-picker-title">
+    <div class="desk-panel-heading"><h2 id="desk-picker-title" tabindex="-1">Table service</h2></div>
+    <div class="desk-service-picker" data-desk-service-picker></div>
+  </section>
   <section class="desk-panel desk-service" data-desk-service aria-labelledby="desk-service-title" hidden>
     <div class="desk-panel-heading">
       <h2 id="desk-service-title" tabindex="-1">Table service</h2>
@@ -100,6 +100,12 @@
         </div>
       </div>
     </div>
+  </section>
+  </div>
+
+  <section class="desk-panel" data-desk-billing aria-labelledby="desk-billing-title" hidden>
+    <div class="desk-panel-heading"><h2 id="desk-billing-title" tabindex="-1">Billing records</h2></div>
+    <div class="desk-billing-scroll" data-desk-billing-list></div>
   </section>
 
   <dialog class="desk-dialog" aria-labelledby="desk-dialog-title">

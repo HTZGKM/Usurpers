@@ -15,7 +15,7 @@
 | 要改的内容 | 从仓库根目录进入 |
 | --- | --- |
 | 首页入口、模板上下文、桌号/容量/坐标和时段 | `app.py` 的 `home()` |
-| 页面组合、导航弹窗、Your Table 和 Journal 容器 | `restaurant/templates/customer/guest.html` |
+| 页面组合、导航弹窗、Your visit 和 Journal 容器 | `restaurant/templates/customer/guest.html` |
 | 首页、导航、封面和面板宏 | `restaurant/templates/customer/_guest_parts.html` |
 | 双栏菜单、分类锚点、菜品弹层 | `restaurant/templates/customer/_guest_menu.html`、`_guest_dish.html` |
 | Delivery 封面、配送时间和范围 | `restaurant/templates/customer/_guest_delivery.html` |
@@ -29,11 +29,11 @@
 | 导航的玻璃悬停、按下、键盘与减少动态效果 | `restaurant/static/js/guest-lens.js` |
 | 封面、菜单缩略图、五款高清披萨 | `restaurant/static/images/atelier/{editorial,catalog,detail}/` |
 
-界面文案用英文。菜单沿用 Qitchen 的左右独立高度、照片左下角大标题和右列分组菜品。订座与确认在同一页完成，下单、付款和回执在 Your Table 内切换。字体优先 Cheltenham BT，当前回退为 Georgia。取得 Web 授权后，将 Roman 字体命名为 `restaurant/static/fonts/CheltenhamBT-Roman.woff2`，首页会自动引用。
+界面文案用英文。菜单沿用 Qitchen 的左右独立高度、照片左下角大标题和右列分组菜品。订座与确认在同一页完成，下单、付款和回执在 Your visit 内切换。原 `/#Your%20table` 地址继续有效。字体优先 Cheltenham BT，当前回退为 Georgia。取得 Web 授权后，将 Roman 字体命名为 `restaurant/static/fonts/CheltenhamBT-Roman.woff2`，首页会自动引用。
 
 ## 验收路径
 
-1. 打开 `/`，点 **Book a table**。选日期、人数、时段和相容桌位，确认后可原地改单、取消。
+1. 未登录打开 `/`，检查 Menu、Book a table、Your visit、Delivery 和 Journal 都可浏览。点订座页 **Check availability**、菜品详情 **Add to bag** 或 Your visit 的 **View records**，应弹出登录提醒。顾客登录后回原视图。选日期、人数、时段和相容桌位，确认后可原地改单、取消。
 2. 点 **Preview host check-in**。进入菜单后切换到 **Pizzas**，打开 **Margherita**，选两份，加到购物袋。关闭详情时回到原列表位置。
 3. 点 **View bag**，核对总价 ¥116，点 **Place order**，再点 **Pay ¥116 · demo**。同页显示 **Payment received**。刷新后该标签页仍可查看回执。
 4. 首页、菜单和订座均应支持窄屏。打开玻璃导航时用键盘检查焦点和 Esc；系统选择减少动态效果时，过渡应减弱。
@@ -43,13 +43,13 @@
 ## 当前进度
 
 - **已完成 My account。** 入口为 `/#My%20account`，`/#account` 也可打开。封面、导航、字体和面板沿用当前顾客端。账号表单复用 Flask-WTF 字段、CSRF 校验及原有 `/auth/*` 路由。前端根据原生表单响应显示英文必填、登录失败、重复号码、提交中和退出反馈。认证模板为原有错误提示补充了字段标记。
-- **员工入口。** 员工从同一个 **My account** 登录后进入 `/#workspace`。厨房账号显示制作队列与供应状态，见 [厨房交接](../kitchen/README.md)。前台账号显示桌位、预约接待与堂食服务，见 [前台交接](../frontdesk/README.md)。管理员账号显示独立 Dashboard，见 [管理员交接](../admin/README.md)。员工工作台共享当前标签页的演示订单和菜单供应状态。
+- **公共首页与角色导航。** 未登录和顾客使用同一份餐厅目录，公共内容可浏览。需要账号的动作通过弹窗引导至现有 My account 登录表单，顾客登录后回到原视图。员工登录后进入 `/#workspace`，每个角色的紧凑导航和全屏目录共用栏目，工作区内部使用 `#workspace/…` 切换。见 [厨房交接](../kitchen/README.md)、[前台交接](../frontdesk/README.md) 和 [管理员交接](../admin/README.md)。员工共享当前标签页的演示订单和菜单供应状态。
 - **数据位置。** 当前本机 Flask 使用 `restaurant/data/shuangfen.db` 保存账号和密码哈希，浏览器用会话 Cookie 保持登录。订座、签到、购物袋、订单和付款仍按标签页和身份保存在 sessionStorage，属于演示数据，厨房收不到这些操作。
 - **已验收。** 在侧边浏览器走通 A2 订座、模拟到店、两份 Margherita、¥116 下单及模拟付款，刷新后仍可看到回执。在连接独立 SQLite 的侧边预览中验证注册、号码回填、重复号码、错误密码、登录后刷新及退出。
 - **Delivery 已接入。** 从全屏导航进入 `/#Delivery`，左侧封面和右侧四格沿用旧构图，字体与当前顾客端一致。配送时间与范围显示 **Coming soon**。仓库只有 `create_delivery_order()` 占位，尚未确认到店自取还是送上门，页面目前只展示信息并提供看菜单和订座入口。本轮没有新增 Flask 路由或业务接口。
 - **Journal 已改为长页。** 首页卡片和全屏导航进入 `/#Journal`。左侧封面尺寸独立，右侧按日期列出近期五篇正文。底部 **See more** 打开 `/#Journal/archive`，左栏目录定位文章，右栏按日期列出所有已有文章并支持展开纯文字正文。两页共用文章内容。
 - **菜品和购物袋。** 披萨可选尺寸、饼底和加料，汉堡可选酱料和加料。菜品可写厨房备注，菜品小计和购物袋合计会随操作更新并从个位开始依次停止滚动。购物袋支持改选项、改数量和移除，同菜不同配置可分别保留。加价沿用旧版演示数据。
-- **预约和订单记录。** `Your table` 以及已登录顾客的 `My account` 显示当前及同标签页历史。保留已取消或已完成的预约及订单快照，订单可展开查看菜品、选项、备注和金额。
+- **预约和订单记录。** **Your visit** 以及已登录顾客的 **My account** 显示当前及同标签页历史。保留已取消或已完成的预约及订单快照，订单可展开查看菜品、选项、备注和金额。
 
 ## 待联调与内容确认
 

@@ -1,20 +1,18 @@
-{% from 'customer/_guest_parts.html' import sign_out %}
 {% from '_floor_map.html' import floor_map %}
-{% set nav_groups = [('Operations', [('overview', 'Overview'), ('orders', 'Orders'), ('queue', 'Kitchen queue'), ('tables', 'Tables')]), ('Management', [('accounts', 'Accounts'), ('dishes', 'Dishes')])] %}
+{% set nav_groups = [('Operations', staff_links[:4]), ('Management', staff_links[4:])] %}
 <div class="admin-workspace" data-admin>
   <aside class="admin-sidebar">
-    <div class="admin-identity"><strong>Double Portion</strong><span>Administrator</span></div>
+    <div class="admin-identity"><span>Administrator</span></div>
     <nav class="admin-nav" aria-label="Administration">
       {% for group, sections in nav_groups %}
       <div class="admin-nav-group">
         <p>{{ group }}</p>
-        {% for key, title in sections %}
-        <button type="button" data-admin-tab="{{ key }}" aria-controls="admin-{{ key }}" aria-pressed="{{ 'true' if key == 'overview' else 'false' }}">{{ title }}</button>
+        {% for title, key in sections %}
+        <button type="button" class="staff-nav-link" data-admin-tab="{{ key }}" data-action="workspace:{{ key }}" aria-controls="admin-{{ key }}" aria-pressed="{{ 'true' if key == 'overview' else 'false' }}">{{ title }}</button>
         {% endfor %}
       </div>
       {% endfor %}
     </nav>
-    <div class="admin-sign-out">{{ sign_out(logout_form) }}</div>
   </aside>
 
   <div class="admin-content">
