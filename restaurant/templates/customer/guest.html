@@ -1,0 +1,84 @@
+{% from 'customer/_guest_parts.html' import header, cover, button, panel, homepage %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0b09">
+  <title>Double Portion · Burgers &amp; Pizza</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/guest.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/guest-type.css') }}">
+  {% if account and account.role in ('frontdesk', 'kitchen', 'admin') %}
+  <script defer src="{{ url_for('static', filename='js/staff-demo.js') }}"></script>
+  {% endif %}
+  {% if account and account.role == 'kitchen' %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/kitchen.css') }}">
+  <script defer src="{{ url_for('static', filename='js/kitchen.js') }}"></script>
+  {% elif account and account.role == 'frontdesk' %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/frontdesk.css') }}">
+  <script defer src="{{ url_for('static', filename='js/frontdesk-service.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='js/frontdesk.js') }}"></script>
+  {% elif account and account.role == 'admin' %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+  <script defer src="{{ url_for('static', filename='js/admin.js') }}"></script>
+  {% endif %}
+  {% if has_cheltenham %}
+  <style>
+    @font-face {
+      font-family: "Cheltenham BT";
+      src: url("{{ url_for('static', filename='fonts/CheltenhamBT-Roman.woff2') }}") format("woff2");
+      font-weight: 400;
+      font-display: swap;
+    }
+  </style>
+  {% endif %}
+  <script defer src="{{ url_for('static', filename='js/guest-lens.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='js/guest-meal.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='js/guest.js') }}"></script>
+</head>
+<body data-images="{{ url_for('static', filename='images/atelier/') }}">
+  <main class="home" id="app">{{ homepage() }}</main>
+  <dialog id="nav" aria-label="Navigation">
+    <p class="nav-wordmark">Double Portion</p>
+    <button type="button" class="close" id="close" aria-label="Close navigation" autofocus>×</button>
+    <nav class="nav-links" aria-label="Restaurant navigation">
+      <span class="nav-ornament" aria-hidden="true"></span>
+      {% for label, page in [('The Restaurant', 'Home'), ('Menu', 'Menu'), ('Reservation', 'Book a table'), ('Delivery', 'Delivery'), ('Journal', 'Journal'), ('Your table', 'Your table')] %}
+        {{ button(label, page, 'nav-link') }}
+      {% endfor %}
+      {{ button('Workspace' if account and account.role != 'customer' else 'My account', 'My account', 'nav-link') }}
+      <span class="nav-ornament" aria-hidden="true"></span>
+    </nav>
+  </dialog>
+  {% include 'customer/_guest_dish.html' %}
+
+  <template id="view-home">{{ homepage() }}</template>
+  <template id="view-menu">{% include 'customer/_guest_menu.html' %}</template>
+  <template id="view-booking">{% include 'customer/_guest_reservation.html' %}</template>
+  <template id="view-account">
+    {% if account and account.role == 'kitchen' %}
+      {% include 'kitchen/_workspace.html' %}
+    {% elif account and account.role == 'frontdesk' %}
+      {% include 'frontdesk/_workspace.html' %}
+    {% elif account and account.role == 'admin' %}
+      {% include 'admin/_workspace.html' %}
+    {% else %}
+      {% include 'customer/_guest_account.html' %}
+    {% endif %}
+  </template>
+  <template id="view-delivery">{% include 'customer/_guest_delivery.html' %}</template>
+  <template id="view-table">
+    {{ cover('account-cover','Your table') }}
+    {% call panel('Dine-in','Your table') %}
+      <div data-details></div>
+      <div class="guest-history" data-visit-history></div>
+    {% endcall %}
+  </template>
+  {% include 'customer/_guest_journal.html' %}
+  <template id="view-journal-archive">{% include 'customer/_guest_journal_archive.html' %}</template>
+  <script id="guest-data" type="application/json">{{ {
+    'dishes':catalog, 'tables':tables, 'slots':slots, 'categories':categories, 'account':account
+  }|tojson }}</script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+{% from 'customer/_guest_journal_entries.html' import stories %}
+{% from 'customer/_guest_parts.html' import cover %}
+
+{% macro journal_section(section) %}
+  <section>
+    <h3>{{ section[0] }}</h3>
+    <p>{{ section[1] }}</p>
+  </section>
+{% endmacro %}
+
+{% macro journal_photo(image, alt, detail=false) %}
+  <figure class="journal-photo{% if detail %} journal-photo-detail{% endif %}">
+    <img src="{{ url_for('static', filename='images/atelier/' ~ image ~ '.webp') }}" alt="{{ alt }}" loading="lazy">
+  </figure>
+{% endmacro %}
+
+<template id="view-journal">
+  {{ cover('journal-cover', 'Journal', 'Two cooks reviewing their kitchen notes at the pass') }}
+  <section class="panel journal-feed" aria-label="Recent journal posts">
+    {% for story in stories %}
+    <article class="journal-article" aria-labelledby="journal-{{ story.slug }}">
+      <div class="journal-article-heading">
+        <time datetime="{{ story.iso }}">{{ story.date }}</time>
+        <h2 id="journal-{{ story.slug }}" tabindex="-1">{{ story.title }}</h2>
+        <p>{{ story.intro }}</p>
+      </div>
+      {{ journal_section(story.body[0]) }}
+      <div class="journal-story-layout journal-story-layout--{{ story.layout }}">
+        <div class="journal-story-photos">
+          {{ journal_photo(story.image, story.image_alt) }}
+          {% if story.thumb %}
+            {{ journal_photo('editorial/' ~ story.thumb, story.thumb_alt, true) }}
+          {% endif %}
+        </div>
+        <div class="journal-story-copy">
+          {% for section in story.body[1:] %}
+            {{ journal_section(section) }}
+          {% endfor %}
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+    <footer class="journal-feed-footer">
+      <a class="journal-action" href="#Journal/archive">See more <span aria-hidden="true">↗</span></a>
+    </footer>
+  </section>
+</template>

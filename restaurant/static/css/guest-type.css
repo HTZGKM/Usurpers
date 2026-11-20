@@ -1,0 +1,130 @@
+:root {
+  --display-face:
+    "Cheltenham BT", "Cheltenham Std", "Cheltenham", Georgia, serif;
+  --reading-face: var(--display-face);
+}
+body {
+  font-family: var(--reading-face);
+  font-size: 16px;
+  font-weight: 400;
+}
+h1,
+h2,
+h3,
+header .brand,
+dialog button:not(.close),
+.seat {
+  font-family: var(--display-face);
+  font-optical-sizing: auto;
+}
+h1,
+h2,
+h3 {
+  font-weight: 400;
+  letter-spacing: -0.035em;
+}
+header .brand {
+  font-weight: 400;
+  font-size: clamp(17px, 3.1cqi, 20px);
+  letter-spacing: -0.035em;
+}
+header button {
+  font-family: var(--reading-face);
+  font-size: 12px;
+  font-weight: 400;
+}
+.field input,
+.field select,
+.wall-label,
+.entry-label,
+.bar-label {
+  font-family: var(--reading-face);
+}
+.cover h1 {
+  font-size: clamp(58px, 7.8vw, 126px);
+  line-height: 0.96;
+}
+.delivery-page .cover h1,
+.journal-page .cover h1 {
+  font-size: clamp(45px, 6.2vw, 108px);
+  text-transform: uppercase;
+}
+.room h1 {
+  font-size: clamp(40px, 5.1vw, 78px);
+  line-height: 1;
+}
+.panel h2 {
+  font-size: clamp(36px, 4.4vw, 70px);
+}
+.journal-article time {
+  color: #c3bda7;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.journal-article h2 {
+  margin: 0.28em 0 0.38em;
+  font-size: clamp(31px, 3.45vw, 56px);
+}
+.journal-article h3 {
+  font-size: clamp(21px, 2vw, 30px);
+}
+.menu-page > .cover h1 {
+  font-size: clamp(68px, 8.6vw, 140px);
+  font-weight: 400;
+  letter-spacing: -0.035em;
+}
+.menu-list h2 {
+  font-size: clamp(30px, 3.15vw, 50px);
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+  font-weight: 400;
+}
+.menu-list .dish-title {
+  font: 400 clamp(20px, 1.85vw, 30px)/1.09 var(--display-face);
+  text-transform: none;
+  letter-spacing: -0.014em;
+  min-width: 0;
+}
+.menu-list .cost {
+  font: 400 clamp(15px, 1.23vw, 20px)/1.2 var(--reading-face);
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}
+.menu-list .row .desc {
+  font: 400 clamp(14px, 1.12vw, 18px)/1.42 var(--reading-face);
+  color: #c6c2b8;
+  margin-top: 6px;
+}
+.menu-list .choice {
+  font: 400 clamp(11px, 0.9vw, 14px)/1.25 var(--reading-face);
+  letter-spacing: 0.045em;
+}
+.menu-list .row + .row {
+  margin-top: clamp(18px, 1.9vw, 30px);
+}
+.dish-modal h2 {
+  font-size: clamp(34px, 3.8vw, 54px);
+}
+@media (min-width: 761px) and (max-width: 1000px) {
+  .menu-list {
+    padding-inline: 22px;
+  }
+}
+@media (max-width: 760px) {
+  .cover h1 {
+    font-size: clamp(52px, 10vw, 76px);
+  }
+  .room h1 {
+    font-size: clamp(36px, 6vw, 48px);
+  }
+  .menu-page > .cover h1 {
+    font-size: clamp(68px, 12vw, 94px);
+  }
+  .menu-list h2 {
+    font-size: clamp(31px, 6.5vw, 42px);
+  }
+  .menu-list .dish-title {
+    font-size: clamp(19px, 4.2vw, 24px);
+  }
+}
