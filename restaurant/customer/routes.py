@@ -1,147 +1,318 @@
-from flask import Blueprint, abort, redirect, url_for
-
-from restaurant.auth.routes import current_account
-
+from restaurant.forms import ActionForm
 from .forms import (
-    BookingEditForm,
     BookingForm,
+    BookingEditForm,
     CancelBookingForm,
     OrderForm,
     PaymentForm,
+    PreorderForm,
+    WaitlistForm,
 )
+from restaurant.frontdesk.forms import StaffBookingForm
+from flask import Blueprint, jsonify, request, session
+from restaurant.route_utils import validated_data, require_api_role
+from restaurant.services import booking_service, order_service, menu_service
+from restaurant.services.common import ServiceError
 
 customer_bp = Blueprint("customer", __name__)
 
 
-def _check_customer_access(*, order_id=None, booking_id=None):
-    account = current_account()
-    if account is None:
-        return redirect(url_for("auth.login"), code=303)
-    if account["role"] != "customer":
-        abort(403)
-
-    if booking_id is not None:
-        # TODO: Verify ownership once the booking table is available.
-        abort(501, description="Booking ownership checks are not available yet.")
-
-    if order_id is not None:
-        # TODO: Verify order ownership through the agreed service interface.
-        abort(501, description="Order ownership checks are not available yet.")
-
-    return None
+@customer_bp.before_request
+def require_customer_access():
+    if request.endpoint == "customer.menu":
+        return None
+    if request.path.startswith("/pay/"):
+        return require_api_role("customer")
+    if request.path == "/tables/available":
+        return require_api_role("customer", "frontdesk", "kitchen", "admin")
+    return require_api_role("customer", "frontdesk", "admin")
 
 
 @customer_bp.get("/menu")
 def menu():
-    # TODO: Show the menu.
-    pass
-
-
-@customer_bp.get("/bookings")
-def bookings():
-    login_redirect = _check_customer_access()
-    if login_redirect is not None:
-        return login_redirect
-
-    # TODO: List the customer's bookings.
-    pass
-
-
-@customer_bp.get("/bookings/new")
-def new_booking():
-    login_redirect = _check_customer_access()
-    if login_redirect is not None:
-        return login_redirect
-
-    # TODO: Show the booking form and time slots.
-    pass
+    return jsonify({"ok": True, "items": menu_service.get_available_items()})
 
 
 @customer_bp.post("/bookings")
 def create_booking():
-    login_redirect = _check_customer_access()
-    if login_redirect is not None:
-        return login_redirect
+    data = validated_data(
+        BookingForm if session["user"]["role"] == "customer" else StaffBookingForm
+    )
+    user = session.get("user", {})
+    customer_phone = user.get("username") if user.get("role") == "customer" else None
+    contact_name = (
+        user.get("name")
+        if customer_phone
+        else data.get("contact_name", data.get("name"))
+    )
+    phone = customer_phone or data.get("phone_number", data.get("phone"))
+    return (
+        jsonify(
+            {
+                "ok": True,
+                "booking": booking_service.create_booking(
+                    contact_name,
+                    phone,
+                    data.get("booking_date", data.get("date")),
+                    data.get("time_slot_id", data.get("time_slot")),
+                    data.get("party_size", data.get("guests")),
+                    customer_phone,
+                ),
+            }
+        ),
+        201,
+    )
 
-    form = BookingForm()
-    if form.validate_on_submit():
-        # TODO: Create the booking.
-        pass
 
-    # TODO: Handle form errors.
+@customer_bp.get("/bookings")
+def bookings():
+    return jsonify(
+        {
+            "ok": True,
+            "bookings": booking_service.get_customer_bookings(
+                session["user"]["username"]
+            ),
+        }
+    )
+
+
+@customer_bp.post("/bookings/<int:booking_id>/preorders")
+def preorder(booking_id):
+    data = validated_data(PreorderForm)
+    user = session.get("user", {})
+    return (
+        jsonify(
+            {
+                "ok": True,
+                "order": order_service.create_preorder(
+                    booking_id,
+                    user["username"],
+                    data.get("items"),
+                    data.get("estimated_ready_at"),
+                ),
+            }
+        ),
+        201,
+    )
+
+
+@customer_bp.get("/tables/available")
+def available_tables():
+    return jsonify(
+        {
+            "ok": True,
+            "tables": booking_service.find_available_tables(
+                request.args.get("date"),
+                request.args.get("time_slot_id"),
+                request.args.get("party_size"),
+            ),
+        }
+    )
 
 
 @customer_bp.route("/bookings/<int:booking_id>/edit", methods=["GET", "POST"])
 def edit_booking(booking_id):
-    login_redirect = _check_customer_access(booking_id=booking_id)
-    if login_redirect is not None:
-        return login_redirect
-
-    form = BookingEditForm()
-    if form.validate_on_submit():
-        # TODO: Update the customer's booking.
-        pass
-
-    # TODO: Load the existing booking. Show the form or errors.
+    if request.method == "GET":
+        return _booking_details(booking_id)
+    data = validated_data(BookingEditForm)
+    owner = (
+        session["user"]["username"] if session["user"]["role"] == "customer" else None
+    )
+    return jsonify(
+        {
+            "ok": True,
+            "booking": booking_service.update_booking(
+                booking_id,
+                data.get("booking_date"),
+                data.get("time_slot_id"),
+                data.get("party_size"),
+                owner,
+            ),
+        }
+    )
 
 
 @customer_bp.post("/bookings/<int:booking_id>/cancel")
 def cancel_booking(booking_id):
-    login_redirect = _check_customer_access(booking_id=booking_id)
-    if login_redirect is not None:
-        return login_redirect
-
-    form = CancelBookingForm()
-    if form.validate_on_submit():
-        # TODO: Cancel the customer's booking.
-        pass
-
-    # TODO: Handle form errors.
+    data = validated_data(CancelBookingForm)
+    owner = (
+        session["user"]["username"] if session["user"]["role"] == "customer" else None
+    )
+    return jsonify(
+        {"ok": True, "booking": booking_service.cancel_booking(booking_id, owner)}
+    )
 
 
-@customer_bp.get("/orders")
-def orders():
-    login_redirect = _check_customer_access()
-    if login_redirect is not None:
-        return login_redirect
-
-    # TODO: List the customer's orders.
-    pass
+@customer_bp.post("/visits/<int:visit_id>/orders")
+def create_visit_order(visit_id):
+    data = validated_data(OrderForm)
+    user = session.get("user", {})
+    owner = user.get("username") if user.get("role") == "customer" else None
+    return (
+        jsonify(
+            {
+                "ok": True,
+                "order": order_service.create_dine_in_order(
+                    visit_id, data.get("items"), owner
+                ),
+            }
+        ),
+        201,
+    )
 
 
 @customer_bp.post("/orders")
 def confirm_order():
-    login_redirect = _check_customer_access()
-    if login_redirect is not None:
-        return login_redirect
+    data = validated_data(OrderForm)
+    from restaurant.services.dining_service import get_active_customer_visit
 
-    form = OrderForm()
-    if form.validate_on_submit():
-        # TODO: Create the order.
-        pass
+    user = session["user"]
+    visit_id = get_active_customer_visit(user["username"])
+    return (
+        jsonify(
+            {
+                "ok": True,
+                "order": order_service.create_dine_in_order(
+                    visit_id, data.get("items"), user["username"]
+                ),
+            }
+        ),
+        201,
+    )
 
-    # TODO: Handle form errors.
+
+@customer_bp.post("/orders/<int:order_id>/pay")
+@customer_bp.post("/pay/<int:order_id>")
+def pay_order(order_id):
+    data = validated_data(PaymentForm)
+    owner = (
+        session["user"]["username"] if session["user"]["role"] == "customer" else None
+    )
+    return jsonify({"ok": True, "payment": order_service.pay_order(order_id, owner)})
+
+
+@customer_bp.get("/orders")
+def orders():
+    role = session["user"]["role"]
+    if role == "customer":
+        rows = order_service.get_customer_orders(session["user"]["username"])
+    else:
+        rows = order_service.get_orders(
+            phone=request.args.get("phone_number"),
+            table_id=request.args.get("table_id"),
+        )
+    return jsonify({"ok": True, "orders": rows})
 
 
 @customer_bp.get("/orders/<int:order_id>")
 def order_status(order_id):
-    login_redirect = _check_customer_access(order_id=order_id)
-    if login_redirect is not None:
-        return login_redirect
-
-    # TODO: Show the customer's order progress.
-    pass
+    owner = (
+        session["user"]["username"] if session["user"]["role"] == "customer" else None
+    )
+    return jsonify({"ok": True, "order": order_service.get_order(order_id, owner)})
 
 
-@customer_bp.post("/pay/<int:order_id>")
-def pay_order(order_id):
-    login_redirect = _check_customer_access(order_id=order_id)
-    if login_redirect is not None:
-        return login_redirect
+@customer_bp.post("/orders/<int:order_id>/cancel")
+def cancel_order(order_id):
+    data = validated_data(ActionForm)
+    owner = (
+        session["user"]["username"] if session["user"]["role"] == "customer" else None
+    )
+    return jsonify({"ok": True, "order": order_service.cancel_order(order_id, owner)})
 
-    form = PaymentForm()
-    if form.validate_on_submit():
-        # TODO: Record the simulated payment.
-        pass
 
-    # TODO: Handle form errors.
+@customer_bp.post("/orders/<int:order_id>/edit")
+def edit_order(order_id):
+    data = validated_data(OrderForm)
+    owner = (
+        session["user"]["username"] if session["user"]["role"] == "customer" else None
+    )
+    return jsonify(
+        {
+            "ok": True,
+            "order": order_service.update_order(order_id, data.get("items"), owner),
+        }
+    )
+
+
+@customer_bp.post("/orders/<int:order_id>/items/<int:item_id>/cancel")
+def cancel_item(order_id, item_id):
+    data = validated_data(ActionForm)
+    owner = (
+        session["user"]["username"] if session["user"]["role"] == "customer" else None
+    )
+    return jsonify(
+        {"ok": True, "item": order_service.cancel_order_item(order_id, item_id, owner)}
+    )
+
+
+@customer_bp.post("/waiting-queue")
+def join_waitlist():
+    data = validated_data(WaitlistForm)
+    from restaurant.services.queue_manager import QueueManager
+
+    user = session.get("user", {})
+    phone = (
+        data.get("phone_number")
+        if user.get("role") != "customer"
+        else user.get("username")
+    )
+    return (
+        jsonify(
+            {
+                "ok": True,
+                "queue": QueueManager.join_waitlist(
+                    data.get("party_size"),
+                    data.get("contact_name"),
+                    phone,
+                    phone if user.get("role") == "customer" else None,
+                    data.get("table_type"),
+                ),
+            }
+        ),
+        201,
+    )
+
+
+@customer_bp.delete("/waiting-queue/<int:queue_id>")
+def leave_waitlist(queue_id):
+    data = validated_data(ActionForm)
+    from restaurant.services.queue_manager import QueueManager
+
+    user = session.get("user", {})
+    owner = user.get("username") if user.get("role") == "customer" else None
+    return jsonify({"ok": True, "queue": QueueManager.cancel(queue_id, owner)})
+
+
+@customer_bp.get("/waiting-queue/mine")
+def my_waitlist():
+    from restaurant.services.queue_manager import QueueManager
+
+    return jsonify(
+        {
+            "ok": True,
+            "queue": QueueManager.get_customer_entry(session["user"]["username"]),
+        }
+    )
+
+
+def _booking_details(booking_id):
+    user = session["user"]
+    bookings = (
+        booking_service.get_customer_bookings(user["username"])
+        if user["role"] == "customer"
+        else booking_service.get_all_bookings()
+    )
+    booking = next(
+        (entry for entry in bookings if entry["booking_id"] == booking_id), None
+    )
+    if booking is None:
+        raise ServiceError("Booking not found.", 404)
+    return jsonify({"ok": True, "booking": booking})
+
+
+@customer_bp.get("/bookings/new")
+def new_booking():
+    raise ServiceError(
+        "The booking form page is not implemented yet.", 501, code="NOT_IMPLEMENTED"
+    )

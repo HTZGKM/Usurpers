@@ -8,22 +8,42 @@ from wtforms import (
     StringField,
     SubmitField,
     TextAreaField,
+    FieldList,
+    Form,
+    FormField,
 )
-from wtforms.validators import DataRequired, InputRequired, NumberRange, Optional, Regexp, ValidationError
+from wtforms.validators import (
+    DataRequired,
+    InputRequired,
+    Length,
+    NumberRange,
+    Optional,
+    Regexp,
+    ValidationError,
+)
+from restaurant.forms import (
+    iso_date_time,
+    monetary_amount,
+    nonnegative_number,
+    nonzero_number,
+    positive_number,
+)
 
 
 class EditStaffForm(FlaskForm):
     name = StringField(
         "Name",
         filters=[lambda value: (value or "").strip()],
-        validators=[DataRequired("Enter the staff member's name.")],
+        validators=[DataRequired("Enter the staff member's name."), Length(max=100)],
     )
     phone_number = StringField(
         "Phone number",
         filters=[lambda value: (value or "").strip()],
         validators=[
             DataRequired("Enter a phone number."),
-            Regexp(r"\+?[0-9]+\Z", message="Enter digits only, with an optional leading +."),
+            Regexp(
+                r"\+?[0-9]+\Z", message="Enter digits only, with an optional leading +."
+            ),
         ],
     )
     email = EmailField(
@@ -31,7 +51,9 @@ class EditStaffForm(FlaskForm):
         filters=[lambda value: (value or "").strip()],
         validators=[
             DataRequired("Enter an email address."),
-            Regexp(r"[^@\s]+@[^@\s]+\.[^@\s]+\Z", message="Enter a valid email address."),
+            Regexp(
+                r"[^@\s]+@[^@\s]+\.[^@\s]+\Z", message="Enter a valid email address."
+            ),
         ],
     )
     role = SelectField(
@@ -43,7 +65,9 @@ class EditStaffForm(FlaskForm):
 
 
 class CreateStaffForm(EditStaffForm):
-    password = PasswordField("Password", validators=[DataRequired("Enter a password.")])
+    password = PasswordField(
+        "Password", validators=[InputRequired("Enter a password."), Length(min=6)]
+    )
     submit = SubmitField("Create Staff Account")
 
 
@@ -55,18 +79,25 @@ class DishForm(FlaskForm):
     name = StringField(
         "Dish name",
         filters=[lambda value: (value or "").strip()],
-        validators=[DataRequired("Enter the dish name.")],
+        validators=[DataRequired("Enter the dish name."), Length(max=100)],
     )
-    price = DecimalField("Price", places=None, validators=[InputRequired("Enter a price.")])
-    ingredients = TextAreaField("Ingredients", validators=[DataRequired("Enter the ingredients.")])
+    price = DecimalField(
+        "Price", places=None, validators=[InputRequired("Enter a price.")]
+    )
+    ingredients = TextAreaField(
+        "Ingredients", default="", validators=[Optional(), Length(max=1000)]
+    )
     prep_time_minutes = IntegerField(
         "Estimated preparation time (minutes)",
-        validators=[InputRequired("Enter the estimated preparation time."), NumberRange(min=1)],
+        validators=[
+            InputRequired("Enter the estimated preparation time."),
+            NumberRange(min=1),
+        ],
     )
     image_path = StringField(
         "Image path",
         filters=[lambda value: (value or "").strip()],
-        validators=[Optional()],
+        validators=[Optional(), Length(max=500)],
     )
     submit = SubmitField("Add Dish")
 
@@ -75,12 +106,71 @@ class DishForm(FlaskForm):
         if price is None:
             return
         if not price.is_finite() or price <= 0 or price.as_tuple().exponent < -2:
-            raise ValidationError("Enter a price greater than zero with at most two decimal places.")
+            raise ValidationError(
+                "Enter a price greater than zero with at most two decimal places."
+            )
 
 
-class EditDishForm(DishForm):
+class EditDishForm(FlaskForm):
+    name = StringField("Dish name", validators=[Optional(), Length(max=100)])
+    price = DecimalField("Price", places=None, validators=[Optional(), monetary_amount])
     submit = SubmitField("Save Dish Changes")
 
 
 class ArchiveDishForm(FlaskForm):
     submit = SubmitField("Archive Dish")
+
+
+class ResetStaffPasswordForm(FlaskForm):
+    password = PasswordField(
+        "New password", validators=[InputRequired(), Length(min=6)]
+    )
+
+
+class IngredientForm(FlaskForm):
+    name = StringField("Ingredient name", validators=[DataRequired(), Length(max=100)])
+    unit = StringField("Unit", validators=[DataRequired(), Length(max=20)])
+    on_hand = DecimalField(
+        "Stock quantity", places=None, validators=[InputRequired(), nonnegative_number]
+    )
+    expires_at = StringField(
+        "Expiry date",
+        filters=[lambda value: value or None],
+        validators=[Optional(), Length(max=32), iso_date_time],
+    )
+
+
+class StockAdjustmentForm(FlaskForm):
+    quantity = DecimalField(
+        "Quantity change", places=None, validators=[InputRequired(), nonzero_number]
+    )
+    movement_type = SelectField(
+        "Movement type",
+        choices=[
+            (value, value.title())
+            for value in ("adjustment", "delivery", "spoilage", "correction")
+        ],
+        default="adjustment",
+    )
+    reference = StringField(
+        "Reference",
+        filters=[lambda value: value or None],
+        validators=[Optional(), Length(max=120)],
+    )
+
+
+class RecipeIngredientForm(Form):
+    ingredient_id = IntegerField(
+        "Ingredient ID", validators=[InputRequired(), NumberRange(min=1)]
+    )
+    quantity_per_dish = DecimalField(
+        "Quantity per dish", places=None, validators=[InputRequired(), positive_number]
+    )
+
+
+class RecipeForm(FlaskForm):
+    ingredients = FieldList(FormField(RecipeIngredientForm))
+
+    def validate_ingredients(self, field):
+        if not field.entries:
+            raise ValidationError("Add at least one ingredient.")
