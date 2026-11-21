@@ -5,14 +5,14 @@ from flask import Flask, jsonify, render_template
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
-from restaurant.auth.forms import LoginForm, LogoutForm, RegisterForm
-from restaurant.auth.routes import auth_bp, current_account
+from restaurant.api.auth.forms import LoginForm, LogoutForm, RegisterForm
+from restaurant.api.auth.routes import auth_bp, current_account
 from restaurant.db import ensure_database
 from restaurant.services.common import ServiceError
-from restaurant.admin.routes import admin_bp
-from restaurant.customer.routes import customer_bp
-from restaurant.frontdesk.routes import frontdesk_bp
-from restaurant.kitchen.routes import kitchen_bp
+from restaurant.api.admin.routes import admin_bp
+from restaurant.api.customer.routes import customer_bp
+from restaurant.api.frontdesk.routes import frontdesk_bp
+from restaurant.api.kitchen.routes import kitchen_bp
 
 def create_app() -> Flask:
     app = Flask(
@@ -48,7 +48,7 @@ def create_app() -> Flask:
     @app.get("/")
     def home():
         account = current_account()
-        with (Path(app.root_path) / "restaurant/customer/catalog.json").open(encoding="utf-8") as source:
+        with (Path(app.root_path) / "restaurant/api/customer/catalog.json").open(encoding="utf-8") as source:
             catalog = json.load(source)
         return render_template(
             "customer/guest.html",

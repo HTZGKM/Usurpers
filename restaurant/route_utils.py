@@ -48,7 +48,7 @@ def validated_data(form_class):
 
 
 def require_api_role(*roles):
-    from restaurant.auth.routes import current_account
+    from restaurant.api.auth.routes import current_account
 
     previous_user = session.get("user")
     account = current_account()

@@ -14,7 +14,7 @@ from .forms import (
     RemakeForm,
     RefundForm,
 )
-from restaurant.customer.forms import OrderForm
+from restaurant.api.customer.forms import OrderForm
 from flask import Blueprint, jsonify, request, session
 from restaurant.route_utils import validated_data, require_api_role
 from restaurant.services import (

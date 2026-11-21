@@ -8,7 +8,7 @@ from .forms import (
     PreorderForm,
     WaitlistForm,
 )
-from restaurant.frontdesk.forms import StaffBookingForm
+from restaurant.api.frontdesk.forms import StaffBookingForm
 from flask import Blueprint, jsonify, request, session
 from restaurant.route_utils import validated_data, require_api_role
 from restaurant.services import booking_service, order_service, menu_service
