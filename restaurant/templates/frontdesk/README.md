@@ -15,7 +15,7 @@
 
 ## 后续联调
 
-复用 `restaurant/frontdesk/routes.py` 中已有接口。当前工作台沿用原有认证与首页，未新增 Flask 路由，正式业务等后端接通。
+复用 `restaurant/api/frontdesk/routes.py` 中已有接口。当前工作台沿用原有认证与首页，未新增 Flask 路由，正式业务等后端接通。
 
 | 方法与路径 | 数据与分工 |
 | --- | --- |

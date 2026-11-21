@@ -5,11 +5,14 @@ from flask import Flask, jsonify, render_template
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
-from restaurant.auth.forms import LoginForm, LogoutForm, RegisterForm
-from restaurant.auth.routes import auth_bp, current_account
+from restaurant.api.auth.forms import LoginForm, LogoutForm, RegisterForm
+from restaurant.api.auth.routes import auth_bp, current_account
 from restaurant.db import ensure_database
 from restaurant.services.common import ServiceError
-from restaurant.api_routes import api_bp
+from restaurant.api.admin.routes import admin_bp
+from restaurant.api.customer.routes import customer_bp
+from restaurant.api.frontdesk.routes import frontdesk_bp
+from restaurant.api.kitchen.routes import kitchen_bp
 
 def create_app() -> Flask:
     app = Flask(
@@ -24,7 +27,10 @@ def create_app() -> Flask:
 
     ensure_database()
     app.register_blueprint(auth_bp)
-    app.register_blueprint(api_bp)
+    app.register_blueprint(customer_bp)
+    app.register_blueprint(frontdesk_bp)
+    app.register_blueprint(kitchen_bp)
+    app.register_blueprint(admin_bp)
 
     @app.errorhandler(ServiceError)
     def service_error(error: ServiceError):
@@ -37,12 +43,12 @@ def create_app() -> Flask:
     @app.errorhandler(Exception)
     def unexpected_error(error: Exception):
         app.logger.exception("Unhandled backend error", exc_info=error)
-        return jsonify({"ok":False,"success":False,"error":"INTERNAL_SERVER_ERROR","message":"服务器处理请求时发生错误。"}),500
+        return jsonify({"ok":False,"success":False,"error":"INTERNAL_SERVER_ERROR","message":"An internal server error occurred."}),500
 
     @app.get("/")
     def home():
         account = current_account()
-        with (Path(app.root_path) / "restaurant/customer/catalog.json").open(encoding="utf-8") as source:
+        with (Path(app.root_path) / "restaurant/api/customer/catalog.json").open(encoding="utf-8") as source:
             catalog = json.load(source)
         return render_template(
             "customer/guest.html",

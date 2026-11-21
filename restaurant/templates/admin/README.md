@@ -12,7 +12,7 @@
 
 ## 后续联调
 
-复用 `restaurant/admin/routes.py` 中的路由定义。当前没有新增 Flask 路由，也未更改后端业务或数据库。
+复用 `restaurant/api/admin/routes.py` 中的路由定义。当前没有新增 Flask 路由，也未更改后端业务或数据库。
 
 | 方法与路径 | 后端处理与前端用途 |
 | --- | --- |
