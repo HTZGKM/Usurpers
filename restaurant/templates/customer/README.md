@@ -2,6 +2,14 @@
 
 从仓库根目录启动 Flask。新对话从本文件、`app.py` 和本目录的 `guest.html` 开始。页面与交互的维护来源是仓库内的 Jinja、CSS、JavaScript 和图片，运行时无需原型生成脚本、Figma CLI 或本机 Codex 文件。
 
+## 当前视觉基准（2026-11-22）
+
+顾客端以主管页同源的「类魂游戏史诗风格」为核心：炭黑、旧金、Palatino 衬线字与烛火石厅。Qitchen 用于首页大图与入口列、内页双栏及摄影排印质量参考。后续修改先读 [顾客端设计工作流](../../../docs/customer-design-workflow.md)。
+
+顾客专用样式为 `restaurant/static/css/guest-ember.css`，仅在公共/顾客身份加载，不影响三类员工工作区。四张原创场景图位于 `restaurant/static/images/ember/`，生成提示词和来源见该目录 `assets.json`。菜品目录图、菜名与价格保持原有对应关系。
+
+本轮预览：`http://127.0.0.1:5001/`。启动：`.venv/bin/python -m flask --app app run --host 127.0.0.1 --port 5001`。
+
 ## 运行与预览
 
 ```powershell
@@ -56,7 +64,7 @@
 
 | 项目 | 当前状态与跟进人 |
 | --- | --- |
-| 真实订单记录 | 复用 `restaurant/api/customer/routes.py` 中的 `GET /orders`。当前 Flask 未注册顾客蓝图，查询仍为 TODO，本机 `/orders` 返回 404。后端实现时从当前会话确定顾客身份，无需前端传手机号。建议响应包含订单 ID、下单时间、金额、付款状态与菜品明细，前端据此接入 **My orders**。当前开发库中已有订单 `#1001`，可用所属的测试账号验证。 |
+| 真实订单记录 | 复用 `restaurant/api/customer/routes.py` 中的 `GET /orders`。当前 Flask 已注册顾客蓝图；顾客前端仍使用 sessionStorage 演示记录，尚未接入该查询。后端实现时从当前会话确定顾客身份，无需前端传手机号。建议响应包含订单 ID、下单时间、金额、付款状态与菜品明细，前端据此接入 **My orders**。当前开发库中已有订单 `#1001`，可用所属的测试账号验证。 |
 | 订座与堂食 | 顾客自行选桌。真实桌位、预订冲突、签到、订单创建及付款等组员确认后再接，界面继续使用本地演示数据。真实菜价及售罄也在接口确认后对齐。 |
 | 配送 | 保留 **Coming soon**。先确认取餐或配送方式、营业时间和范围，再确定是否需要配送下单入口。 |
 
