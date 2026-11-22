@@ -1,0 +1,41 @@
+{% from 'customer/_guest_parts.html' import header %}
+{% from 'customer/_guest_journal_entries.html' import stories %}
+
+{{ header() }}
+<div class="archive-heading">
+  <a class="archive-back" href="#Journal"><span aria-hidden="true">←</span> Back to journal</a>
+  <h1 id="journal-archive-title" tabindex="-1">Journal archive</h1>
+</div>
+<div class="archive-layout">
+  <nav class="archive-directory" aria-labelledby="archive-directory-title">
+    <h2 id="archive-directory-title">Contents</h2>
+    <ul>
+      {% for story in stories %}
+        {% if loop.changed(story.iso[:7]) %}
+        <li class="archive-month"><time datetime="{{ story.iso[:7] }}">{{ story.date[3:] }}</time></li>
+        {% endif %}
+        <li>
+          <button type="button" data-action="archive-post:{{ story.slug }}" aria-controls="archive-{{ story.slug }}">{{ story.title }}</button>
+        </li>
+      {% endfor %}
+    </ul>
+  </nav>
+  <section class="archive-posts" aria-label="Archived posts">
+    {% for story in stories %}
+    <article class="archive-post" id="archive-{{ story.slug }}" aria-labelledby="archive-title-{{ story.slug }}" tabindex="-1">
+      <time datetime="{{ story.iso }}">{{ story.date }}</time>
+      <h2 id="archive-title-{{ story.slug }}">{{ story.title }}</h2>
+      <p>{{ story.intro }}</p>
+      <details>
+        <summary aria-label="Read post: {{ story.title }}">Read post</summary>
+        {% for title, body in story.body %}
+        <section>
+          <h3>{{ title }}</h3>
+          <p>{{ body }}</p>
+        </section>
+        {% endfor %}
+      </details>
+    </article>
+    {% endfor %}
+  </section>
+</div>

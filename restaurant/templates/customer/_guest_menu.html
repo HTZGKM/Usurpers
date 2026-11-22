@@ -1,0 +1,29 @@
+{{ cover('place-setting', 'Menu') }}
+<article class="panel menu-list" aria-label="Food and drink menu">
+  <div class="menu-tools">
+    <nav class="menu-categories" aria-label="Menu categories">
+      {% for key, label in categories.items() %}
+      <button type="button" class="choice" data-action="section:{{ key }}" aria-controls="section-{{ key }}"{% if loop.first %} aria-current="location"{% endif %}>{{ label }}</button>
+      {% endfor %}
+    </nav>
+    <div id="bag-entry" aria-live="polite"></div>
+  </div>
+  {% for key, label in categories.items() %}
+  <section class="menu-section" id="section-{{ key }}">
+    <h2>{{ label }}</h2>
+    {% for dish in catalog if dish.category == key %}
+    <button type="button" class="row" data-action="dish:{{ dish.key }}">
+      <img src="{{ url_for('static', filename='images/atelier/catalog/' ~ dish.key ~ '.webp') }}" alt="">
+      <span class="dish-copy">
+        <span class="dish-line">
+          <span class="dish-title">{{ dish.name }}</span>
+          <span class="leader" aria-hidden="true"></span>
+          <span class="cost{{ ' sold-out' if dish.sold }}">{{ 'Sold out' if dish.sold else '¥' ~ dish.price }}</span>
+        </span>
+        <small class="desc">{{ dish.description }}</small>
+      </span>
+    </button>
+    {% endfor %}
+  </section>
+  {% endfor %}
+</article>

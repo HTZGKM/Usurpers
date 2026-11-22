@@ -7,3 +7,6 @@ venv/
 .env
 .env.*
 !.env.example
+restaurant/data/*.db
+restaurant/data/*.db-shm
+restaurant/data/*.db-wal

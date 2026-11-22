@@ -1,0 +1,500 @@
+main.frontdesk-page {
+  display: block;
+  max-width: 1370px;
+  margin-inline: auto;
+  padding: 0 clamp(16px, 4vw, 54px) 44px;
+  color: #f0ecdf;
+  font: 15px/1.45 system-ui, sans-serif;
+}
+
+.desk-heading,
+.desk-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.desk-heading {
+  flex-wrap: wrap;
+  align-items: end;
+  margin: 27px 0 24px;
+}
+
+.frontdesk-page h1 {
+  position: static;
+  font-size: clamp(44px, 5vw, 68px);
+  text-shadow: none;
+}
+
+.desk-heading-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  color: #cdc4ad;
+}
+
+.desk-demo {
+  padding: 4px 8px;
+  border: 1px solid #494535;
+  border-radius: 4px;
+  color: #c7ba97;
+  font-size: 12px;
+}
+
+.desk-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.14fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+.desk-grid[hidden] {
+  display: none;
+}
+
+.desk-panel {
+  min-width: 0;
+  padding: clamp(13px, 2vw, 23px);
+  border: 1px solid #39372d;
+  border-radius: 10px;
+  background: #141510;
+}
+
+.desk-panel-heading {
+  flex-wrap: wrap;
+  margin-bottom: 15px;
+  color: #c0b79f;
+  font-size: 13px;
+}
+
+.desk-panel h2,
+.desk-arrival h3 {
+  margin: 0;
+  color: #f0ecdf;
+  font: 650 22px/1.2 system-ui, sans-serif;
+  letter-spacing: -0.025em;
+}
+
+.desk-floor {
+  margin-top: 19px;
+}
+
+.frontdesk [data-tone="available"] {
+  --state-ink: #c3d7ae;
+  --state-fill: #263324;
+}
+
+.frontdesk [data-tone="reserved"] {
+  --state-ink: #efcf94;
+  --state-fill: #43341e;
+}
+
+.frontdesk [data-tone="occupied"] {
+  --state-ink: #f0c0a7;
+  --state-fill: #492b23;
+}
+
+.frontdesk [data-tone="cancelled"] {
+  --state-ink: #c9c4b2;
+  --state-fill: #2b2b24;
+}
+
+.desk-floor .seat[data-tone] {
+  border-color: var(--state-ink);
+  background: var(--state-fill);
+  color: var(--state-ink);
+}
+
+.desk-floor .seat[data-tone]::before,
+.desk-floor .seat[data-tone]::after {
+  background: var(--state-ink);
+}
+
+.desk-floor .seat[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px #f0e6cc;
+}
+
+.desk-floor .seat:hover {
+  filter: brightness(1.18);
+}
+
+.desk-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 14px 0 9px;
+  padding: 0;
+  list-style: none;
+  color: #e0d8c0;
+  font-size: 13px;
+}
+
+.desk-legend span {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 5px;
+  border: 1px solid var(--state-ink);
+  border-radius: 2px;
+  background: var(--state-fill);
+}
+
+.desk-filters,
+.desk-check-in {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .8fr) minmax(0, 1.15fr);
+  align-items: end;
+  gap: 9px;
+}
+
+.desk-filters label,
+.desk-check-in label,
+.desk-editor label {
+  display: grid;
+  gap: 4px;
+  color: #c8bea8;
+  font-size: 13px;
+}
+
+.desk-filters select,
+.desk-filters input,
+.desk-check-in select,
+.desk-editor input,
+.desk-editor select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 6px 8px;
+  border: 1px solid #53503f;
+  border-radius: 5px;
+  background: #1d1e17;
+  color: #f0ecdf;
+  font: inherit;
+}
+
+.desk-booking-count {
+  margin: 10px 0 3px;
+  color: #c0b79f;
+  font-size: 12px;
+}
+
+.desk-booking-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.desk-booking {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(7px, 1vw, 13px);
+  width: 100%;
+  min-height: 56px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-bottom-color: #38362c;
+  border-radius: 5px;
+  text-align: left;
+}
+
+.desk-booking:hover,
+.desk-booking[aria-pressed="true"] {
+  background: #252218;
+}
+
+.desk-booking[aria-pressed="true"] {
+  border-color: #9d855a;
+}
+
+.desk-booking-time {
+  color: #e1cb9c;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.desk-guest strong,
+.desk-guest small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.desk-guest small,
+.desk-floor-feedback,
+.desk-empty,
+.desk-arrival p {
+  color: #c4baa2;
+  font-size: 13px;
+}
+
+.desk-chip {
+  padding: 3px 6px;
+  border: 1px solid var(--state-ink);
+  border-radius: 4px;
+  background: var(--state-fill);
+  color: var(--state-ink);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.desk-arrival {
+  margin-top: 17px;
+  padding-top: 14px;
+  border-top: 1px solid #494331;
+}
+
+.desk-arrival h3 {
+  font-size: 17px;
+}
+
+.desk-arrival p,
+.desk-floor-feedback {
+  margin: 7px 0 0;
+}
+
+.desk-check-in {
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-top: 10px;
+}
+
+.desk-check-in[hidden] {
+  display: none;
+}
+
+.desk-confirm {
+  min-height: 42px;
+  padding: 7px 14px;
+  border-radius: 5px;
+  background: #eaddb9;
+  color: #1e190e;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.desk-confirm:hover:enabled {
+  background: #f5e9c9;
+}
+
+.desk-confirm:disabled {
+  opacity: 0.55;
+}
+
+.desk-arrival .desk-arrival-feedback {
+  color: #d0dfbb;
+}
+
+.desk-floor-tools,
+.desk-arrival-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.desk-arrival-actions {
+  justify-content: flex-start;
+  margin-top: 10px;
+}
+
+.desk-arrival-actions[hidden] {
+  display: none;
+}
+
+.desk-subtle {
+  min-height: 36px;
+  padding: 5px 9px;
+  border: 1px solid #63573d;
+  border-radius: 5px;
+  color: #eadbbc;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.desk-subtle:hover {
+  background: #32291b;
+}
+
+.desk-danger,
+.desk-dialog .desk-form-error {
+  color: #f4bba9;
+}
+
+.frontdesk .desk-dialog {
+  width: min(520px, calc(100% - 28px));
+  max-height: calc(100svh - 28px);
+  padding: 22px;
+  border-color: #514a38;
+  background: #181913;
+}
+
+.desk-dialog .desk-panel-heading {
+  flex-wrap: nowrap;
+}
+
+.desk-dialog h2 {
+  margin: 0;
+  color: #f0ecdf;
+  font: 650 23px/1.2 system-ui, sans-serif;
+}
+
+.desk-dialog p {
+  margin: 0 0 12px;
+  color: #d6c9aa;
+}
+
+.frontdesk .desk-dialog button {
+  margin: 0;
+  font: 650 14px/1.35 system-ui, sans-serif;
+}
+
+.frontdesk .desk-dialog .desk-confirm {
+  color: #1e190e;
+}
+
+.frontdesk .desk-dialog .desk-dialog-close {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border: 1px solid #514a38;
+  border-radius: 5px;
+  font-size: 22px;
+}
+
+.desk-editor,
+.desk-editor-fields {
+  display: grid;
+  gap: 10px;
+}
+
+.desk-editor-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.desk-editor[hidden],
+.desk-editor-fields[hidden] {
+  display: none;
+}
+
+.desk-dialog .desk-destructive {
+  background: #edc1b3;
+}
+
+.desk-dialog .desk-destructive:hover:enabled {
+  background: #f6d0c5;
+}
+
+.desk-service {
+  margin-top: 16px;
+}
+
+.desk-service-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.desk-service-picker [aria-pressed="true"] {
+  background: #32291b;
+  border-color: #bc9f68;
+}
+
+.desk-billing-scroll {
+  overflow: auto;
+}
+
+.desk-billing-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.desk-billing-scroll th,
+.desk-billing-scroll td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #38362c;
+  white-space: nowrap;
+}
+
+.desk-billing-scroll thead {
+  color: #cec3a9;
+}
+
+.desk-service-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.desk-service-section h3 {
+  margin: 0 0 12px;
+  font: 650 18px/1.25 system-ui, sans-serif;
+}
+
+.desk-service-list {
+  margin: 10px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.desk-service-list li,
+.desk-service-total {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.desk-service-list li > :first-child,
+.desk-service-total strong {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.desk-service-list small {
+  display: block;
+  color: #d6c093;
+}
+
+.desk-service-order {
+  margin-bottom: 9px;
+  padding: 10px;
+  border: 1px solid #494331;
+  border-radius: 6px;
+}
+
+.desk-item-status {
+  color: #c4baa2;
+  font-size: 12px;
+}
+
+.desk-service button:disabled {
+  opacity: 0.56;
+}
+
+[data-close-desk-visit] {
+  margin-top: 10px;
+}
+
+@media (max-width: 800px) {
+  .desk-grid,
+  .desk-service-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .desk-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .desk-filters label:last-child {
+    grid-column: 1 / -1;
+  }
+}
