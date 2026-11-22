@@ -26,6 +26,7 @@
   <script defer src="{{ url_for('static', filename='js/frontdesk-service.js') }}"></script>
   <script defer src="{{ url_for('static', filename='js/frontdesk.js') }}"></script>
   {% elif account and account.role == 'admin' %}
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
   <script defer src="{{ url_for('static', filename='js/admin.js') }}"></script>
   {% endif %}
@@ -62,10 +63,12 @@
   </dialog>
   {% if staff_links %}
     <template id="view-workspace">
+      {% if role != 'admin' %}
       <div class="staff-toolbar">
         {{ header(staff_links) }}
         {{ sign_out(logout_form) }}
       </div>
+      {% endif %}
       {% include role ~ '/_workspace.html' %}
     </template>
   {% else %}

@@ -150,15 +150,19 @@ function go(name) {
 }
 
 let renderStaffSection;
+const adminTableSections = ["tables/timeline", "tables/calendar"];
+
 function showWorkspace(focus) {
   const defaultSection = staffLinks[0][1];
   const requestedSection = location.hash.startsWith("#workspace/") ? location.hash.slice(11) : "";
-  const section = staffLinks.some(([, key]) => key === requestedSection) ? requestedSection : defaultSection;
+  const knownSection = staffLinks.some(([, key]) => key === requestedSection) ||
+    (account.role === "admin" && adminTableSections.includes(requestedSection));
+  const section = knownSection ? requestedSection : defaultSection;
   const hash = section === defaultSection ? "#workspace" : "#workspace/" + section;
   if (location.hash !== hash) history.replaceState(null, "", hash);
   if (!renderStaffSection) {
     const date = today();
-    const demo = loadStaffDemo(dishes, date, slots);
+    const demo = account.role === "admin" ? null : loadStaffDemo(dishes, date, slots);
     app.className = account.role + "-page";
     mount("workspace");
     if (account.role === "kitchen") {
@@ -166,12 +170,12 @@ function showWorkspace(focus) {
     } else if (account.role === "frontdesk") {
       renderStaffSection = mountFrontdeskWorkspace(app.querySelector("[data-frontdesk]"), account.username, tables, slots, date, demo, goWorkspace);
     } else {
-      renderStaffSection = mountAdminWorkspace(app.querySelector("[data-admin]"), tables, date, demo, goWorkspace);
+      renderStaffSection = mountAdminWorkspace(app.querySelector("[data-admin]"), tables, dishes, goWorkspace);
     }
     document.title = { frontdesk: "Front desk", kitchen: "Kitchen", admin: "Administrator" }[account.role] + " · Double Portion";
   }
   for (const link of document.querySelectorAll(".staff-nav-link")) {
-    if (link.dataset.action === "workspace:" + section) link.setAttribute("aria-current", "page");
+    if (link.dataset.action === "workspace:" + section.split("/")[0]) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   }
   renderStaffSection(section, focus);
@@ -180,6 +184,11 @@ function showWorkspace(focus) {
 function goWorkspace(section) {
   if (nav.open) nav.close();
   const hash = section === staffLinks[0][1] ? "#workspace" : "#workspace/" + section;
+  if (account.role === "admin") {
+    if (location.hash !== hash) history.pushState(null, "", hash);
+    showWorkspace(true);
+    return;
+  }
   if (location.hash === hash) showWorkspace(true);
   else location.hash = hash;
 }

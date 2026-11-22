@@ -1,0 +1,97 @@
+from datetime import datetime, timedelta, timezone
+
+from restaurant.db.database import get_connection
+from restaurant.services.common import valid_date
+
+
+RESTAURANT_TIME = timezone(timedelta(hours=8))
+
+
+def _order_rows(db, condition="", values=()):
+    headers = [
+        dict(row, items=[])
+        for row in db.execute(
+            f"""SELECT h.order_id, h.table_id, h.created_at, h.status, h.payment_status
+                FROM order_headers h {condition}
+                ORDER BY h.created_at DESC, h.order_id DESC""",
+            values,
+        )
+    ]
+    orders = {order["order_id"]: order for order in headers}
+    for row in db.execute(
+        f"""SELECT l.order_id, l.dish_id, l.quantity, l.unit_price, l.note, l.status,
+                   d.dish_name, d.category, q.status AS queue_status, q.completed_at AS ready_at
+            FROM order_headers h
+            JOIN order_lines l ON l.order_id = h.order_id
+            JOIN dishes d ON d.dish_id = l.dish_id
+            LEFT JOIN kitchen_queue q ON q.order_item_id = l.order_item_id
+            {condition}
+            ORDER BY l.order_item_id""",
+        values,
+    ):
+        orders[row["order_id"]]["items"].append(dict(row))
+    return headers
+
+
+def get_ledger(day):
+    with get_connection() as db:
+        db.execute("BEGIN")
+        if not day:
+            return _order_rows(db)
+        return _order_rows(
+            db, "WHERE date(h.created_at, '+8 hours') = ?", (valid_date(day, "date"),)
+        )
+
+
+def get_workspace():
+    from restaurant.services.queue_manager import QueueManager
+
+    QueueManager.enqueue_due_preorders()
+    now = datetime.now(RESTAURANT_TIME)
+    today = now.date()
+    first_day = today - timedelta(days=6)
+    with get_connection() as db:
+        db.execute("BEGIN")
+        orders = _order_rows(
+            db,
+            """WHERE date(h.created_at, '+8 hours') BETWEEN ? AND ?
+                     OR h.status = 'active'""",
+            (first_day.isoformat(), today.isoformat()),
+        )
+        days = [
+            row[0]
+            for row in db.execute(
+                "SELECT DISTINCT date(created_at, '+8 hours') day FROM order_headers "
+                "WHERE day IS NOT NULL ORDER BY day DESC"
+            )
+        ]
+        tables = [
+            dict(row)
+            for row in db.execute("SELECT table_id, capacity FROM dining_tables ORDER BY table_id")
+        ]
+        bookings = [
+            dict(row)
+            for row in db.execute(
+                """SELECT b.*, t.starts_at, t.ends_at
+                   FROM bookings b JOIN time_slots t USING(time_slot_id)
+                   WHERE b.status IN ('booked', 'arrived')
+                   ORDER BY b.booking_date, t.starts_at, b.booking_id"""
+            )
+        ]
+        visits = [
+            dict(row)
+            for row in db.execute(
+                """SELECT visit_id, booking_id, table_id, party_size, contact_name,
+                          phone_number, arrived_at
+                   FROM dining_sessions WHERE status = 'seated' ORDER BY arrived_at"""
+            )
+        ]
+    return {
+        "service_date": today.isoformat(),
+        "service_time": now.strftime("%H:%M"),
+        "orders": orders,
+        "order_days": days,
+        "tables": tables,
+        "bookings": bookings,
+        "visits": visits,
+    }
