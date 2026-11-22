@@ -12,7 +12,7 @@ h1,
 h2,
 h3,
 header .brand,
-dialog button:not(.close),
+dialog:not(.booking-calendar) button:not(.close),
 .seat {
   font-family: var(--display-face);
   font-optical-sizing: auto;
@@ -105,6 +105,29 @@ header button {
 }
 .dish-modal h2 {
   font-size: clamp(34px, 3.8vw, 54px);
+}
+.guest-public {
+  --display-face: "Palatino Linotype", Palatino, Georgia, serif;
+}
+.guest-public .panel h2,
+.guest-public .panel h3,
+.guest-public .room h1,
+.guest-public .dish-modal h2,
+.guest-public .customer-login-prompt h2,
+.guest-public .guest-navigation .brand {
+  font-style: italic;
+}
+.guest-public .guest-navigation :is(.nav-shortcut, .book) {
+  font-family: var(--guest-control);
+}
+#nav.guest-directory .nav-wordmark {
+  font-style: italic;
+  font-size: clamp(19px, 2vw, 28px);
+  text-transform: none;
+  letter-spacing: -0.025em;
+}
+.guest-public .menu-list .choice {
+  font-family: var(--guest-control);
 }
 @media (min-width: 761px) and (max-width: 1000px) {
   .menu-list {

@@ -25,17 +25,18 @@
 | 菜名、配料、示例价格、售罄标志 | `restaurant/api/customer/catalog.json` |
 | 布局、响应式、字号与字体 | `restaurant/static/css/guest.css`、`guest-type.css` |
 | 页面跳转、账号表单、订座、购物袋、堂食订单和模拟付款 | `restaurant/static/js/guest.js` |
+| 订座月历、日期选中和键盘操作 | `restaurant/static/js/guest-calendar.js` |
 | 菜品可选项、演示加价和旧购物袋数据兼容 | `restaurant/static/js/guest-meal.js` |
 | 导航的玻璃悬停、按下、键盘与减少动态效果 | `restaurant/static/js/guest-lens.js` |
 | 封面、菜单缩略图、五款高清披萨 | `restaurant/static/images/atelier/{editorial,catalog,detail}/` |
 
-界面文案用英文。菜单沿用 Qitchen 的左右独立高度、照片左下角大标题和右列分组菜品。订座与确认在同一页完成，下单、付款和回执在 Your visit 内切换。原 `/#Your%20table` 地址继续有效。字体优先 Cheltenham BT，当前回退为 Georgia。取得 Web 授权后，将 Roman 字体命名为 `restaurant/static/fonts/CheltenhamBT-Roman.woff2`，首页会自动引用。
+界面文案用英文。菜单保留左侧照片和右侧分组菜品。桌面端滚动时保留左侧封面，各端都将当前分类和购物袋入口放在吸顶栏。订座与确认在同一页完成，下单、付款和回执在 Your visit 内切换。原 `/#Your%20table` 地址继续有效。顾客端标题使用与主管页一致的 Palatino 字体栈。
 
 ## 验收路径
 
-1. 未登录打开 `/`，检查 Menu、Book a table、Your visit、Delivery 和 Journal 都可浏览。点订座页 **Check availability**、菜品详情 **Add to bag** 或 Your visit 的 **View records**，应弹出登录提醒。顾客登录后回原视图。选日期、人数、时段和相容桌位，确认后可原地改单、取消。
+1. 未登录打开 `/`，检查 Menu、Book a table、Your visit、Delivery 和 Journal 都可浏览。点订座页 **Sign in to check availability**、菜品详情 **Add to bag** 或 Your visit 的 **Sign in to view your visit**，应弹出登录提醒。顾客登录后回原视图。选日期、人数、时段和相容桌位，确认后可原地改单、取消。
 2. 点 **Preview host check-in**。进入菜单后切换到 **Pizzas**，打开 **Margherita**，选两份，加到购物袋。关闭详情时回到原列表位置。
-3. 点 **View bag**，核对总价 ¥116，点 **Place order**，再点 **Pay ¥116 · demo**。同页显示 **Payment received**。刷新后该标签页仍可查看回执。
+3. 在菜单分类栏点 **View bag (2) · ¥116**，点 **Place order**，再点 **Pay ¥116 · demo**。同页显示 **Payment received**。刷新后该标签页仍可查看回执。
 4. 首页、菜单和订座均应支持窄屏。打开玻璃导航时用键盘检查焦点和 Esc；系统选择减少动态效果时，过渡应减弱。
 5. 从首页打开左上角导航，点 **My account**。试一次空表单和错误密码，核对英文提示及焦点。点 **Register**，用测试号码注册，成功后应回到 **Sign in** 并填好号码。同一号码重复注册应提示已注册。
 6. 登录后在同页看到 **My profile** 及账号资料，刷新后仍保持登录。点 **Sign out** 后应看到英文退出提示，且 `GET /auth/me` 返回 HTTP 401。需要测试注册写入时用独立 SQLite 测试库，避免在日常开发库累积账号。

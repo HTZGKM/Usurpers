@@ -11,8 +11,8 @@
 {%- endmacro %}
 
 {% macro header(links=none) -%}
-<header{% if links %} class="staff-compact-nav" aria-label="Workspace shortcuts"{% endif %}>
-  <button type="button" class="toggle" data-action="navigation" aria-label="Open navigation" aria-haspopup="dialog" aria-controls="nav">☰</button>
+<header{% if links %} class="staff-compact-nav" aria-label="Workspace shortcuts"{% else %} class="guest-navigation" aria-label="Restaurant shortcuts"{% endif %}>
+  <button type="button" class="toggle" data-action="navigation" aria-label="Open navigation" aria-haspopup="dialog" aria-controls="nav">{% if links %}☰{% else %}<img src="{{ url_for('static', filename='images/admin/double-portion-mark.png') }}" alt="" width="28" height="28">{% endif %}</button>
   {% if links %}
     {{ button('Double Portion', 'workspace:' ~ links[0][1], 'brand') }}
     <div class="staff-shortcuts">
@@ -39,7 +39,7 @@
 
 {% macro panel(context, title) -%}
 <article class="panel">
-  <small class="context">{{ context }}</small>
+  {% if context %}<small class="context">{{ context }}</small>{% endif %}
   <h2 tabindex="-1">{{ title }}</h2>
   {{ caller() }}
 </article>

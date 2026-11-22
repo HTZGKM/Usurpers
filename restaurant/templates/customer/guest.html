@@ -42,11 +42,12 @@
   {% endif %}
   <script defer src="{{ url_for('static', filename='js/guest-lens.js') }}"></script>
   <script defer src="{{ url_for('static', filename='js/guest-meal.js') }}"></script>
+  {% if role == 'customer' %}<script defer src="{{ url_for('static', filename='js/guest-calendar.js') }}"></script>{% endif %}
   <script defer src="{{ url_for('static', filename='js/guest.js') }}"></script>
 </head>
-<body data-images="{{ url_for('static', filename='images/atelier/') }}">
+<body{% if not staff_links %} class="guest-public"{% endif %} data-images="{{ url_for('static', filename='images/atelier/') }}">
   <main{% if not staff_links %} class="home"{% endif %} id="app">{% if not staff_links %}{{ homepage() }}{% endif %}</main>
-  <dialog id="nav" aria-label="Navigation">
+  <dialog id="nav"{% if not staff_links %} class="guest-directory"{% endif %} aria-label="Navigation">
     <p class="nav-wordmark">Double Portion</p>
     <button type="button" class="close" id="close" aria-label="Close navigation" autofocus>×</button>
     <nav class="nav-links" aria-label="Restaurant navigation">
@@ -95,8 +96,14 @@
           <div data-details></div>
           <div class="guest-history" data-visit-history></div>
         {% else %}
-          <p>View your reservations, orders and bag in one place.</p>
-          {{ button('View records', 'customer-sign-in', 'primary') }}
+          <div class="visit-access">
+            <p>Sign in to view your reservations, orders and bag.</p>
+            {{ button('Sign in to view your visit', 'customer-sign-in', 'primary') }}
+          </div>
+          <div class="visit-shortcuts">
+            {{ button('Book a table', 'Book a table') }}
+            {{ button('Explore the menu', 'Menu') }}
+          </div>
         {% endif %}
       {% endcall %}
     </template>
