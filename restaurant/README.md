@@ -26,6 +26,6 @@ python app.py
 
 ## 数据和后续页面
 
-账号登录、注册和退出使用 Flask-WTF 与 SQLite。顾客业务使用当前标签页内的演示数据。员工从相同的登录表单进入 `/#workspace`，按角色显示 [前台](templates/frontdesk/README.md)、[厨房](templates/kitchen/README.md) 或 [主管理员](templates/admin/README.md) 工作台。三类员工页面共享本标签页的演示业务状态，正式业务接口待联调。顾客端其余内容见[设计简报](templates/customer/FRONTEND_BRIEF.md)。
+账号登录、注册和退出使用 Flask-WTF 与 SQLite。顾客业务使用当前标签页内的演示数据。员工从相同的登录表单进入 `/#workspace`，按角色显示 [前台](templates/frontdesk/README.md)、[厨房](templates/kitchen/README.md) 或 [主管理员](templates/admin/README.md) 工作台。前台和厨房的页面仍共享本标签页的演示业务状态，主管工作台从 SQLite 读取业务数据。顾客端其余内容见[设计简报](templates/customer/FRONTEND_BRIEF.md)。
 
 旧前端移除的路由和文件见[删除清单](templates/customer/README.md#旧前端删除清单)。

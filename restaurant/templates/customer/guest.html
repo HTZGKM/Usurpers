@@ -1,4 +1,10 @@
-{% from 'customer/_guest_parts.html' import header, cover, button, panel, homepage %}
+{% from 'customer/_guest_parts.html' import header, cover, button, panel, homepage, sign_out %}
+{% set role = account.role if account else none %}
+{% set staff_links = {
+  'frontdesk': [('Reservations', 'reservations'), ('Table service', 'service'), ('Billing records', 'billing')],
+  'kitchen': [('Queue', 'queue'), ('Availability', 'availability')],
+  'admin': [('Overview', 'overview'), ('Orders', 'orders'), ('Kitchen queue', 'queue'), ('Tables', 'tables'), ('Accounts', 'accounts'), ('Dishes', 'dishes')]
+}.get(role, []) %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -9,7 +15,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/guest.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/guest-type.css') }}">
-  {% if account and account.role in ('frontdesk', 'kitchen', 'admin') %}
+  {% if staff_links %}
   <script defer src="{{ url_for('static', filename='js/staff-demo.js') }}"></script>
   {% endif %}
   {% if account and account.role == 'kitchen' %}
@@ -20,6 +26,7 @@
   <script defer src="{{ url_for('static', filename='js/frontdesk-service.js') }}"></script>
   <script defer src="{{ url_for('static', filename='js/frontdesk.js') }}"></script>
   {% elif account and account.role == 'admin' %}
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
   <script defer src="{{ url_for('static', filename='js/admin.js') }}"></script>
   {% endif %}
@@ -35,50 +42,76 @@
   {% endif %}
   <script defer src="{{ url_for('static', filename='js/guest-lens.js') }}"></script>
   <script defer src="{{ url_for('static', filename='js/guest-meal.js') }}"></script>
+  {% if role == 'customer' %}<script defer src="{{ url_for('static', filename='js/guest-calendar.js') }}"></script>{% endif %}
   <script defer src="{{ url_for('static', filename='js/guest.js') }}"></script>
 </head>
-<body data-images="{{ url_for('static', filename='images/atelier/') }}">
-  <main class="home" id="app">{{ homepage() }}</main>
-  <dialog id="nav" aria-label="Navigation">
+<body{% if not staff_links %} class="guest-public"{% endif %} data-images="{{ url_for('static', filename='images/atelier/') }}">
+  <main{% if not staff_links %} class="home"{% endif %} id="app">{% if not staff_links %}{{ homepage() }}{% endif %}</main>
+  <dialog id="nav"{% if not staff_links %} class="guest-directory"{% endif %} aria-label="Navigation">
     <p class="nav-wordmark">Double Portion</p>
     <button type="button" class="close" id="close" aria-label="Close navigation" autofocus>×</button>
     <nav class="nav-links" aria-label="Restaurant navigation">
       <span class="nav-ornament" aria-hidden="true"></span>
-      {% for label, page in [('The Restaurant', 'Home'), ('Menu', 'Menu'), ('Reservation', 'Book a table'), ('Delivery', 'Delivery'), ('Journal', 'Journal'), ('Your table', 'Your table')] %}
-        {{ button(label, page, 'nav-link') }}
-      {% endfor %}
-      {{ button('Workspace' if account and account.role != 'customer' else 'My account', 'My account', 'nav-link') }}
+      {% if staff_links %}
+        {% for label, key in staff_links %}{{ button(label, 'workspace:' ~ key, 'nav-link staff-nav-link') }}{% endfor %}
+      {% else %}
+        {% for label, page in [('The Restaurant', 'Home'), ('Menu', 'Menu'), ('Book a table', 'Book a table'), ('Your visit', 'Your table'), ('Delivery', 'Delivery'), ('Journal', 'Journal'), ('My account', 'My account')] %}
+          {{ button(label, page, 'nav-link') }}
+        {% endfor %}
+      {% endif %}
       <span class="nav-ornament" aria-hidden="true"></span>
     </nav>
   </dialog>
-  {% include 'customer/_guest_dish.html' %}
-
-  <template id="view-home">{{ homepage() }}</template>
-  <template id="view-menu">{% include 'customer/_guest_menu.html' %}</template>
-  <template id="view-booking">{% include 'customer/_guest_reservation.html' %}</template>
-  <template id="view-account">
-    {% if account and account.role == 'kitchen' %}
-      {% include 'kitchen/_workspace.html' %}
-    {% elif account and account.role == 'frontdesk' %}
-      {% include 'frontdesk/_workspace.html' %}
-    {% elif account and account.role == 'admin' %}
-      {% include 'admin/_workspace.html' %}
-    {% else %}
-      {% include 'customer/_guest_account.html' %}
+  {% if staff_links %}
+    <template id="view-workspace">
+      {% if role != 'admin' %}
+      <div class="staff-toolbar">
+        {{ header(staff_links) }}
+        {{ sign_out(logout_form) }}
+      </div>
+      {% endif %}
+      {% include role ~ '/_workspace.html' %}
+    </template>
+  {% else %}
+    {% include 'customer/_guest_dish.html' %}
+    {% if not account %}
+      <dialog class="customer-login-prompt" id="customer-login-prompt" aria-labelledby="customer-login-title">
+        <h2 id="customer-login-title">Sign in to continue</h2>
+        <p data-customer-login-copy></p>
+        <div class="customer-login-actions">
+          <form method="dialog"><button type="submit" class="secondary" autofocus>Keep browsing</button></form>
+          {{ button('Sign in', 'open-customer-login', 'primary') }}
+        </div>
+      </dialog>
     {% endif %}
-  </template>
-  <template id="view-delivery">{% include 'customer/_guest_delivery.html' %}</template>
-  <template id="view-table">
-    {{ cover('account-cover','Your table') }}
-    {% call panel('Dine-in','Your table') %}
-      <div data-details></div>
-      <div class="guest-history" data-visit-history></div>
-    {% endcall %}
-  </template>
-  {% include 'customer/_guest_journal.html' %}
-  <template id="view-journal-archive">{% include 'customer/_guest_journal_archive.html' %}</template>
+    <template id="view-home">{{ homepage() }}</template>
+    <template id="view-menu">{% include 'customer/_guest_menu.html' %}</template>
+    <template id="view-booking">{% include 'customer/_guest_reservation.html' %}</template>
+    <template id="view-account">{% include 'customer/_guest_account.html' %}</template>
+    <template id="view-delivery">{% include 'customer/_guest_delivery.html' %}</template>
+    <template id="view-table">
+      {{ cover('account-cover','Your visit') }}
+      {% call panel('Dine-in','Your visit') %}
+        {% if account %}
+          <div data-details></div>
+          <div class="guest-history" data-visit-history></div>
+        {% else %}
+          <div class="visit-access">
+            <p>Sign in to view your reservations, orders and bag.</p>
+            {{ button('Sign in to view your visit', 'customer-sign-in', 'primary') }}
+          </div>
+          <div class="visit-shortcuts">
+            {{ button('Book a table', 'Book a table') }}
+            {{ button('Explore the menu', 'Menu') }}
+          </div>
+        {% endif %}
+      {% endcall %}
+    </template>
+    {% include 'customer/_guest_journal.html' %}
+    <template id="view-journal-archive">{% include 'customer/_guest_journal_archive.html' %}</template>
+  {% endif %}
   <script id="guest-data" type="application/json">{{ {
-    'dishes':catalog, 'tables':tables, 'slots':slots, 'categories':categories, 'account':account
+    'dishes':catalog, 'tables':tables, 'slots':slots, 'categories':categories, 'account':account, 'staffLinks':staff_links
   }|tojson }}</script>
 </body>
 </html>

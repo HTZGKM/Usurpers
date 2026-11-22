@@ -28,6 +28,15 @@ from restaurant.forms import (
     nonzero_number,
     positive_number,
 )
+from restaurant.services.menu_service import MENU_CATEGORIES
+
+
+def dish_category_field():
+    return SelectField(
+        "Category",
+        choices=[("", "Uncategorized")] + [(key, key.title()) for key in MENU_CATEGORIES],
+        validators=[Optional()],
+    )
 
 
 class EditStaffForm(FlaskForm):
@@ -76,6 +85,7 @@ class DeactivateStaffForm(FlaskForm):
 
 
 class DishForm(FlaskForm):
+    category = dish_category_field()
     name = StringField(
         "Dish name",
         filters=[lambda value: (value or "").strip()],
@@ -114,6 +124,9 @@ class DishForm(FlaskForm):
 class EditDishForm(FlaskForm):
     name = StringField("Dish name", validators=[Optional(), Length(max=100)])
     price = DecimalField("Price", places=None, validators=[Optional(), monetary_amount])
+    category = dish_category_field()
+    ingredients = TextAreaField("Ingredients", validators=[Optional(), Length(max=1000)])
+    prep_time_minutes = IntegerField("Preparation (min)", validators=[Optional(), NumberRange(min=1)])
     submit = SubmitField("Save Dish Changes")
 
 

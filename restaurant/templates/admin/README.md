@@ -2,25 +2,27 @@
 
 在首页 **My account** 用管理员账号登录，进入 `/#workspace`。Jinja 根据现有 Flask 会话选择后台模板。页面使用 `_workspace.html`、`restaurant/static/css/admin.css` 与 `restaurant/static/js/admin.js`。
 
-- **Overview** 显示当日订单数、当日订单中的已付款数、待制作明细和占用桌位。订单状态条形图可进入带对应筛选的订单表。
-- **Orders** 按日期、订单状态和付款状态查订单。详情显示下单时的单价、数量、备注和状态。
-- **Kitchen queue** 和 **Tables** 用于只读查看队列与桌位。桌位图使用前台和顾客端共用的模板，支持按日期和时段查看。
-- **Accounts** 支持角色筛选，顾客账号只读。可新增、编辑和停用前台或厨房的演示账号。演示账号不改变真实登录权限，输入的密码不保存。
-- **Dishes** 支持筛选、新增、编辑、改价和归档。归档菜品从同标签页的前台点菜单和厨房供应列表撤下，已有订单保留原菜名和价格。临时供应状态由厨房操作。
+- **Overview** 显示当日营业指标、按小时的分类曲线、最近订单和 Top 5／Top 12 菜品销量。
+- **Orders** 显示近七天曲线。历史订单可按日期、状态和付款状态筛选，点选后显示当时的单价、数量和备注。
+- **Kitchen queue** 按出餐和制作状态拆分实际订单明细。**Tables** 提供桌位图、预约时间轴和月历。
+- **Accounts** 可新增、编辑和停用前台或厨房员工，顾客列表只读。**Dishes** 可按分类和状态筛选，支持新增、编辑与归档。
+- 点击左上角 Logo 打开项目全屏目录。顶部管理员圆标可查看当前账号并退出。
 
-运营数据来自同一浏览器标签页中的演示状态，见 `restaurant/static/js/staff-demo.js`。刷新或切换员工账号后仍可继续演示。正式收入汇总的口径和查看权限待确认。
+## 数据口径与扩量
 
-## 后续联调
+主管工作台使用 SQLite 业务数据。`GET /admin/workspace` 返回当前营业时间、最近七天与仍活跃的订单、桌位和预约。`GET /admin/workspace/orders` 支持按营业日查历史订单。`/admin/accounts`、`/admin/staff` 和 `/admin/dishes` 负责账户与菜品操作，写入使用 Flask-WTF 表单与 CSRF。
 
-复用 `restaurant/api/admin/routes.py` 中的路由定义。当前没有新增 Flask 路由，也未更改后端业务或数据库。
+- 订单时间按后端约定以 UTC 写入，页面按北京时间归档。分类订单数按订单与组别去重，营收使用已付款、未取消明细的快照单价乘数量，按下单时间分桶。这是销售毛额口径，退款记录另行核算。
+- 批量写入时使用业务表 `order_headers` 和 `order_lines`，配置 `dishes.category` 为 `burgers`、`pizzas`、`sides` 或 `drinks`。小食和饮料合并为第三条曲线。未分类菜品仍显示在订单和排行榜里，分类曲线会标注排除未分类明细。
+- 出餐队列还需要对应的 `kitchen_queue` 状态和完成时间，桌位状态由 `dining_sessions` 和当前营业日的 `bookings` 提供。完整预约时间来自 `time_slots`。
+- 前台与厨房页面若仍使用 `staff-demo.js`，其浏览器演示操作独立于 SQLite；主管会反映数据库和业务接口写入的状态。
+- 概览和厨房队列在前台可见时定期刷新，操作弹窗和键盘聚焦控件时推迟刷新。
 
-| 方法与路径 | 后端处理与前端用途 |
-| --- | --- |
-| `GET /admin/orders`、`GET /admin/orders/<order_id>` | 按 `date`、`status`、`payment_status` 查询，返回订单和明细、历史单价、制作、上菜和付款状态。用于概览及订单。 |
-| `GET /admin/kitchen-queue`、`GET /admin/tables` | 返回制作队列与按 `date`、`time_slot_id` 查询的桌位状态。两个页面只读。 |
-| `GET /admin/accounts` | 按 `role` 查询账号及启用状态。顾客账号只读，响应无密码字段。 |
-| `POST /admin/staff`、`GET /admin/staff/<staff_id>/edit`、`POST /admin/staff/<staff_id>/edit`、`POST /admin/staff/<staff_id>/deactivate` | 校验管理员角色、账号字段及记录状态。新增表单字段为 `name`、`phone_number`、`email`、`role` 和 `password`，修改沿用前四项。POST 使用 `csrf_token`。 |
-| `GET /admin/dishes`、`POST /admin/dishes`、`GET /admin/dishes/<dish_id>/edit`、`POST /admin/dishes/<dish_id>/edit`、`POST /admin/dishes/<dish_id>/archive` | 返回菜品的价格、供应与归档状态，校验并保存 `name`、`price`、`ingredients`、`prep_time_minutes`、可选 `image_path`。POST 使用 `csrf_token`。当前演示表单也包含前端菜单分类，正式字段待确认。 |
+## 素材
+
+- 餐盘来自 [CC0 Tableware Icons](https://opengameart.org/content/cc0-tableware-icons)。
+- 汉堡、披萨和饮料像素图来自 [Kenney Pixel Platformer Food Expansion](https://kenney.nl/assets/pixel-platformer-food-expansion)。
+- 薯条来自 [Icons Food](https://opengameart.org/content/icons-food)。
 
 ## 设计参考
 

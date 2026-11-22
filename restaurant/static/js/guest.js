@@ -8,9 +8,11 @@ const {
   slots,
   categories: cats,
   account,
+  staffLinks,
 } = JSON.parse(document.querySelector("#guest-data").textContent);
-const isStaff = account && account.role !== "customer";
-const customer = isStaff ? null : account;
+const isStaff = staffLinks.length > 0;
+const customer = account?.role === "customer" ? account : null;
+const loginPrompt = document.querySelector("#customer-login-prompt");
 const menu = new Map(dishes.map((d) => [d.key, d]));
 const imageBase = document.body.dataset.images;
 function asset(dish, detail = false) {
@@ -48,11 +50,9 @@ const blank = () => ({
 });
 let state = blank(),
   edit = false;
-const key =
-  "double-portion-room-preview-v1" +
-  (account ? "." + account.username : ".guest");
+const key = customer ? "double-portion-room-preview-v1." + customer.username : null;
 try {
-  const saved = JSON.parse(sessionStorage.getItem(key));
+  const saved = key && JSON.parse(sessionStorage.getItem(key));
   if (saved?.draft) {
     const { bag, bill, paid, ...rest } = saved;
     state = {
@@ -64,6 +64,7 @@ try {
   }
 } catch {}
 function persist() {
+  if (!key) return;
   try {
     sessionStorage.setItem(key, JSON.stringify(state));
   } catch {}
@@ -135,6 +136,7 @@ function route() {
     return "Home";
   }
   if (Object.hasOwn(aliases, raw)) raw = aliases[raw];
+  if (raw.startsWith("workspace/")) return "My account";
   if (raw === "Journal/archive") return raw;
   if (raw.startsWith("Journal/")) return "Journal";
   if (raw.startsWith("Menu/category/") && Object.hasOwn(cats, raw.slice(14))) return raw;
@@ -145,6 +147,67 @@ function go(name) {
   if (nav.open) nav.close();
   if (route() !== name) location.hash = encodeURIComponent(name);
   else show(false);
+}
+
+let renderStaffSection;
+const adminTableSections = ["tables/timeline", "tables/calendar"];
+
+function showWorkspace(focus) {
+  const defaultSection = staffLinks[0][1];
+  const requestedSection = location.hash.startsWith("#workspace/") ? location.hash.slice(11) : "";
+  const knownSection = staffLinks.some(([, key]) => key === requestedSection) ||
+    (account.role === "admin" && adminTableSections.includes(requestedSection));
+  const section = knownSection ? requestedSection : defaultSection;
+  const hash = section === defaultSection ? "#workspace" : "#workspace/" + section;
+  if (location.hash !== hash) history.replaceState(null, "", hash);
+  if (!renderStaffSection) {
+    const date = today();
+    const demo = account.role === "admin" ? null : loadStaffDemo(dishes, date, slots);
+    app.className = account.role + "-page";
+    mount("workspace");
+    if (account.role === "kitchen") {
+      renderStaffSection = mountKitchenWorkspace(app.querySelector("[data-kitchen]"), account.username, demo);
+    } else if (account.role === "frontdesk") {
+      renderStaffSection = mountFrontdeskWorkspace(app.querySelector("[data-frontdesk]"), account.username, tables, slots, date, demo, goWorkspace);
+    } else {
+      renderStaffSection = mountAdminWorkspace(app.querySelector("[data-admin]"), tables, dishes, goWorkspace);
+    }
+    document.title = { frontdesk: "Front desk", kitchen: "Kitchen", admin: "Administrator" }[account.role] + " · Double Portion";
+  }
+  for (const link of document.querySelectorAll(".staff-nav-link")) {
+    if (link.dataset.action === "workspace:" + section.split("/")[0]) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+  renderStaffSection(section, focus);
+}
+
+function goWorkspace(section) {
+  if (nav.open) nav.close();
+  const hash = section === staffLinks[0][1] ? "#workspace" : "#workspace/" + section;
+  if (account.role === "admin") {
+    if (location.hash !== hash) history.pushState(null, "", hash);
+    showWorkspace(true);
+    return;
+  }
+  if (location.hash === hash) showWorkspace(true);
+  else location.hash = hash;
+}
+
+function promptCustomerSignIn() {
+  if (!loginPrompt) return;
+  const view = route();
+  loginPrompt.querySelector("[data-customer-login-copy]").textContent = view === "Book a table"
+    ? "Sign in to check table availability and make a reservation."
+    : view === "Your table" ? "Sign in to view your reservations, orders and bag."
+      : "Sign in to add dishes to your bag.";
+  loginPrompt.showModal();
+}
+
+function openCustomerLogin() {
+  const returnTo = location.hash;
+  loginPrompt.close();
+  history.pushState({ returnTo }, "", "#My%20account");
+  show(true);
 }
 function animate(el, ms) {
   if (!reduce.matches)
@@ -182,6 +245,7 @@ function bookingSummary(d) {
 }
 function bookingView() {
   mount("booking");
+  if (!customer) return;
   const locked = !!state.booking && !edit;
   const d = locked ? state.booking : state.draft;
   const form = app.querySelector("#reservation");
@@ -222,6 +286,9 @@ function bookingView() {
   form.querySelector("#date").min = today();
   for (const field of ["date", "guests", "name", "phone"])
     form.querySelector("#" + field).value = d[field];
+  const dateField = form.querySelector("#date");
+  if (!dateField.validity.valid) dateField.value = d.date = dateField.min;
+  installBookingCalendar(form, app.querySelector("#booking-calendar"));
   if (edit) {
     heading.textContent = "Edit reservation";
     form.querySelector("[type=submit]").textContent = "Save reservation";
@@ -236,9 +303,11 @@ function syncDraft() {
   const d = state.draft;
   if (d.table && !tables.some((t) => t[0] === d.table && available(t, d)))
     d.table = "";
-  document.querySelectorAll(".seat").forEach((b) => {
+  let availableCount = 0;
+  app.querySelectorAll(".seat").forEach((b) => {
     const t = tables.find((t) => t[0] === b.dataset.action.slice(5));
     b.disabled = !available(t, d);
+    if (!b.disabled) availableCount++;
     b.setAttribute("aria-pressed", t[0] === d.table);
   });
   document
@@ -246,24 +315,63 @@ function syncDraft() {
     .forEach((b) =>
       b.setAttribute("aria-pressed", b.dataset.action.slice(5) === d.time),
     );
-  document.querySelector("#summary").textContent = d.table
+  app.querySelector("#summary").textContent = d.table
     ? bookingSummary(d)
-    : "Choose an available table on the floor plan.";
+    : availableCount === 0
+      ? "No tables for this party size and arrival time."
+      : availableCount + (availableCount === 1 ? " table available" : " tables available");
+  const floorLink = app.querySelector('[data-action="focus-floor"]');
+  floorLink.hidden = availableCount === 0;
+  floorLink.textContent = d.table ? "Change table" : "Choose a table";
+  app.querySelector(".booking-continue").hidden = !d.table;
   document.querySelector(".statusline").textContent = "";
   persist();
 }
 function bagButton() {
   const value = mealTotal(state.bag);
-  return value
-    ? btn("View bag · ¥" + value, "Your table", "primary bag-bar")
+  const quantity = state.bag.reduce((sum, line) => sum + line.quantity, 0);
+  return quantity
+    ? btn("View bag (" + quantity + ") · ¥" + value, "Your table", "primary menu-bag")
     : "";
 }
+let menuEndCategory = "";
+let lastMenuScroll = 0;
 function menuView() {
   mount("menu");
+  menuEndCategory = "";
+  lastMenuScroll = scrollY;
   app.querySelector("#bag-entry").innerHTML = bagButton();
 }
 function scrollToMenuCategory(category, behavior = "instant") {
-  document.getElementById("section-" + category)?.scrollIntoView({ behavior });
+  const section = document.getElementById("section-" + category);
+  const tools = app.querySelector(".menu-tools");
+  if (!section || !tools) return;
+  const top = section.getBoundingClientRect().top - tools.offsetHeight - 20;
+  const scrollLimit = document.scrollingElement.scrollHeight - innerHeight;
+  menuEndCategory = scrollY + top >= scrollLimit ? category : "";
+  lastMenuScroll = scrollY;
+  window.scrollBy({ top, behavior });
+  syncMenuCategory();
+}
+function syncMenuCategory() {
+  const tools = app.querySelector(".menu-tools");
+  if (!tools) return;
+  const boundary = Math.max(tools.getBoundingClientRect().bottom, tools.offsetHeight + 8) + 18;
+  const links = [...tools.querySelectorAll(".menu-categories button")];
+  if (scrollY < lastMenuScroll) menuEndCategory = "";
+  lastMenuScroll = scrollY;
+  const scrollLimit = document.scrollingElement.scrollHeight - innerHeight;
+  const atEnd = scrollLimit > 0 && scrollLimit - scrollY <= 2;
+  const current = atEnd
+    ? links.find((button) => button.dataset.action === "section:" + menuEndCategory) ?? links.at(-1)
+    : links.findLast((button) => {
+        const section = document.getElementById(button.getAttribute("aria-controls"));
+        return section.getBoundingClientRect().top <= boundary;
+      }) ?? links[0];
+  for (const button of links) {
+    if (button === current) button.setAttribute("aria-current", "location");
+    else button.removeAttribute("aria-current");
+  }
 }
 let detailKey = "",
   detailLineId = null,
@@ -414,13 +522,16 @@ function showDetail(k, lineId = null) {
   dishSheet.querySelector(".dish-description").textContent = dish.description;
   const action = dishSheet.querySelector(".primary");
   action.disabled = dish.sold;
-  action.dataset.action = state.bill ? "Your table" : "add";
+  action.dataset.action = !customer ? "customer-sign-in" : state.bill ? "Your table" : "add";
   action.textContent = dish.sold
     ? "Sold out"
     : state.bill
       ? "View your order"
       : editingLine ? "Save changes" : "Add to bag";
-  const canCustomize = !dish.sold && !state.bill;
+  const previewPrice = dishSheet.querySelector(".dish-preview-price");
+  previewPrice.hidden = Boolean(customer) || dish.sold;
+  previewPrice.textContent = "¥" + dish.price;
+  const canCustomize = Boolean(customer) && !dish.sold && !state.bill;
   dishSheet.querySelector(".dish-customization").hidden = !canCustomize;
   dishSheet.querySelector(".dish-options").hidden = !canCustomize;
   dishFeedback();
@@ -519,6 +630,10 @@ function renderVisitHistory() {
     (orderRecords || '<p class="history-empty">No orders yet.</p>') + '</section>';
 }
 function visitView() {
+  if (!customer) {
+    mount("table");
+    return;
+  }
   const previousTotal = app.querySelector("[data-bag-total]");
   const booked = state.booking;
   const order = state.bill;
@@ -531,8 +646,8 @@ function visitView() {
         state.checked ? "Checked in" : bookingSummary(booked),
       )
     : "";
-  body += '<div id="lines">' + lines.map((line) => mealLineMarkup(line, !order)).join("") + "</div>";
   if (lines.length) {
+    body += '<div id="lines">' + lines.map((line) => mealLineMarkup(line, !order)).join("") + "</div>";
     body += order ? pair(order.paid ? "Paid" : "Total", "¥" + value) :
       '<div class="pair"><span>Total</span><strong class="rolling-price" data-bag-total aria-live="polite" aria-atomic="true"></strong></div>';
   }
@@ -545,19 +660,24 @@ function visitView() {
       "<p>Demo order submitted.</p>" +
       btn("Pay ¥" + value + " · demo", "pay", "primary");
   else if (!state.checked) {
-    body +=
+    const nextStep =
       "<p>" +
       (booked
         ? "Check in with your host before placing a dine-in order."
-        : "Book a table and check in with your host to place a dine-in order.") +
+        : "Book a table, then check in with your host to place a dine-in order.") +
       "</p>" +
       btn(
         booked ? "Preview host check-in" : "Book a table",
         booked ? "checkin" : "Book a table",
         "primary",
-      ) +
-      btn("Explore the menu", "Menu");
-  } else {
+      );
+    const browse = btn("Explore the menu", "Menu");
+    body += lines.length
+      ? nextStep + browse
+      : '<div class="visit-access visit-next-step"><h3>' +
+        (booked ? "Next step: check in" : "Plan your visit") + "</h3>" +
+        nextStep + '</div><div class="visit-shortcuts">' + browse + "</div>";
+  } else if (state.checked) {
     body += lines.length
       ? (blocked ? '<p class="order-unavailable">Remove sold-out items before placing an order.</p>' : '') +
         btn("Place order", "order", "primary", blocked ? "disabled" : "") + btn("Add another dish", "Menu")
@@ -571,7 +691,7 @@ function visitView() {
       ? "Order received"
       : lines.length
         ? "Your bag"
-        : "Your table";
+        : "Your visit";
   app.querySelector("[data-details]").innerHTML = body;
   const total = app.querySelector("[data-bag-total]");
   if (total) {
@@ -584,6 +704,10 @@ function visitView() {
 let previousPage = "",
   menuScroll = 0;
 function show(transition = true) {
+  if (isStaff) {
+    showWorkspace(transition);
+    return;
+  }
   const raw = route();
   const page = raw.startsWith("Menu/") ? "Menu" : raw;
   const category = raw.startsWith("Menu/category/") ? raw.slice(14) : "";
@@ -605,15 +729,13 @@ function show(transition = true) {
   if (previousPage === "Menu") menuScroll = scrollY;
   const changed = previousPage !== page,
     focusAction = document.activeElement?.dataset.action;
-  const workspaceRole = page === "My account" ? account?.role : null;
-  const workspaceTitle = { kitchen: "Kitchen", frontdesk: "Front desk", admin: "Administrator" }[workspaceRole];
   previousPage = page;
   app.className = {
     Home: "home",
     "Book a table": "booking",
     "Your table": "visit",
     Menu: "menu-page",
-    "My account": workspaceTitle ? workspaceRole + "-page" : "account-page",
+    "My account": "account-page",
     Delivery: "delivery-page",
     Journal: "journal-page",
     "Journal/archive": "journal-archive-page",
@@ -623,10 +745,7 @@ function show(transition = true) {
   else if (page === "Your table") visitView();
   else if (page === "My account") {
     mount("account");
-    if (workspaceRole === "kitchen") mountKitchenWorkspace(app.querySelector("[data-kitchen]"), account.username, loadStaffDemo(dishes, today(), slots));
-    else if (workspaceRole === "frontdesk") mountFrontdeskWorkspace(app.querySelector("[data-frontdesk]"), account.username, tables, slots, today(), loadStaffDemo(dishes, today(), slots));
-    else if (workspaceRole === "admin") mountAdminWorkspace(app.querySelector("[data-admin]"), tables, today(), loadStaffDemo(dishes, today(), slots));
-    else renderVisitHistory();
+    if (customer) renderVisitHistory();
     if (!account && history.state?.signedOut) {
       history.replaceState(null, "");
       setAccountMode("login", "You have signed out.");
@@ -636,8 +755,13 @@ function show(transition = true) {
   }
   const coverHeader = app.querySelector(".cover > header");
   if (coverHeader) installNavLens(coverHeader);
-  const heading = app.querySelector(workspaceTitle || page === "Journal/archive" ? "h1" : "h2");
-  const pageTitle = workspaceTitle ?? (page === "Journal/archive" ? "Journal archive" : isStaff && page === "My account" ? "Workspace" : page);
+  for (const link of document.querySelectorAll(".guest-navigation [data-action], .guest-directory .nav-link")) {
+    const section = page === "Journal/archive" ? "Journal" : page;
+    if (link.dataset.action === section) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+  const heading = app.querySelector(page === "Journal/archive" ? "h1" : "h2");
+  const pageTitle = { "Journal/archive": "Journal archive", "Your table": "Your visit" }[page] ?? page;
   document.title = pageTitle + " · Double Portion";
   if (changed) {
     window.scrollTo(0, page === "Menu" ? menuScroll : 0);
@@ -652,6 +776,7 @@ function show(transition = true) {
   }
   if (dish) showDetail(dish);
   else if (category) scrollToMenuCategory(category);
+  else if (page === "Menu") syncMenuCategory();
 }
 
 function setAccountMode(mode, message = "") {
@@ -732,8 +857,8 @@ async function submitAccountForm(form) {
     }
     if (mode !== "register") {
       // Refresh the server-rendered identity and start using its sessionStorage key.
-      if (mode === "logout" && route() === "My account") {
-        history.replaceState({ signedOut: true }, "");
+      if (mode === "logout") {
+        history.replaceState({ signedOut: true }, "", "#My%20account");
       }
       location.reload();
       return;
@@ -759,11 +884,11 @@ async function submitAccountForm(form) {
 }
 
 document.querySelector("#close").onclick = () => nav.close();
-dishSheet.addEventListener("cancel", (e) => {
+dishSheet?.addEventListener("cancel", (e) => {
   e.preventDefault();
   leaveDetail();
 });
-dishSheet.addEventListener("click", (e) => {
+dishSheet?.addEventListener("click", (e) => {
   if (e.target === dishSheet) {
     const r = dishSheet.getBoundingClientRect();
     if (
@@ -777,7 +902,7 @@ dishSheet.addEventListener("click", (e) => {
 });
 document.addEventListener("input", (e) => {
   if (
-    e.target.closest("#reservation") &&
+    customer && e.target.closest("#reservation") &&
     ["name", "phone"].includes(e.target.id)
   ) {
     state.draft[e.target.id] = e.target.value;
@@ -785,6 +910,7 @@ document.addEventListener("input", (e) => {
   }
 });
 document.addEventListener("change", (e) => {
+  if (!customer) return;
   if (e.target.matches("[data-dish-option]")) {
     updateDetail();
     return;
@@ -803,6 +929,7 @@ document.addEventListener("submit", (e) => {
   }
   if (e.target.id !== "reservation") return;
   e.preventDefault();
+  if (!customer) return;
   const d = state.draft,
     err = e.target.querySelector(".statusline"),
     f = e.target;
@@ -836,13 +963,25 @@ document.addEventListener("click", (e) => {
   const b = e.target.closest("button[data-action]");
   if (!b || b.disabled) return;
   const a = b.dataset.action;
+  if (a === "navigation") {
+    nav.showModal();
+    animate(nav, 200);
+    return;
+  }
+  if (isStaff) {
+    if (a.startsWith("workspace:")) goWorkspace(a.slice(10));
+    return;
+  }
   if (names.includes(a)) {
     go(a);
     return;
   }
-  if (a === "navigation") {
-    nav.showModal();
-    animate(nav, 200);
+  if (a === "customer-sign-in") {
+    promptCustomerSignIn();
+    return;
+  }
+  if (a === "open-customer-login") {
+    openCustomerLogin();
     return;
   }
   if (a.startsWith("section:")) {
@@ -862,6 +1001,17 @@ document.addEventListener("click", (e) => {
   }
   if (a === "close-dish") {
     leaveDetail();
+    return;
+  }
+  if (!customer) return;
+  if (a === "focus-floor") {
+    const seat = app.querySelector('.seat[aria-pressed="true"]:enabled') ?? app.querySelector(".seat:enabled");
+    seat?.focus({ preventScroll: true });
+    seat?.scrollIntoView({ block: "center", behavior: reduce.matches ? "instant" : "smooth" });
+    return;
+  }
+  if (a === "focus-guest-details") {
+    app.querySelector("#name")?.focus();
     return;
   }
   if (a.startsWith("seat:") || a.startsWith("time:")) {
@@ -980,4 +1130,9 @@ document.addEventListener("click", (e) => {
   }
 });
 window.addEventListener("hashchange", () => show(true));
+window.addEventListener("scroll", syncMenuCategory, { passive: true });
+window.addEventListener("resize", syncMenuCategory);
+if (customer && history.state?.returnTo?.startsWith("#")) {
+  history.replaceState(null, "", history.state.returnTo);
+}
 show(false);

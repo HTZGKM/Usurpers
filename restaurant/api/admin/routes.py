@@ -14,6 +14,7 @@ from .forms import (
 from flask import Blueprint, jsonify, request, session
 from restaurant.route_utils import validated_data, require_api_role
 from restaurant.services import (
+    admin_workspace_service,
     booking_service,
     dining_service,
     order_service,
@@ -172,6 +173,7 @@ def create_dish():
                     data.get("ingredients", ""),
                     data.get("prep_time_minutes", 10),
                     data.get("image_path"),
+                    category=data.get("category"),
                 ),
             }
         ),
@@ -198,7 +200,10 @@ def edit_dish(dish_id):
         {
             "ok": True,
             "dish": menu_service.update_item(
-                dish_id, data.get("name"), data.get("price")
+                dish_id, data.get("name"), data.get("price"),
+                category=data.get("category") if "category" in request.form else None,
+                ingredients=data.get("ingredients"),
+                prep_time_minutes=data.get("prep_time_minutes"),
             ),
         }
     )
@@ -275,6 +280,16 @@ def orders():
     if state:
         rows = [r for r in rows if r["status"] == state]
     return jsonify({"ok": True, "orders": rows})
+
+
+@admin_bp.get("/workspace")
+def workspace_data():
+    return jsonify(ok=True, **admin_workspace_service.get_workspace())
+
+
+@admin_bp.get("/workspace/orders")
+def workspace_orders():
+    return jsonify(ok=True, orders=admin_workspace_service.get_ledger(request.args.get("date")))
 
 
 @admin_bp.get("/orders/<int:order_id>")

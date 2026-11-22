@@ -2,6 +2,17 @@ from restaurant.db.database import get_connection
 from .common import ServiceError, money, positive_int, required_text
 
 
+MENU_CATEGORIES = ("burgers", "pizzas", "sides", "drinks")
+
+
+def _category(value):
+    if not value:
+        return None
+    if value not in MENU_CATEGORIES:
+        raise ServiceError("Invalid menu category.", field="category")
+    return value
+
+
 def get_available_items():
     with get_connection() as db:
         return [dict(r) for r in db.execute("SELECT * FROM dishes WHERE is_available=1 AND is_archived=0 ORDER BY dish_id")]
@@ -22,7 +33,7 @@ def archive_item(dish_id):
         return {"dish_id":did,"is_archived":True}
 
 
-def create_item(name, price, ingredients="", prep_time_minutes=10, image_url=None):
+def create_item(name, price, ingredients="", prep_time_minutes=10, image_url=None, *, category=None):
     name=required_text(name,"name",limit=100); amount=str(money(price))
     prep=positive_int(prep_time_minutes,"prep_time_minutes")
     ingredients=ingredients if isinstance(ingredients,str) else None
@@ -31,11 +42,18 @@ def create_item(name, price, ingredients="", prep_time_minutes=10, image_url=Non
     with get_connection() as db:
         db.execute("BEGIN IMMEDIATE")
         if db.execute("SELECT 1 FROM dishes WHERE dish_name=?",(name,)).fetchone(): raise ServiceError("菜品名称已存在。",409,"name","DUPLICATE")
-        cur=db.execute("INSERT INTO dishes(dish_name,price,ingredients,prep_time_minutes,image_url) VALUES(?,?,?,?,?)",(name,amount,ingredients,prep,image_url))
+        cur=db.execute(
+            """INSERT INTO dishes(dish_name,price,ingredients,prep_time_minutes,image_url,category)
+               VALUES(?,?,?,?,?,?)""",
+            (name, amount, ingredients, prep, image_url, _category(category)),
+        )
         return dict(db.execute("SELECT * FROM dishes WHERE dish_id=?",(cur.lastrowid,)).fetchone())
 
 
-def update_item(dish_id, name=None, price=None, is_available=None):
+def update_item(
+    dish_id, name=None, price=None, is_available=None, *, category=None,
+    ingredients=None, prep_time_minutes=None,
+):
     did=positive_int(dish_id,"dish_id")
     with get_connection() as db:
         db.execute("BEGIN IMMEDIATE")
@@ -50,6 +68,13 @@ def update_item(dish_id, name=None, price=None, is_available=None):
         if name is not None: db.execute("UPDATE dishes SET dish_name=? WHERE dish_id=?",(name,did))
         if price is not None: db.execute("UPDATE dishes SET price=? WHERE dish_id=?",(price,did))
         if is_available is not None: db.execute("UPDATE dishes SET is_available=? WHERE dish_id=?",(int(is_available),did))
+        if category is not None:
+            db.execute("UPDATE dishes SET category=? WHERE dish_id=?", (_category(category), did))
+        if ingredients is not None:
+            db.execute("UPDATE dishes SET ingredients=? WHERE dish_id=?", (ingredients, did))
+        if prep_time_minutes is not None:
+            prep = positive_int(prep_time_minutes, "prep_time_minutes")
+            db.execute("UPDATE dishes SET prep_time_minutes=? WHERE dish_id=?", (prep, did))
         return dict(db.execute("SELECT * FROM dishes WHERE dish_id=?",(did,)).fetchone())
 
 

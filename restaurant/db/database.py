@@ -307,6 +307,8 @@ def create_schema(connection: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_bookings_slot ON bookings(booking_date,time_slot_id,status);
         CREATE INDEX IF NOT EXISTS idx_sessions_table_status ON dining_sessions(table_id,status);
         CREATE INDEX IF NOT EXISTS idx_order_lines_status_queue ON order_lines(status,enqueued_at);
+        CREATE INDEX IF NOT EXISTS idx_order_headers_service_day ON order_headers(date(created_at, '+8 hours'));
+        CREATE INDEX IF NOT EXISTS idx_order_headers_status ON order_headers(status);
         CREATE INDEX IF NOT EXISTS idx_kitchen_queue_order ON kitchen_queue(status,priority,estimated_ready_at,created_at);
         CREATE INDEX IF NOT EXISTS idx_waiting_queue_order ON waiting_queue(status,queue_position);
         """
@@ -325,6 +327,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
         ("dishes", "ingredients", "TEXT NOT NULL DEFAULT ''"),
         ("dishes", "prep_time_minutes", "INTEGER NOT NULL DEFAULT 10"),
         ("dishes", "image_url", "TEXT"),
+        ("dishes", "category", "TEXT"),
     ):
         known = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
         if field not in known:

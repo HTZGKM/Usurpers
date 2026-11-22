@@ -7,7 +7,6 @@ main.kitchen-page {
   font: 16px/1.5 system-ui, sans-serif;
 }
 
-.kitchen-bar,
 .kitchen-heading,
 .kitchen-section-heading,
 .kitchen-ticket-heading {
@@ -15,25 +14,6 @@ main.kitchen-page {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-}
-
-.kitchen-bar {
-  min-height: 74px;
-  border-bottom: 1px solid #343229;
-}
-
-.kitchen-brand {
-  padding: 0;
-  font: 24px/1.1 var(--display-face);
-  text-align: left;
-}
-
-.kitchen-bar .account-form {
-  margin: 0;
-}
-
-.kitchen-bar .secondary {
-  white-space: nowrap;
 }
 
 .kitchen-content {
@@ -60,30 +40,13 @@ main.kitchen-page {
   font-size: 12px;
 }
 
-.kitchen-nav {
-  display: flex;
-  gap: 6px;
-  margin: 24px 0 28px;
-  border-bottom: 1px solid #343229;
-}
-
-.kitchen-nav button {
-  min-height: 44px;
-  padding: 0 14px;
-  border-bottom: 2px solid transparent;
-  color: #c8c0ab;
-  font-weight: 600;
-}
-
-.kitchen-nav button[aria-pressed="true"] {
-  border-color: #d9ba7e;
-  color: #f2e4c4;
-}
-
 .kitchen-section-heading {
   flex-wrap: wrap;
   gap: 4px 14px;
   margin-bottom: 16px;
+}
+.kitchen-content > section {
+  margin-top: 20px;
 }
 
 .kitchen-section-heading h2,
@@ -218,8 +181,5 @@ main.kitchen-page {
 @media (max-width: 700px) {
   .kitchen-menu-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .kitchen-bar {
-    min-height: 64px;
   }
 }
