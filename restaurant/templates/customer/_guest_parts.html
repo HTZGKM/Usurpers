@@ -12,6 +12,7 @@
 
 {% macro header(links=none) -%}
 <header{% if links %} class="staff-compact-nav" aria-label="Workspace shortcuts"{% else %} class="guest-navigation" aria-label="Restaurant shortcuts"{% endif %}>
+  {# taste-skill-ignore: existing staff menu glyph preserved; customer control uses its brand image. #}
   <button type="button" class="toggle" data-action="navigation" aria-label="Open navigation" aria-haspopup="dialog" aria-controls="nav">{% if links %}☰{% else %}<img src="{{ url_for('static', filename='images/admin/double-portion-mark.png') }}" alt="" width="28" height="28">{% endif %}</button>
   {% if links %}
     {{ button('Double Portion', 'workspace:' ~ links[0][1], 'brand') }}
@@ -30,10 +31,21 @@
 {%- endmacro %}
 
 {% macro cover(asset, title, alt='') -%}
-<div class="cover">
-  <img src="{{ url_for('static', filename='images/atelier/editorial/' ~ asset ~ '.webp') }}" alt="{{ alt }}">
+{% set scenes = {
+  'home': ('hall', 'A vaulted stone dining hall, with a hearth and candlelit tables'),
+  'place-setting': ('feast', 'Stone-baked pizza and a burger served by candlelight'),
+  'account-cover': ('table', 'A candlelit table set with linen and antique brass'),
+  'delivery-cover': ('feast', 'A warm feast of stone-baked pizza and burgers'),
+  'journal-cover': ('hearth', 'Flames glowing inside an old stone oven')
+} %}
+{% set scene = scenes.get(asset, ('hall', alt)) %}
+<div class="cover ember-cover">
+  <img src="{{ url_for('static', filename='images/ember/' ~ scene[0] ~ '.webp') }}" alt="{{ scene[1] }}" width="1536" height="1024" fetchpriority="high">
   {{ header() }}
-  <h1>{{ title }}</h1>
+  <div class="cover-caption">
+    <h1>{{ title }}</h1>
+    <p>Good food. Warm company.</p>
+  </div>
 </div>
 {%- endmacro %}
 
@@ -46,12 +58,25 @@
 {%- endmacro %}
 
 {% macro homepage() -%}
-{{ cover('home', 'Burgers<br>&amp; Pizza'|safe) }}
-<div class="cards">
-  {% for label, asset in [('Menu','entry-menu'), ('Book a table','entry-booking'), ('Journal','entry-journal')] %}
-  <button type="button" class="card" data-action="{{ label }}">
-    <img src="{{ url_for('static', filename='images/atelier/editorial/' ~ asset ~ '.webp') }}" alt="">
-    <span>{{ label }} <i aria-hidden="true">→</i></span>
+<div class="cover ember-home">
+  <img class="ember-scene" src="{{ url_for('static', filename='images/ember/hall.webp') }}" alt="Candlelit tables beneath the soaring stone arches of a quiet dining hall" width="1536" height="1024" fetchpriority="high">
+  {{ header() }}
+  <div class="ember-home-copy">
+    <h1>Fire <span>&amp;</span><br><em>Feast.</em></h1>
+    <p>Stone-baked pizza. Burgers from the flame.<br>A little warmth, shared.</p>
+    {{ button('Find your table', 'Book a table', 'ember-invitation') }}
+  </div>
+  <span class="ember-signature" aria-hidden="true">Double Portion · The hearth is yours</span>
+</div>
+<div class="cards ember-portals" aria-label="Explore Double Portion">
+  {% for label, asset, copy, title in [
+    ('Menu', 'feast', 'From the flame, to your table.', 'The menu'),
+    ('Book a table', 'table', 'A place to settle in.', 'Take your seat'),
+    ('Journal', 'hearth', 'Stories from our kitchen.', 'By the hearth')
+  ] %}
+  <button type="button" class="card ember-portal" data-action="{{ label }}" aria-label="{{ title }} — {{ label }}">
+    <img src="{{ url_for('static', filename='images/ember/' ~ asset ~ '.webp') }}" alt="" width="1536" height="1024">
+    <span class="portal-caption"><strong>{{ title }}</strong><small>{{ copy }}</small><i aria-hidden="true">↗</i></span>
   </button>
   {% endfor %}
 </div>

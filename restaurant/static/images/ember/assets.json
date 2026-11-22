@@ -1,0 +1,69 @@
+{
+  "art_direction": "Soulslike epic sanctuary: real stone, charcoal, antique gold, ivory linen, ember warmth. Admin palette reference #0d0e0c / #e2c898 / #ede8d8.",
+  "assets": [
+    {
+      "file": "hall.webp",
+      "purpose": "Homepage hero and atmosphere",
+      "source_file": "exec-6e63902d-6202-4fae-8a5a-9a7fcf78f374.png",
+      "prompt": "Use case: photorealistic-natural. Asset type: full bleed landscape website hero photograph for an original upscale restaurant with a Soulslike epic atmosphere. Create a cinematic architectural photograph of a majestic ancient stone dining hall at dusk, soaring ribbed vaults and tall pointed arches receding into mysterious deep charcoal shadows, an inviting amber hearth glowing in the distant center, a long weathered oak dining table with beautifully restrained ivory linens, burnished brass candleholders and a handful of lit ivory candles on the right middle ground, antique muted gold, warm ivory, smoky olive charcoal palette. Like a real Michelin-level restaurant carefully placed inside a medieval abbey, beautiful calm sanctuary after a long journey. Extremely sophisticated natural photography, visible tactile limestone, 35mm architectural lens, subtle atmospheric haze, rich detail, realistic indirect light, deep but readable blacks, amber candles against cool stone, no strong orange cast. Wide 3:2 landscape framing, lower left quadrant dark and visually quiet for large title overlay; architectural focal point in center/right; perspective feels monumental, generous negative space. No people, no characters, no weapons, no magical effects, no fantasy creatures, no text, no logos, no frames, no collage. Single coherent photograph, not a UI mockup.",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "bytes": 202138,
+      "format": "webp",
+      "encoding": "cwebp -q 88",
+      "generation_method": "built-in image_gen tool",
+      "generated_on": "2026-11-22",
+      "provenance": "Original AI-generated concept image for Double Portion; not a photograph of an actual venue. No external stock assets used."
+    },
+    {
+      "file": "feast.webp",
+      "purpose": "Menu cover and food portal",
+      "source_file": "exec-01a1d9b1-2e35-467b-8c2a-ce2900454fbf.png",
+      "prompt": "Use case: photorealistic-natural. Asset type: landscape restaurant editorial food photograph, single image, 3:2. A beautifully composed feast in a shadowy medieval stone dining hall: one artisan wood-fired margherita pizza with charred blistered golden crust and dark fresh basil on a handmade dark pewter plate, one inviting double beef burger in a small brioche bun on a second rustic dark plate further back, small pottery bowl of rosemary roasted potatoes, stoneware wine goblet, a sprig of rosemary, dark wrinkled linen and antique brass cutlery. Tight elegant still life, food looks real and appetizing, restrained abundant composition, close 50mm lens at table height looking slightly downward, pizza is the main foreground subject and burger secondary; dark ancient oak table, soft focus stone wall and a single golden candle in distance. Candlelit warm chiaroscuro with cool charcoal shadows, subtle ash and brass tones, sophisticated fine dining campaign photography with epic old-world Soulslike sanctuary atmosphere, believable tangible texture, very high-end restaurant website. Readable food detail, not too dark, rich but muted. No people, no text, no logos, no fake magical light, no neon, no illustration, no game interface, no collage.",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "bytes": 344442,
+      "format": "webp",
+      "encoding": "cwebp -q 88",
+      "generation_method": "built-in image_gen tool",
+      "generated_on": "2026-11-22",
+      "provenance": "Original AI-generated concept image for Double Portion; not a photograph of an actual venue. No external stock assets used."
+    },
+    {
+      "file": "table.webp",
+      "purpose": "Reservation and account cover",
+      "source_file": "exec-9bbe90f4-ffaa-44d8-89fa-ed6469abfc7e.png",
+      "prompt": "Use case: photorealistic-natural. Asset type: landscape reservation editorial photograph for luxury restaurant website, 3:2 ratio. Close architectural still life of a perfectly set intimate table for two inside an ancient Gothic stone dining hall. A pair of beautiful matte dark bronze ceramic plates on worn oak, softly draped natural ivory linen, two delicate crystal wine glasses, subtle antique gold cutlery, three graceful lit ivory candles in aged brass holders on the left; softly blurred soaring stone arches and distant amber hearth glow behind. Camera at table height with medium lens, view angled across table, foreground plate in lower center, candle flames upper left, gently shadowed atmospheric right. Charcoal, bone ivory, antique gold, burnt umber; dramatic yet comfortable candlelight, a serene sanctuary with epic Soulslike environmental storytelling but completely realistic high-end architectural photography. Beautiful tactile materials, refined, quiet, inviting, soft shadow falloff, believable light, no people, no food, no text, no logos, no floral banquet, no glossy luxury hotel look, no visual clutter, no collage.",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "bytes": 276466,
+      "format": "webp",
+      "encoding": "cwebp -q 88",
+      "generation_method": "built-in image_gen tool",
+      "generated_on": "2026-11-22",
+      "provenance": "Original AI-generated concept image for Double Portion; not a photograph of an actual venue. No external stock assets used."
+    },
+    {
+      "file": "hearth.webp",
+      "purpose": "Journal cover and craft portal",
+      "source_file": "exec-8318f629-15c0-4612-8073-1dfc667775ea.png",
+      "prompt": "Use case: photorealistic-natural. Asset type: landscape restaurant journal cover photograph, 3:2 ratio. Intimate cinematic editorial view of an ancient stone wood-fired oven in an upscale medieval abbey restaurant. Real glowing embers and low golden flame inside a blackened arched hearth; a wooden pizza peel rests on the rough limestone ledge, dusting of flour on an old oak workbench, a small branch of olive leaves and folded dark linen beside a handmade clay bowl. Strong artistic composition, glowing oven opening just right of center, beautiful rough soot-blackened limestone arch filling the frame, foreground dark wood. A feeling of ritual, craftsmanship and a refuge by the fire. Epic old-world Soulslike atmosphere achieved through real light and architecture, not fantasy props. High-end food journal photography, 50mm medium view, deep charcoal blacks, weathered gold fire, controlled copper highlights, warm but not orange cast, detailed shadows, faint natural smoke. No people or hands, no logos, no text, no weapons, no sparks flying, no collage, no game UI.",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "bytes": 414376,
+      "format": "webp",
+      "encoding": "cwebp -q 88",
+      "generation_method": "built-in image_gen tool",
+      "generated_on": "2026-11-22",
+      "provenance": "Original AI-generated concept image for Double Portion; not a photograph of an actual venue. No external stock assets used."
+    }
+  ]
+}
