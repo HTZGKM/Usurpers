@@ -22,7 +22,7 @@ python app.py
 | `static/css/guest.css`、`static/css/guest-type.css` | 页面样式和字体 |
 | `static/js/guest.js`、`static/js/guest-lens.js` | 页面交互和导航动效 |
 | `static/images/atelier/` | 当前页面、菜单和后续编辑内容使用的照片 |
-| `customer/catalog.json` | 14 道演示菜品 |
+| `api/customer/catalog.json` | 14 道演示菜品 |
 
 ## 数据和后续页面
 

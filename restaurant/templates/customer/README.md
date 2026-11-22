@@ -21,8 +21,8 @@
 | Delivery 封面、配送时间和范围 | `restaurant/templates/customer/_guest_delivery.html` |
 | Journal 近期正文、归档和共享文章内容 | `restaurant/templates/customer/_guest_journal.html`、`_guest_journal_archive.html`、`_guest_journal_entries.html` |
 | 单页订座、二维桌位图和表单 | `restaurant/templates/customer/_guest_reservation.html` |
-| My account 登录、注册与登录后资料 | `restaurant/templates/customer/_guest_account.html`，表单定义在 `restaurant/auth/forms.py` |
-| 菜名、配料、示例价格、售罄标志 | `restaurant/customer/catalog.json` |
+| My account 登录、注册与登录后资料 | `restaurant/templates/customer/_guest_account.html`，表单定义在 `restaurant/api/auth/forms.py` |
+| 菜名、配料、示例价格、售罄标志 | `restaurant/api/customer/catalog.json` |
 | 布局、响应式、字号与字体 | `restaurant/static/css/guest.css`、`guest-type.css` |
 | 页面跳转、账号表单、订座、购物袋、堂食订单和模拟付款 | `restaurant/static/js/guest.js` |
 | 菜品可选项、演示加价和旧购物袋数据兼容 | `restaurant/static/js/guest-meal.js` |
@@ -55,7 +55,7 @@
 
 | 项目 | 当前状态与跟进人 |
 | --- | --- |
-| 真实订单记录 | 复用 `restaurant/customer/routes.py` 中的 `GET /orders`。当前 Flask 未注册顾客蓝图，查询仍为 TODO，本机 `/orders` 返回 404。后端实现时从当前会话确定顾客身份，无需前端传手机号。建议响应包含订单 ID、下单时间、金额、付款状态与菜品明细，前端据此接入 **My orders**。当前开发库中已有订单 `#1001`，可用所属的测试账号验证。 |
+| 真实订单记录 | 复用 `restaurant/api/customer/routes.py` 中的 `GET /orders`。当前 Flask 未注册顾客蓝图，查询仍为 TODO，本机 `/orders` 返回 404。后端实现时从当前会话确定顾客身份，无需前端传手机号。建议响应包含订单 ID、下单时间、金额、付款状态与菜品明细，前端据此接入 **My orders**。当前开发库中已有订单 `#1001`，可用所属的测试账号验证。 |
 | 订座与堂食 | 顾客自行选桌。真实桌位、预订冲突、签到、订单创建及付款等组员确认后再接，界面继续使用本地演示数据。真实菜价及售罄也在接口确认后对齐。 |
 | 配送 | 保留 **Coming soon**。先确认取餐或配送方式、营业时间和范围，再确定是否需要配送下单入口。 |
 

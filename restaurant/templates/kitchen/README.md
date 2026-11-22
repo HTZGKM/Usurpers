@@ -8,7 +8,7 @@
 
 ## 后续联调
 
-复用 `restaurant/kitchen/routes.py` 中已有的接口定义。当前蓝图和业务逻辑待后端接通，前端没有新增 Flask 路由。
+复用 `restaurant/api/kitchen/routes.py` 中已有的接口定义。当前蓝图和业务逻辑待后端接通，前端没有新增 Flask 路由。
 
 | 方法与路径 | 后端提供的数据或动作 |
 | --- | --- |

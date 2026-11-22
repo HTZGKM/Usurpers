@@ -22,11 +22,11 @@
 | --- | --- |
 | Flask 入口、首页上下文、桌位坐标和时段 | `app.py`。网页统一从 `/` 进入，员工登录后使用 `/#workspace` |
 | 顾客 Jinja | `restaurant/templates/customer/guest.html` 组合各视图；同目录的 `_guest_parts.html` 是首页、导航和封面等共用组件，`_guest_menu.html` 是双栏菜单，`_guest_dish.html` 是菜品弹层，`_guest_reservation.html` 是单页订座和平面图 |
-| 菜单与样式 | `restaurant/customer/catalog.json` 管 14 道菜的名称、价格和状态；`restaurant/static/css/guest.css` 管布局与响应式，`guest-type.css` 管字体和字号 |
+| 菜单与样式 | `restaurant/api/customer/catalog.json` 管 14 道菜的名称、价格和状态；`restaurant/static/css/guest.css` 管布局与响应式，`guest-type.css` 管字体和字号 |
 | 页面与组件交互 | `restaurant/static/js/guest.js` 管跳转、订座、购物袋、订单和模拟付款；同目录 `guest-lens.js` 管导航玻璃动效 |
 | 图片、像素素材、字体 | `restaurant/static/images/atelier/editorial/` 是封面与编辑摄影，`catalog/` 是菜单缩略图，`detail/` 有五款高清披萨；`restaurant/assets/kenney_pixel-platformer-food-expansion.zip` 是我放的像素素材；授权的 Web 字体放在 `restaurant/static/fonts/` |
 | 当前进度与清理清单 | 见 [顾客端交接](README.md) |
-| 登录与业务约定 | `restaurant/templates/auth/form.html`、`restaurant/auth/{routes.py,forms.py}`。各角色的 `restaurant/{customer,frontdesk,kitchen,admin}/{routes.py,forms.py}` 写明已有或计划的操作；先核对蓝图注册与接口实现，再对接 |
+| 登录与业务约定 | `restaurant/templates/auth/form.html`、`restaurant/api/auth/{routes.py,forms.py}`。各角色的 `restaurant/api/{customer,frontdesk,kitchen,admin}/{routes.py,forms.py}` 写明已有或计划的操作；先核对蓝图注册与接口实现，再对接 |
 | 员工工作台模板 | `restaurant/templates/frontdesk/`、`restaurant/templates/kitchen/`、`restaurant/templates/admin/` 各自包含模板和联调交接 |
 
 旧版独立 HTML、Qitchen 样式参考图、设计稿导出、动效 GIF 和验收截图在 `C:\Users\33653\.codex\visualizations\2026\11\18\01a1ec05-f9ac-7aa3-85af-0287865b11a7`。可看 `qit-Menu.jpg`、`qit-uikit.jpg`、`qrefresh-Delivery.png` 和 `Double Portion - Liquid Glass.gif` 对照设计。后续修改的源文件放在仓库。
