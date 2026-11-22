@@ -30,6 +30,8 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
   let ledgerDate = null;
   let ledgerLoading = false;
   let ledgerError = '';
+  let invalidWorkspaceDates = 0;
+  let invalidLedgerDates = 0;
   let pendingAction = null;
 
   const orderMonthLabel = new Intl.DateTimeFormat('en-GB', { month:'long', year:'numeric', timeZone:'UTC' });
@@ -47,6 +49,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
   const dot = (color) => '<i aria-hidden="true" class="dp-dot" data-tone="' + color + '"></i>';
   const tag = (label) => '<span class="dp-tag" data-tone="' + tone(label) + '">' + es(label) + '</span>';
   const formatNumber = new Intl.NumberFormat('en', {maximumFractionDigits:2});
+  const compactNumber = new Intl.NumberFormat('en', {notation:'compact', maximumFractionDigits:1});
   const money = (amount) => '<span class="dp-money">¥' + formatNumber.format(amount) + '</span>';
   const isPaid = order => order.payment === 'Paid';
   const lineCents = item => Math.round(item.unit * 100) * item.qty;
@@ -76,21 +79,23 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
   }
 
   function localTimestamp(value) {
+    if (!value) return '';
     const normalized = value.replace(' ', 'T');
     const utc = /(?:Z|[+-]\d{2}:\d{2})$/i.test(normalized) ? normalized : normalized + 'Z';
-    return new Date(Date.parse(utc) + 8 * 60 * 60 * 1000).toISOString();
+    const time = Date.parse(utc);
+    return Number.isFinite(time) ? new Date(time + 8 * 60 * 60 * 1000).toISOString() : '';
   }
 
-  function elapsedMinutes(day, time) {
-    return Math.max(0, Math.floor((Date.parse(serviceDate + 'T' + serviceTime + ':00Z') -
-      Date.parse(day + 'T' + time + ':00Z')) / 60000));
-  }
+  const serviceMinute = (day, time) => Date.parse(day + 'T' + time + ':00Z') / 60000;
+  const minutesFromNow = (day, time) => serviceMinute(day, time) - serviceMinute(serviceDate, serviceTime);
+  const elapsedMinutes = (day, time) => Math.max(0, -minutesFromNow(day, time));
 
   const tableName = id => id == null ? '—' : layout[id - 1]?.[0] || 'T' + id;
 
   function normalizeOrders(rows) {
-    return rows.map(row => {
+    return rows.flatMap(row => {
       const placed = localTimestamp(row.created_at);
+      if (!placed) return [];
       const items = row.items.map(line => ({
         id: String(line.dish_id), qty:line.quantity, name:line.dish_name, unit:Number(line.unit_price),
         status:itemStatuses[line.status] || line.status, note:line.note,
@@ -98,10 +103,13 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
         inKitchen: ['waiting','cooking'].includes(line.queue_status),
         readyAt: line.queue_status === 'ready' && line.ready_at ? localTimestamp(line.ready_at) : '',
       }));
-      const cancelled = row.status === 'cancelled';
-      const status = cancelled ? 'Cancelled' : row.status === 'completed' ? 'Served' :
-        items.some(item => ['Queued','Cooking'].includes(item.status)) ? 'In queue' :
-          items.some(item => item.status === 'Ready') ? 'Ready' : 'In queue';
+      const remaining = items.filter(item => item.status !== 'Cancelled');
+      const cancelled = row.status === 'cancelled' || (items.length > 0 && !remaining.length);
+      const served = row.status === 'completed' ||
+        (remaining.length > 0 && remaining.every(item => item.status === 'Served'));
+      const status = cancelled ? 'Cancelled' : served ? 'Served' :
+        remaining.some(item => ['Queued','Cooking'].includes(item.status)) ? 'In queue' :
+          remaining.some(item => item.status === 'Ready') ? 'Ready' : 'In queue';
       return { id:String(row.order_id), table:tableName(row.table_id), day:placed.slice(0,10),
         time:placed.slice(11,16), status, active:row.status === 'active', items,
         payment:cancelled && row.payment_status === 'unpaid' ? 'Not required' :
@@ -193,6 +201,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
     serviceTime = data.service_time;
     weekDays = Array.from({length:7}, (_,index) => shiftedDay(serviceDate,index - 6));
     const all = normalizeOrders(data.orders);
+    invalidWorkspaceDates = data.orders.length - all.length;
     weekOrders = all.filter(order => order.day >= weekDays[0] && order.day <= serviceDate);
     orders = weekOrders.filter(order => order.day === serviceDate);
     kitchenOrders = all.filter(order => order.active);
@@ -213,6 +222,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
     if (state.orderDate === serviceDate) {
       ledgerOrders = orders;
       ledgerDate = serviceDate;
+      invalidLedgerDates = 0;
     }
     const clock = root.querySelector('[data-service-clock]');
     clock.dateTime = serviceDate + 'T' + serviceTime + ':00+08:00';
@@ -291,7 +301,8 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
     const grid = Array.from({length:ticks + 1}, (_,index) => {
       const value = index * step;
       return '<line class="dp-grid" x1="' + left + '" x2="' + edge + '" y1="' + y(value) + '" y2="' + y(value) + '"></line>' +
-        '<text x="' + (left - 9) + '" y="' + (y(value) + 3) + '" text-anchor="end">' + display(value) + '</text>';
+        '<text x="' + (left - 9) + '" y="' + (y(value) + 3) + '" text-anchor="end">' +
+        (value >= 10000 ? (revenue ? '¥' : '') + compactNumber.format(value) : display(value)) + '</text>';
     }).join('');
     const curves = salesGroups.map((group,seriesIndex) => {
       const points = buckets.map((bucket,index) => [x(index),y(bucket.amounts[seriesIndex])]);
@@ -442,7 +453,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
       (radius * Math.sqrt(.5)).toFixed(2) + '"></circle>' + marks + labels +
       '</svg>' + list + '</div>' + footer;
   }
-  function diningRoomSummary(occupied, reserved, readyOrders, upcoming, now) {
+  function diningRoomSummary(occupied, reserved, readyOrders, upcoming) {
     const oldestReady = readyOrders[0];
     const age = oldestReady?.readyAt ? elapsedMinutes(oldestReady.readyAt.slice(0,10),
       oldestReady.readyAt.slice(11,16)) : null;
@@ -455,29 +466,30 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
       : '<p class="dp-caption">No orders ready to serve.</p>';
     const arrivals = new Map();
     for (const booking of upcoming) {
-      if (!arrivals.has(booking.start)) arrivals.set(booking.start, []);
-      arrivals.get(booking.start).push(booking);
+      const offset = minutesFromNow(booking.day, booking.start);
+      if (!arrivals.has(offset)) arrivals.set(offset, []);
+      arrivals.get(offset).push(booking);
     }
-    const [nextTime, nextBookings] = arrivals.entries().next().value || [];
+    const [nextOffset, nextBookings] = arrivals.entries().next().value || [];
     const guestCount = bookings => bookings.reduce((sum, booking) => sum + booking.guests, 0);
-    const arrivalSummary = (time, bookings) => time + ' · ' + guestCount(bookings) + ' guests';
+    const arrivalSummary = bookings => bookings[0].start + ' · ' + guestCount(bookings) + ' guests';
     const slots = [...arrivals];
     let lastLabel = -8;
-    const marks = slots.map(([time, bookings]) => {
-      const offset = minute(time) - now;
+    const marks = slots.map(([offset, bookings]) => {
       const hasLabel = offset >= 4 && offset <= 56 && offset - lastLabel >= 10;
       if (hasLabel) lastLabel = offset;
       return '<span class="dp-arrival-mark" style="--arrival-position:' + (offset / 60 * 100) +
-        '%" title="' + es(arrivalSummary(time, bookings)) + '">' +
-        (hasLabel ? '<time>' + time + '</time>' : '') + '</span>';
+        '%" title="' + es(arrivalSummary(bookings)) + '">' +
+        (hasLabel ? '<time>' + bookings[0].start + '</time>' : '') + '</span>';
     }).join('');
     const arrivalList = nextBookings
-      ? '<div class="dp-next-arrival"><time>' + nextTime + '</time><div class="dp-arrival-copy">' +
-        '<p class="dp-caption">In ' + (minute(nextTime) - now) + ' min · ' + guestCount(nextBookings) + ' guests</p>' +
-        '<div class="dp-arrival-tables">' + nextBookings.map(booking => '<button type="button" data-view="floor" data-booking="' +
-          booking.id + '">Table ' + booking.table + '</button>').join('') + '</div></div></div>' +
+      ? '<div class="dp-next-arrival"><time>' + nextBookings[0].start + '</time><div class="dp-arrival-copy">' +
+        '<p class="dp-caption">In ' + nextOffset + ' min · ' + guestCount(nextBookings) + ' guests</p>' +
+        '<div class="dp-arrival-tables">' + nextBookings.map(booking => '<button type="button" data-view="' +
+          (booking.day === serviceDate ? 'floor' : 'timeline') + '" data-booking="' + booking.id +
+          '">Table ' + booking.table + '</button>').join('') + '</div></div></div>' +
         '<div class="dp-arrival-axis" role="img" aria-label="' +
-        es(slots.map(([time, bookings]) => arrivalSummary(time, bookings)).join('; ')) + '">' + marks +
+        es(slots.map(([, bookings]) => arrivalSummary(bookings)).join('; ')) + '">' + marks +
         '</div><div class="dp-arrival-ends"><span>Now · ' + serviceTime + '</span><span>+1 hour</span></div>'
       : '<p class="dp-caption">No bookings in the next hour.</p>';
     return '<section class="dp-panel" data-room-summary>' + head('Dining room', more('Open floor plan', 'floor')) +
@@ -489,7 +501,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
       more('Timeline', 'timeline', nextBookings ? 'data-booking="' + nextBookings[0].id + '"' : 'data-today') +
       '</div>' + arrivalList + '</div></section>';
   }
-  function recentOrdersPanel(rows, now) {
+  function recentOrdersPanel(rows) {
     if (!rows.length) return '<section class="dp-panel" data-recent-orders>' +
       head('Recent orders', more('View all orders', 'orders', 'data-reset-orders')) +
       '<p class="dp-empty">No orders today.</p></section>';
@@ -498,7 +510,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
       '<div class="dp-table-wrap dp-recent-orders"><table>' + tableHead(['Table / Order','Placed','Status','Total']) +
       '<tbody>' + rows.map(order => '<tr><td><button type="button" class="dp-record" data-order="' + order.id +
         '"><strong>Table ' + order.table + '</strong><small>#' + order.id + '</small></button></td><td>' +
-        '<strong class="dp-number">' + (now - minute(order.time)) + ' min ago</strong><small><time>' +
+        '<strong class="dp-number">' + elapsedMinutes(order.day,order.time) + ' min ago</strong><small><time>' +
         order.time + '</time></small></td><td>' + es(order.status) +
         '<br><span class="dp-tag dp-order-payment" data-tone="' + tone(order.payment) + '">' + es(order.payment) +
         '</span></td><td class="dp-right"><strong class="dp-recent-total">' + money(orderTotal(order)) +
@@ -508,9 +520,10 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
     const tablesWithVisits = floor.map(table => liveTable(table.id));
     const occupied = tablesWithVisits.filter(booking => booking?.status === 'Seated').length;
     const reserved = tablesWithVisits.filter(booking => booking?.status === 'Reserved').length;
-    const now = minute(serviceTime);
-    const upcoming = bookingsOn(serviceDate).filter(booking =>
-      booking.status === 'Reserved' && minute(booking.start) >= now && minute(booking.start) < now + 60);
+    const upcoming = [...bookingsOn(serviceDate),...bookingsOn(shiftedDay(serviceDate, 1))].filter(booking => {
+      const offset = minutesFromNow(booking.day, booking.start);
+      return booking.status === 'Reserved' && offset >= 0 && offset < 60;
+    });
     const { ready:readyOrders, prep:queuedOrders } = queueLanes();
     const queue = queuedOrders.reduce((sum,order) =>
       sum + order.items.filter(item => item.status === 'Queued').length, 0);
@@ -529,9 +542,9 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
       stat('Guests in next hour', upcomingGuests, firstBooking
         ? upcoming.length + ' bookings · Next at ' + firstBooking.start : 'No upcoming bookings',
         'Reservation timeline', 'timeline', firstBooking ? 'data-booking="' + firstBooking.id + '"' : 'data-today') + '</section>' +
-      '<div class="dp-overview-grid">' + diningRoomSummary(occupied, reserved, readyOrders, upcoming, now) +
+      '<div class="dp-overview-grid">' + diningRoomSummary(occupied, reserved, readyOrders, upcoming) +
       salesChart('today') + '</div><div class="dp-overview-grid dp-overview-lower">' +
-      recentOrdersPanel(orders.slice(0,5), now) + popularDishes(paidOrders) + '</div>';
+      recentOrdersPanel(orders.slice(0,5)) + popularDishes(paidOrders) + '</div>';
   }
   function filteredOrders() {
     return ledgerOrders.filter(order => (!state.orderStatus || order.status === state.orderStatus) &&
@@ -546,8 +559,9 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
     if (ledgerLoading) return '<p class="dp-empty" role="status">Loading orders…</p>';
     if (ledgerError) return '<p class="dp-empty" role="alert">' + es(ledgerError) +
       ' <button type="button" class="dp-link" data-retry-orders>Retry</button></p>';
-    if (!rows.length) return '<p class="dp-empty">No orders match these filters.</p>';
-    return '<div class="dp-table-wrap dp-ledger dp-order-scroll"><table>' +
+    const notice = invalidLedgerDates ? '<p class="dp-caption">Orders with invalid placement dates are omitted.</p>' : '';
+    if (!rows.length) return notice + '<p class="dp-empty">No orders match these filters.</p>';
+    return notice + '<div class="dp-table-wrap dp-ledger dp-order-scroll"><table>' +
       tableHead(['Order','Table','Placed','Status','Payment','Total']) + '<tbody>' + rows.slice(0,state.orderLimit).map(order =>
       '<tr data-order-row="' + order.id + '"' + (state.order === order.id ? ' class="dp-selected"' : '') +
       '><td><button type="button" class="dp-record dp-number" aria-controls="dp-order-details" data-order="' + order.id +
@@ -940,7 +954,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
     loading = Promise.all([refreshWorkspace(), refreshAccounts(), refreshDishes()]).then(() => {
       loaded = true;
       refreshedAt = Date.now();
-      setFeedback();
+      setFeedback(invalidWorkspaceDates ? 'Orders with invalid placement dates are omitted.' : '');
       if (!main.contains(document.activeElement) || !document.activeElement.closest('form,[data-order-date]')) {
         show(state.view);
         if (state.view === 'orders') loadLedger();
@@ -962,6 +976,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
     const serial = ++ledgerRequest;
     ledgerLoading = true;
     ledgerError = '';
+    invalidLedgerDates = 0;
     ledgerOrders = [];
     ledgerDate = null;
     refreshOrderResults();
@@ -970,6 +985,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
       const data = await request(path);
       if (serial !== ledgerRequest || state.orderDate !== day) return;
       ledgerOrders = normalizeOrders(data.orders);
+      invalidLedgerDates = data.orders.length - ledgerOrders.length;
       ledgerDate = day;
     } catch (error) {
       if (serial === ledgerRequest && state.orderDate === day) ledgerError = error.message;
@@ -1301,5 +1317,14 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && root.isConnected && Date.now() - refreshedAt > 30000) loadWorkspace();
   });
+  const refreshTimer = window.setInterval(() => {
+    if (!root.isConnected) {
+      window.clearInterval(refreshTimer);
+      return;
+    }
+    if (loaded && !document.hidden && ['overview','queue'].includes(state.view) &&
+        Date.now() - refreshedAt >= 30000 && !document.querySelector('dialog[open]') &&
+        !main.querySelector('button:focus-visible')) loadWorkspace();
+  }, 30000);
   return openSection;
 }

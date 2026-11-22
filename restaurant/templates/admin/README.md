@@ -12,10 +12,11 @@
 
 主管工作台使用 SQLite 业务数据。`GET /admin/workspace` 返回当前营业时间、最近七天与仍活跃的订单、桌位和预约。`GET /admin/workspace/orders` 支持按营业日查历史订单。`/admin/accounts`、`/admin/staff` 和 `/admin/dishes` 负责账户与菜品操作，写入使用 Flask-WTF 表单与 CSRF。
 
-- 按北京时间的营业日归档订单。分类订单数按订单与组别去重，营收使用已付款、未取消明细的快照单价乘数量，按下单时间分桶。
+- 订单时间按后端约定以 UTC 写入，页面按北京时间归档。分类订单数按订单与组别去重，营收使用已付款、未取消明细的快照单价乘数量，按下单时间分桶。这是销售毛额口径，退款记录另行核算。
 - 批量写入时使用业务表 `order_headers` 和 `order_lines`，配置 `dishes.category` 为 `burgers`、`pizzas`、`sides` 或 `drinks`。小食和饮料合并为第三条曲线。未分类菜品仍显示在订单和排行榜里，分类曲线会标注排除未分类明细。
 - 出餐队列还需要对应的 `kitchen_queue` 状态和完成时间，桌位状态由 `dining_sessions` 和当前营业日的 `bookings` 提供。完整预约时间来自 `time_slots`。
 - 前台与厨房页面若仍使用 `staff-demo.js`，其浏览器演示操作独立于 SQLite；主管会反映数据库和业务接口写入的状态。
+- 概览和厨房队列在前台可见时定期刷新，操作弹窗和键盘聚焦控件时推迟刷新。
 
 ## 素材
 
