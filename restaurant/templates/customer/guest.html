@@ -10,13 +10,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b0b09">
+  <meta name="theme-color" content="{{ '#0b0b09' if staff_links else '#000000' }}">
   <title>Double Portion · Burgers &amp; Pizza</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/guest.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/guest-type.css') }}">
   {% if not staff_links %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/guest-ember.css') }}">
+  <script defer src="{{ url_for('static', filename='js/guest-motion.js') }}"></script>
   <meta name="description" content="Double Portion. Stone-baked pizza, burgers from the flame, and a little warmth shared. Explore the menu and find your table.">
   {% endif %}
   {% if staff_links %}

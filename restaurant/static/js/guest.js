@@ -11,6 +11,9 @@ const {
   staffLinks,
 } = JSON.parse(document.querySelector("#guest-data").textContent);
 const isStaff = staffLinks.length > 0;
+const guestPageTransition = !isStaff && typeof createGuestPageTransition === "function"
+  ? createGuestPageTransition({ document, reducedMotion: reduce })
+  : null;
 const customer = account?.role === "customer" ? account : null;
 const loginPrompt = document.querySelector("#customer-login-prompt");
 const menu = new Map(dishes.map((d) => [d.key, d]));
@@ -708,6 +711,51 @@ function show(transition = true) {
     showWorkspace(transition);
     return;
   }
+  const requested = route();
+  const destination = requested.startsWith("Menu/") ? "Menu" : requested;
+  // Business updates and dish/category changes must still finish synchronously.
+  const animatePage = transition && previousPage !== "" && destination !== previousPage;
+  if (guestPageTransition) {
+    guestPageTransition.run(() => renderGuestPage(transition), { animate: animatePage });
+  } else {
+    renderGuestPage(transition);
+  }
+}
+
+function prepareGuestHeading(heading) {
+  if (!heading || heading.dataset.motionHeading !== undefined) return;
+  heading.dataset.motionHeading = "";
+  heading.setAttribute("aria-label", heading.innerText.replace(/\s+/g, " ").trim());
+  const walker = document.createTreeWalker(heading, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  const characterCount = Array.from(heading.textContent.replace(/\s/g, "")).length;
+  heading.style.setProperty("--letter-step", Math.min(60, 400 / Math.max(1, characterCount - 1)) + "ms");
+  let index = 0;
+  for (const node of nodes) {
+    const fragment = document.createDocumentFragment();
+    for (const word of node.textContent.split(/(\s+)/)) {
+      if (!word || /^\s+$/.test(word)) {
+        fragment.append(document.createTextNode(word));
+        continue;
+      }
+      const group = document.createElement("span");
+      group.className = "motion-word";
+      group.setAttribute("aria-hidden", "true");
+      for (const character of word) {
+        const letter = document.createElement("span");
+        letter.className = "motion-letter";
+        letter.style.setProperty("--letter-index", index++);
+        letter.textContent = character;
+        group.append(letter);
+      }
+      fragment.append(group);
+    }
+    node.replaceWith(fragment);
+  }
+}
+
+function renderGuestPage(transition = true) {
   const raw = route();
   const page = raw.startsWith("Menu/") ? "Menu" : raw;
   const category = raw.startsWith("Menu/category/") ? raw.slice(14) : "";
@@ -753,8 +801,9 @@ function show(transition = true) {
   } else {
     mount({ Home: "home", Delivery: "delivery", Journal: "journal", "Journal/archive": "journal-archive" }[page]);
   }
-  const coverHeader = app.querySelector(".cover > header");
-  if (coverHeader) installNavLens(coverHeader);
+  // The customer navigation no longer uses the old glass-lens observer/animation.
+  app.toggleAttribute("data-guest-enter", changed && !reduce.matches);
+  prepareGuestHeading(app.querySelector("h1"));
   for (const link of document.querySelectorAll(".guest-navigation [data-action], .guest-directory .nav-link")) {
     const section = page === "Journal/archive" ? "Journal" : page;
     if (link.dataset.action === section) link.setAttribute("aria-current", "page");
@@ -767,7 +816,6 @@ function show(transition = true) {
     window.scrollTo(0, page === "Menu" ? menuScroll : 0);
     if (transition) {
       heading?.focus({ preventScroll: true });
-      animate(app.querySelector(".delivery-grid,.panel,.cards"), 240);
     }
   } else if (focusAction) {
     [...app.querySelectorAll("[data-action]")]

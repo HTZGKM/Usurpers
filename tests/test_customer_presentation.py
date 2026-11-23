@@ -127,15 +127,18 @@ class CustomerPresentationTests(unittest.TestCase):
 
     def test_customer_presentation_styles_do_not_leak_into_staff_roles(self):
         stylesheet = "/static/css/guest-ember.css"
+        motion_script = "/static/js/guest-motion.js"
         for identity in (None, {"customer_phone": "13900000001"}):
             with self.subTest(identity=identity):
                 _, page = self.page(identity)
                 self.assertIn(stylesheet, page.assets)
+                self.assertIn(motion_script, page.assets)
         for staff_id, role in ((1, "admin"), (2, "frontdesk"), (3, "kitchen")):
             with self.subTest(role=role):
                 _, page = self.page({"staff_id": staff_id})
                 self.assertEqual(page.guest_data["account"]["role"], role)
                 self.assertNotIn(stylesheet, page.assets)
+                self.assertNotIn(motion_script, page.assets)
                 self.assertIn("/static/css/" + role + ".css", page.assets)
 
     def test_rendered_local_assets_and_css_dependencies_resolve(self):

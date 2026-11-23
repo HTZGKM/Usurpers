@@ -76,6 +76,8 @@
 
 ## 旧前端删除清单
 
+以下为历史删除记录。2026-11-23 为校准 Qitchen 菜单细节，已单独恢复 `Forum-Regular.ttf` 与 `Forum-OFL.txt`；当前字体及许可说明见 `restaurant/static/fonts/README.md`。
+
 - 路由：`GET /classic`、`GET /album`。顾客和员工入口统一使用 `GET /`，认证和业务接口继续使用原有定义。
 - `restaurant/templates/customer/`：`index.html`、`_booking.html`、`_home.html`、`_editorial.html`、`_components.html`、`_pixels.html`、`album.html`。旧前台、厨房和管理员工作台共用其中的模板和脚本。
 - `restaurant/static/css/`：`styles.css`、`album.css`。
