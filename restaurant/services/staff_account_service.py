@@ -20,7 +20,7 @@ def create_staff_account(name,phone,email,password,role):
     with get_connection() as db:
         db.execute("BEGIN IMMEDIATE")
         if db.execute("SELECT 1 FROM staff WHERE phone=? OR email=?",(phone,email)).fetchone(): raise ServiceError("手机号或邮箱已存在。",409,"email","DUPLICATE")
-        cur=db.execute("INSERT INTO staff(name,role,phone,email,password) VALUES(?,?,?,?,?)",(name,role,phone,email,hash_password(password)))
+        cur=db.execute("INSERT INTO staff(name,role,phone,email,password_hash) VALUES(?,?,?,?,?)",(name,role,phone,email,hash_password(password)))
         return {"staff_id":cur.lastrowid,"name":name,"role":role,"phone":phone,"email":email,"is_active":1}
 
 def update_staff_account(staff_id,name,phone,email,role):
@@ -48,6 +48,6 @@ def reset_staff_password(staff_id,password="123456"):
     sid=positive_int(staff_id,"staff_id")
     if not isinstance(password,str) or len(password)<6: raise ServiceError("密码至少需要6位。",field="password")
     with get_connection() as db:
-        cur=db.execute("UPDATE staff SET password=? WHERE staff_id=?",(hash_password(password),sid))
+        cur=db.execute("UPDATE staff SET password_hash=? WHERE staff_id=?",(hash_password(password),sid))
         if not cur.rowcount: raise ServiceError("员工账号不存在。",404)
         return {"staff_id":sid,"reset":True}

@@ -36,20 +36,20 @@ def _authenticate(account, password):
                 return None
             identity = {"staff_id": member["staff_id"]}
             update_password = (
-                "UPDATE staff SET password = ? WHERE staff_id = ? AND password = ?"
+                "UPDATE staff SET password_hash = ? WHERE staff_id = ? AND password_hash = ?"
             )
             key = member["staff_id"]
         else:
             member = connection.execute(
-                "SELECT customer_phone, password FROM customers WHERE customer_phone = ? AND is_active = 1",
+                "SELECT customer_phone, password_hash FROM customers WHERE customer_phone = ? AND is_active = 1",
                 (account,),
             ).fetchone()
             identity = {"customer_phone": account}
-            update_password = "UPDATE customers SET password = ? WHERE customer_phone = ? AND password = ?"
+            update_password = "UPDATE customers SET password_hash = ? WHERE customer_phone = ? AND password_hash = ?"
             key = account
         if member is None:
             return None
-        stored_password = member["password"]
+        stored_password = member["password_hash"]
         if "$" in stored_password:
             return identity if check_password_hash(stored_password, password) else None
         if not compare_digest(stored_password, hash_password(password)):
@@ -120,7 +120,7 @@ def register():
         try:
             with closing(get_connection()) as connection, connection:
                 connection.execute(
-                    "\n                    INSERT INTO customers (customer_phone, name, password)\n                    VALUES (?, ?, ?)\n                    ",
+                    "\n                    INSERT INTO customers (customer_phone, name, password_hash)\n                    VALUES (?, ?, ?)\n                    ",
                     (
                         form.phone_number.data,
                         form.name.data,
