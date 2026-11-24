@@ -4,14 +4,7 @@ Flask 在 `/` 渲染 Double Portion 的英文界面。页面和登录接口由�
 
 ## 启动
 
-在仓库根目录运行：
-
-```bash
-python -m pip install Flask Flask-WTF
-python app.py
-```
-
-浏览器打开 <http://127.0.0.1:5000/>。开发预览与验收步骤见 [顾客端交接](templates/customer/README.md)。
+在 `Usurpers` 根目录按 [仓库启动说明](../README.md#本地启动) 安装和启动，再打开 [餐厅首页](http://127.0.0.1:5000/)。页面验收见 [顾客端交接](templates/customer/README.md)。
 
 ## 文件结构
 
@@ -26,6 +19,6 @@ python app.py
 
 ## 数据和后续页面
 
-账号登录、注册和退出使用 Flask-WTF 与 SQLite。顾客的预约和已提交订单与 [前台](templates/frontdesk/README.md)、[厨房](templates/kitchen/README.md) 及 [主管](templates/admin/README.md) 工作台共用同一 SQLite 库。未提交的购物袋保存在当前标签页。测试时用新数据库路径启动，参见[仓库启动说明](../README.md#sqlite-初始化)。
+账号登录、注册和退出使用 Flask-WTF 与 SQLite。顾客的预约和已提交订单与 [前台](templates/frontdesk/README.md)、[厨房](templates/kitchen/README.md) 及 [主管](templates/admin/README.md) 工作台共用 `restaurant/data/shuangfen.db`。未提交的购物袋保存在当前标签页。
 
 旧前端移除的路由和文件见[删除清单](templates/customer/README.md#旧前端删除清单)。

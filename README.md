@@ -6,18 +6,29 @@ COMP3019J 小组餐厅网站项目（Topic 2 — Restaurant Booking and Ordering
 
 顾客端的新对话请先读 [顾客前端交接与验收路径](restaurant/templates/customer/README.md)。当前首页由 Jinja 渲染，预览、修改和提交均以本仓库为准。
 
-## 本地运行
+## 本地启动
 
-在仓库根目录执行：
+在包含 `app.py` 的 `Usurpers` 目录执行。使用 Python 3.12，Windows 可先运行 `python --version` 核对版本。首次启动先在该目录创建虚拟环境并安装依赖。
 
-```bash
-python -m pip install Flask Flask-WTF
-python app.py
+Windows PowerShell
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe app.py
 ```
 
-浏览器打开 <http://127.0.0.1:5000/>。页面和登录接口使用同一个 Flask 服务，无需另外启动静态文件服务器。
+macOS / Linux
 
-顾客、前台、厨房和主管共用 Flask 与 SQLite。可以走通选桌预约、签到、下单、制作、上菜、记账付款和关桌。顾客的未提交购物袋保存在当前标签页。
+```bash
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python app.py
+```
+
+后续启动时执行最后一行即可。终端显示 Flask 正在运行后，打开 [餐厅首页](http://127.0.0.1:5000/)。服务直接使用 `restaurant/data/shuangfen.db`，首次运行自动建表并写入初始数据，后续继续使用这个文件。四个角色共用此库。
+
+顾客、前台、厨房和主管可以走通选桌预约、签到、下单、制作、上菜、记账付款和关桌。顾客的未提交购物袋保存在当前标签页。
 
 ### 顾客账号联调
 
@@ -45,29 +56,11 @@ python app.py
 | 厨房 | `kitchen@shuangfen.local` | **Queue** 按订单查看菜和备注，依次点 **Start preparation → Mark ready**；由前台确认上菜。**Availability** 可更新菜品是否供应。 |
 | 主管 | `admin@shuangfen.local` | **Overview / Orders** 查营业数据和订单；**Tables / Kitchen queue** 查桌况和出餐；**Dishes** 管菜品；**Inventory** 管食材、配方和手动库存；**Accounts** 管账号。 |
 
-## SQLite 初始化
+## 启动排错
 
-项目已补充最小可运行的 SQLite 初始化脚本。首次执行会自动创建 `restaurant/data/shuangfen.db`，并写入默认员工、顾客、餐桌、菜品、订单和订单明细。
-
-在仓库根目录执行：
-
-```bash
-python -m restaurant.db
-```
-
-旧表结构的数据库会在启动时停止并显示提示。保留旧库备份，联调时可用 `USURPERS_DB_PATH` 指到一个新文件。PowerShell 示例
-
-```powershell
-$env:USURPERS_DB_PATH = Join-Path ([System.IO.Path]::GetTempPath()) ('usurpers-mvp-' + [guid]::NewGuid() + '.db')
-.\.venv\Scripts\python.exe -m flask --app app run --port 18752
-```
-
-只有确认现有开发库可删除、已经备份时，才用以下命令覆盖所选数据库文件：
-
-```bash
-python -m restaurant.db --reset
-```
-
-初始化会输出各表计数。开发种子账号仅用于演示，登录后会把旧格式密码摘要更新为新版密码哈希。历史订单以北京时间按近七天生成，当天只补已过去的样例时间。
+- 若找不到 `app.py`，先切到里面的 `Usurpers` 目录。
+- 若提示 5000 端口已占用，先检查该地址是否已经打开本项目。需要重新启动时，先在原来启动项目的终端按 `Ctrl+C`。
+- 若提示 `The SQLite database uses the old schema`，说明本机留有早期版本创建的 `restaurant/data/shuangfen.db`。这个文件不随 Git 提交，新克隆不需要处理。若要用新版初始数据，先关闭 Flask 和所有使用该库的 SQLite 工具，再将旧库及可能存在的同名 `-wal`、`-shm`、`-journal` 文件一起移到仓库外备份。重新运行上面的启动命令，新库会在默认路径自动生成。旧记录仍在备份里，新库不会自动导入它们。
+- 若 PowerShell 中曾手动设置 `USURPERS_DB_PATH`，运行 `Remove-Item Env:USURPERS_DB_PATH` 清除当前终端的覆盖设置，再按默认方式启动。
 
 公开部署使用 HTTPS，并设置 `USURPERS_HTTPS=1` 和私有的 `USURPERS_SECRET_KEY`。配置后的会话 Cookie 使用 Secure、HttpOnly 和 SameSite=Lax。前端和接口以同源方式运行。

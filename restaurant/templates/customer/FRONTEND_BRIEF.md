@@ -8,13 +8,7 @@
 
 进入 `F:\web开发项目\2026final_PROJECT\Usurpers`，读根 `README.md` 和 `restaurant/templates/customer/README.md`，检查当前分支及 `git status -sb`、`git diff --cached --stat`。交接时分支是 `feat/yiming-win`，上一次迁移的 20 个文件已暂存，等待提交。保留已有修改，按功能分批提交，确认需要 push 时只推本批内容。
 
-先在当前对话侧边浏览器打开 http://127.0.0.1:18749/ 。若服务未启动，在仓库根运行：
-
-```powershell
-.\.venv\Scripts\python.exe -m flask --app app run --debug --no-debugger --port 18749
-```
-
-先亲自走一遍已有流程：Home → Book a table → 在平面图选 A2 → Confirm reservation → Preview host check-in → Menu → Pizzas → Margherita × 2 → View bag → Place order → Pay ¥116 · demo → Payment received。再从首页分别进入 My account、Delivery、Journal，确定哪些地方还会进入旧版。每轮直接改仓库里的 Jinja、CSS 和原生 JS，改完在侧边浏览器打开本轮页面，给我能从首页点到的预览。Figma 链接用于看设计参考。
+按 [仓库启动说明](../../../README.md#本地启动) 运行 Flask，再在浏览器打开 [餐厅首页](http://127.0.0.1:5000/)。从 [堂食联调](../../../README.md#堂食联调) 走一遍当前预约、前台签到、顾客点单、厨房出餐和结账流程。随后可从首页打开 My account、Delivery 和 Journal。Figma 链接用于设计参考。
 
 ## 我的文件在哪里
 
