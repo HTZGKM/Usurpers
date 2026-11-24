@@ -60,6 +60,10 @@ def close_dining_session(visit_id):
         if row["status"]!="seated": raise ServiceError("该到店记录已结束。",409)
         unpaid=db.execute("SELECT 1 FROM orders WHERE visit_id=? AND status<>'cancelled' AND payment_status<>'paid'",(vid,)).fetchone()
         if unpaid: raise ServiceError("仍有未结清订单，不能释放餐桌。",409)
+        unfinished = db.execute("""SELECT 1 FROM orders JOIN order_items USING(order_id)
+            WHERE visit_id=? AND order_items.status NOT IN ('served','cancelled') LIMIT 1""", (vid,)).fetchone()
+        if unfinished:
+            raise ServiceError("仍有未上菜的菜品，不能释放餐桌。", 409, code="VISIT_UNFINISHED_ITEMS")
         db.execute("UPDATE dining_sessions SET status='closed',closed_at=CURRENT_TIMESTAMP WHERE visit_id=? AND status='seated'",(vid,))
         called = QueueManager.call_for_available_table(db, row["table_id"], skip_conflict=True) if row["table_id"] else None
     return {"visit_id":vid,"status":"closed","next_queue":called}

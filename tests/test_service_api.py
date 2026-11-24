@@ -108,14 +108,28 @@ class ServiceAndApiTests(RestaurantTestCase):
         self.assertEqual(count1,count2)
 
     def test_closing_visit_calls_next_waiting_party(self):
-        from restaurant.services.order_service import pay_order
-        from restaurant.services.queue_manager import QueueManager
-        entry=QueueManager.join_waitlist(2,contact_name="释放桌测试",phone="13900000066")
-        pay_order(9001)
         from restaurant.services.dining_service import close_dining_session
-        result=close_dining_session(1)
-        self.assertEqual(result["status"],"closed")
-        self.assertEqual(result["next_queue"]["queue_id"],entry["queue_id"])
+        from restaurant.services.kitchen_service import finish_item, serve_item
+        from restaurant.services.order_service import cancel_order_item, pay_order
+        from restaurant.services.queue_manager import QueueManager
+
+        entry = QueueManager.join_waitlist(2, contact_name="Release fixture", phone="13900000066")
+        cancel_order_item(9001, 9001)
+        self.assertEqual(pay_order(9001)["payment_status"], "paid")
+        with self.assertRaises(ServiceError) as cooking:
+            close_dining_session(1)
+        self.assertEqual(cooking.exception.code, "VISIT_UNFINISHED_ITEMS")
+        finish_item(9002)
+        with self.assertRaises(ServiceError) as ready:
+            close_dining_session(1)
+        self.assertEqual(ready.exception.status_code, 409)
+        with get_connection() as db:
+            self.assertEqual(db.execute("SELECT status FROM dining_sessions WHERE visit_id=1").fetchone()[0], "seated")
+            self.assertEqual(db.execute("SELECT status FROM waiting_queue WHERE queue_id=?", (entry["queue_id"],)).fetchone()[0], "waiting")
+        serve_item(9002)
+        result = close_dining_session(1)
+        self.assertEqual(result["status"], "closed")
+        self.assertEqual(result["next_queue"]["queue_id"], entry["queue_id"])
 
     def test_large_party_reservations_exhaust_distinct_tables(self):
         from restaurant.services.booking_service import create_booking
