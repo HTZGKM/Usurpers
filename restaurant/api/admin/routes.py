@@ -354,19 +354,3 @@ def admin_dashboard():
         ),
     }
     return jsonify({"ok": True, "summary": summary})
-
-
-@admin_bp.get("/staff/new")
-def new_staff():
-    raise ServiceError(
-        "The staff account form page is not implemented yet.",
-        501,
-        code="NOT_IMPLEMENTED",
-    )
-
-
-@admin_bp.get("/dishes/new")
-def new_dish():
-    raise ServiceError(
-        "The dish form page is not implemented yet.", 501, code="NOT_IMPLEMENTED"
-    )

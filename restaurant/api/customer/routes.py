@@ -57,6 +57,7 @@ def create_booking():
                     data.get("time_slot_id", data.get("time_slot")),
                     data.get("party_size", data.get("guests")),
                     customer_phone,
+                    data.get("table_id"),
                 ),
             }
         ),
@@ -127,6 +128,7 @@ def edit_booking(booking_id):
                 data.get("time_slot_id"),
                 data.get("party_size"),
                 owner,
+                data.get("table_id"),
             ),
         }
     )
@@ -309,10 +311,3 @@ def _booking_details(booking_id):
     if booking is None:
         raise ServiceError("Booking not found.", 404)
     return jsonify({"ok": True, "booking": booking})
-
-
-@customer_bp.get("/bookings/new")
-def new_booking():
-    raise ServiceError(
-        "The booking form page is not implemented yet.", 501, code="NOT_IMPLEMENTED"
-    )

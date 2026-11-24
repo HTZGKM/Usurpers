@@ -32,6 +32,10 @@ class BookingForm(FlaskForm):
         "Party size",
         validators=[InputRequired("Enter the party size."), NumberRange(min=1)],
     )
+    table_id = IntegerField(
+        "Table ID",
+        validators=[Optional(), NumberRange(min=1)],
+    )
     submit = SubmitField("Confirm Booking")
 
 
