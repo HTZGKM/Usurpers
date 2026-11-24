@@ -39,6 +39,7 @@ def create_app() -> Flask:
     app.register_blueprint(frontdesk_bp)
     app.register_blueprint(kitchen_bp)
     app.register_blueprint(admin_bp)
+    api_blueprints = {bp.name for bp in (customer_bp, frontdesk_bp, kitchen_bp, admin_bp)}
 
     @app.after_request
     def protect_rendered_pages(response):
@@ -54,18 +55,54 @@ def create_app() -> Flask:
             response.headers["Cache-Control"] = "no-store"
         return response
 
+    def error_response(status, data, response=None):
+        wants_json = (
+            request.blueprint in api_blueprints
+            or request.endpoint in {"health", "auth.me"}
+            or request.is_json
+            or request.accept_mimetypes.best_match(("text/html", "application/json")) == "application/json"
+        )
+        if response is None:
+            response = app.response_class(status=status)
+        if wants_json:
+            response.set_data(app.json.dumps(data))
+            response.mimetype = "application/json"
+        else:
+            title, message = {
+                400: ("Unable to open this page", "Check the address or return to the restaurant."),
+                401: ("Sign-in required", "Sign in to continue to this page."),
+                403: ("Access denied", "Your account cannot open this page."),
+                404: ("Page not found", "This address may have changed. Return to the restaurant to continue."),
+                405: ("This action is unavailable", "Return to the restaurant and try again from the page."),
+                500: ("Something went wrong", "We couldn't load this page. Please try again in a moment."),
+            }.get(status, ("Unable to load this page", "Return to the restaurant and try again."))
+            response.set_data(render_template("errors/error.html", status=status, title=title, message=message))
+            response.mimetype = "text/html"
+        response.vary.add("Accept")
+        return response
+
     @app.errorhandler(ServiceError)
     def service_error(error: ServiceError):
-        return jsonify(error.as_dict()), error.status_code
+        return error_response(error.status_code, error.as_dict())
 
     @app.errorhandler(HTTPException)
     def http_error(error: HTTPException):
-        return jsonify({"ok":False,"success":False,"error":error.name.upper().replace(" ","_"),"message":error.description}), error.code
+        response = error.get_response()
+        status = response.status_code
+        data = {
+            "ok": False, "success": False,
+            "error": error.name.upper().replace(" ", "_"),
+            "message": "An internal server error occurred." if status >= 500 else error.description,
+        }
+        return error_response(status, data, response)
 
     @app.errorhandler(Exception)
     def unexpected_error(error: Exception):
         app.logger.exception("Unhandled backend error", exc_info=error)
-        return jsonify({"ok":False,"success":False,"error":"INTERNAL_SERVER_ERROR","message":"An internal server error occurred."}),500
+        return error_response(500, {
+            "ok": False, "success": False, "error": "INTERNAL_SERVER_ERROR",
+            "message": "An internal server error occurred.",
+        })
 
     @app.get("/")
     def home():

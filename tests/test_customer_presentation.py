@@ -174,6 +174,48 @@ class CustomerPresentationTests(unittest.TestCase):
                 self.assertEqual(response.headers["Referrer-Policy"], "same-origin")
                 self.assertEqual(response.headers["Cache-Control"], "no-store")
 
+    def test_missing_page_uses_html_and_missing_api_uses_json(self):
+        client = self.app.test_client()
+        path = "/missing-restaurant-page"
+        page = client.get(path, headers={"Accept": "text/html,application/json;q=0.5"})
+        self.assertEqual((page.status_code, page.mimetype), (404, "text/html"))
+        self.assertIn(b"Page not found", page.data)
+        self.assertIn(b' href="/"', page.data)
+        self.assertIn("Accept", page.vary)
+        self.assertIn("frame-ancestors 'none'", page.headers["Content-Security-Policy"])
+
+        api = client.get(path, headers={"Accept": "application/json"})
+        self.assertEqual((api.status_code, api.mimetype), (404, "application/json"))
+        self.assertEqual(api.json["error"], "NOT_FOUND")
+        self.assertIn("Accept", api.vary)
+        self.assertEqual(client.get(path, headers={"Accept": "*/*"}).mimetype, "text/html")
+
+    def test_method_error_preserves_allow_header(self):
+        client = self.app.test_client()
+        for accept in ("text/html", "application/json"):
+            with self.subTest(accept=accept):
+                response = client.post("/menu", headers={"Accept": accept})
+                self.assertEqual((response.status_code, response.mimetype), (405, accept))
+                self.assertIn("GET", response.allow)
+
+    def test_internal_errors_keep_page_and_api_responses_separate(self):
+        guest = self.app.test_client()
+        kitchen, _ = self.page({"staff_id": 3})
+        internal_message = "isolated fixture error details"
+        with patch("app.restaurant_view", side_effect=RuntimeError(internal_message)):
+            with self.assertLogs(self.app.logger.name, level="ERROR"):
+                failed_page = guest.get("/", headers={"Accept": "text/html"})
+        self.assertEqual((failed_page.status_code, failed_page.mimetype), (500, "text/html"))
+        self.assertIn(b"Something went wrong", failed_page.data)
+        self.assertNotIn(internal_message.encode(), failed_page.data)
+
+        with patch("restaurant.services.kitchen_service.get_waiting_items", side_effect=RuntimeError(internal_message)):
+            with self.assertLogs(self.app.logger.name, level="ERROR"):
+                failed_api = kitchen.get("/kitchen/queue", headers={"Accept": "text/html"})
+        self.assertEqual((failed_api.status_code, failed_api.mimetype), (500, "application/json"))
+        self.assertEqual(failed_api.json["error"], "INTERNAL_SERVER_ERROR")
+        self.assertNotIn(internal_message.encode(), failed_api.data)
+
     def test_menu_escapes_description_in_markup_and_json(self):
         from restaurant.db.database import get_connection
 

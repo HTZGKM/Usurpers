@@ -29,10 +29,21 @@ python app.py
 
 1. 顾客在 **Book a table** 选时段和桌位，或在 **Your visit** 取等位号。已有预约时，可把购物袋作为预点单提交。
 2. 前台在 **Reservations** 确认到店，或在 **Walk-in waitlist** 叫号和安排入座。顾客刷新 **Your visit** 后可以提交堂食订单。预点单在签到且到预约时间后进入厨房。未开始制作且未结账的订单可以改单或取消。
-3. 厨房在 **Queue** 开始制作并标记 **Ready**。前台在 **Table service** 标记上菜、记录付款并释放桌位。主管在 **Overview** 或 **Orders** 查看同一笔订单。
+3. 厨房在 **Queue** 开始制作并标记 **Ready**。前台在 **Table service** 标记上菜，可提前记录付款。所有订单结清、所有菜已上菜或取消后，才可释放桌位。主管在 **Overview** 或 **Orders** 查看同一笔订单。
 4. 主管在 **Inventory** 新增食材、手动调整库存和保存配方，在 **Accounts** 管理员工及顾客账号。
 
 需要并行登录不同角色时，可用独立浏览器配置或无痕窗口分开保存 Flask 会话。
+
+### 队友操作速查
+
+从首页左上角菜单进入 **My account → Sign in**。下列本地演示账号的密码均为 `123456`。员工登录后自动进入各自的工作台。
+
+| 角色 | 演示账号 | 操作 |
+| --- | --- | --- |
+| 顾客 | `13900000001` 测预约或等位；`13900000002` 初始已入座 A2，可直接看订单 | **Book a table** 预约、改约或取消；**Your visit** 取号、查叫号和取消等位；**Menu** 把菜加入购物袋。有预约可预点菜，入座后可下单，或展开订单查看、修改和取消未开做且未付款的订单。 |
+| 前台 | `frontdesk@shuangfen.local` | **Reservations** 代订和签到；**Walk-in waitlist** 选桌、叫号和入座；**Table service** 代客下单、改单、点 **Mark served**、记录付款及放桌；**Billing records** 查账单。 |
+| 厨房 | `kitchen@shuangfen.local` | **Queue** 按订单查看菜和备注，依次点 **Start preparation → Mark ready**；由前台确认上菜。**Availability** 可更新菜品是否供应。 |
+| 主管 | `admin@shuangfen.local` | **Overview / Orders** 查营业数据和订单；**Tables / Kitchen queue** 查桌况和出餐；**Dishes** 管菜品；**Inventory** 管食材、配方和手动库存；**Accounts** 管账号。 |
 
 ## SQLite 初始化
 

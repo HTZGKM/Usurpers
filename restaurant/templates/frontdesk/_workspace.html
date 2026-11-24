@@ -103,12 +103,12 @@
       <div class="desk-service-section">
         <h3>Orders and payment</h3>
         <div data-service-orders></div>
-        <p class="desk-floor-feedback" data-service-feedback role="status"></p>
-        <button type="button" class="desk-subtle" data-close-desk-visit>Close visit</button>
+        <p class="desk-floor-feedback" id="desk-release-status" data-service-feedback role="status"></p>
+        <button type="button" class="desk-subtle" data-close-desk-visit aria-describedby="desk-release-status" disabled>Close visit</button>
         <div class="desk-arrival-actions" data-confirm-desk-close hidden>
           <span>Release this table?</span>
           <button type="button" class="desk-subtle" data-keep-desk-visit>Keep open</button>
-          <button type="button" class="desk-confirm" data-release-desk-table>Release table</button>
+          <button type="button" class="desk-confirm" data-release-desk-table disabled>Release table</button>
         </div>
       </div>
     </div>

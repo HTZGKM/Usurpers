@@ -85,6 +85,13 @@ class RemainingFeatureTests(RestaurantTestCase):
         self.assertEqual(run_scheduled_tasks("2026-12-21 09:00:00")["promoted_preorders"], 0)
         self.assertEqual(write(desk, f"/frontdesk/visits/{visit}/close").status_code, 409)
         self.assertEqual(write(desk, f"/frontdesk/orders/{order}/pay").status_code, 200)
+        blocked = write(desk, f"/frontdesk/visits/{visit}/close")
+        self.assertEqual(blocked.status_code, 409)
+        self.assertEqual(blocked.json["error"], "VISIT_UNFINISHED_ITEMS")
+        item = line["order_item_id"]
+        self.assertEqual(write(kitchen, f"/kitchen/items/{item}/start").status_code, 200)
+        self.assertEqual(write(kitchen, f"/kitchen/items/{item}/complete").status_code, 200)
+        self.assertEqual(write(desk, f"/frontdesk/orders/{order}/items/{item}/serve").status_code, 200)
         self.assertEqual(write(desk, f"/frontdesk/visits/{visit}/close").status_code, 200)
 
     def test_reserved_table_rules_use_current_window_and_release_is_atomic(self):

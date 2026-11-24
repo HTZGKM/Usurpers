@@ -138,6 +138,20 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     ).join("") || "<p>No orders found.</p>";
   }
 
+  function renderCloseControls(orders) {
+    let message = "";
+    if (!orders) message = "Checking whether this table can be released…";
+    else if (orders.some(order => order.status !== "cancelled" && order.payment_status !== "paid")) {
+      message = "Settle all open orders before releasing this table.";
+    } else if (orders.some(order => order.items.some(item => !["served", "cancelled"].includes(item.status)))) {
+      message = "Serve all remaining dishes before releasing this table.";
+    }
+    find("[data-service-feedback]").textContent = message;
+    find("[data-close-desk-visit]").disabled = Boolean(message);
+    find("[data-release-desk-table]").disabled = Boolean(message);
+    if (message) find("[data-confirm-desk-close]").hidden = true;
+  }
+
   async function refresh() {
     const current = ++revision;
     if (view === "reservations") {
@@ -160,6 +174,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
       renderReception();
       renderWaitlist();
     } else if (view === "service") {
+      renderCloseControls(null);
       const [seating, waiting] = await Promise.all([restaurantSeating(), restaurantRequest("/frontdesk/waiting-queue")]);
       if (current !== revision) return;
       visits = seating;
@@ -195,6 +210,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
       serviceForm.querySelector("[type=submit]").disabled = !menuData.items.length;
       renderDraft();
       find("[data-service-orders]").innerHTML = serviceOrders.map(orderCard).join("") || "<p>No orders for this visit.</p>";
+      renderCloseControls(serviceOrders);
     } else {
       const { orders } = await restaurantRequest("/frontdesk/orders");
       if (current === revision) renderBilling(orders);
@@ -313,7 +329,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
 
   workspace.addEventListener("click", (event) => {
     const button = event.target.closest("button");
-    if (!button || pending) return;
+    if (!button || button.disabled || pending) return;
     const data = button.dataset;
     if (button.matches("[data-desk-refresh]")) return update(async () => "");
     if (button.matches("[data-desk-close]")) return dialog.close();

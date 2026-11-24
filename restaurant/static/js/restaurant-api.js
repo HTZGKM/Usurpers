@@ -7,6 +7,7 @@ async function restaurantRequest(path, fields, method = fields === undefined ? "
   const response = await fetch(path, {
     method,
     body: form,
+    headers: { Accept: "application/json" },
     cache: "no-store",
     mode: "same-origin",
     credentials: "same-origin",
@@ -17,6 +18,7 @@ async function restaurantRequest(path, fields, method = fields === undefined ? "
   if (response.ok && data?.ok) return data;
   const messages = {
     TABLE_UNAVAILABLE: "That table was just reserved. Choose another table.",
+    VISIT_UNFINISHED_ITEMS: "Serve all remaining dishes before releasing this table.",
     CAPACITY_INSUFFICIENT: "That table is too small for this party.",
     STATE_CONFLICT: "This record has changed. Refresh and try again.",
   };
