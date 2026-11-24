@@ -11,16 +11,19 @@
 {% endmacro %}
 
 {{ cover('account-cover', 'My account') }}
-{% call panel('Double Portion', 'My profile' if account else 'Sign in') %}
+{% call panel('Double Portion', 'Your account' if account else 'Sign in') %}
   <div class="account-content">
     {% if account %}
-      <dl class="account-details">
-        <div><dt>Name</dt><dd>{{ account.name }}</dd></div>
-        <div><dt>Phone number</dt><dd>{{ account.username }}</dd></div>
-      </dl>
-      {{ button('View your visit', 'Your table', 'primary') }}
+      <div data-account-visit></div>
+      <section class="account-profile" aria-labelledby="account-profile-title">
+        <h3 id="account-profile-title">Profile</h3>
+        <dl class="account-details">
+          <div><dt>Name</dt><dd>{{ account.name }}</dd></div>
+          <div><dt>Phone number</dt><dd>{{ account.username }}</dd></div>
+        </dl>
+        {{ sign_out(logout_form) }}
+      </section>
       <div class="guest-history" data-visit-history></div>
-      {{ sign_out(logout_form) }}
     {% else %}
       <div class="account-modes" role="group" aria-label="Account options">
         <button type="button" class="choice" data-account-mode="login" aria-controls="guest-login" aria-pressed="true">Sign in</button>

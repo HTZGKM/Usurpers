@@ -2,6 +2,7 @@ function mountKitchenWorkspace(workspace) {
   const find = (selector) => workspace.querySelector(selector);
   const tickets = find("[data-kitchen-tickets]");
   const feedback = find("[data-kitchen-feedback]");
+  const syncNotice = find("[data-kitchen-sync]");
   const stages = {
     waiting: ["Waiting", "Start preparation", "start"],
     cooking: ["Cooking", "Mark ready", "complete"],
@@ -10,6 +11,14 @@ function mountKitchenWorkspace(workspace) {
   let view = "queue";
   let revision = 0;
   let pending = false;
+  let polling = false;
+
+  function queueAge(lines) {
+    const enqueued = lines.map(line => Date.parse(line.created_at.replace(" ", "T") + "Z")).filter(Number.isFinite);
+    if (!enqueued.length) return "";
+    const minutes = Math.max(0, Math.floor((Date.now() - Math.min(...enqueued)) / 60000));
+    return minutes ? "Queued " + minutes + " min ago" : "Just queued";
+  }
 
   function renderQueue(rows, menuRows) {
     const names = new Map(menuRows.map(dish => [dish.dish_id, dish.dish_name]));
@@ -18,19 +27,36 @@ function mountKitchenWorkspace(workspace) {
       if (!orders.has(row.order_id)) orders.set(row.order_id, []);
       orders.get(row.order_id).push(row);
     }
-    tickets.innerHTML = [...orders].map(([order, lines]) => {
+    const markup = [...orders].map(([order, lines]) => {
       const items = lines.map(line => {
         const [status, label, action] = stages[line.status];
-        return '<li class="kitchen-item"><div class="kitchen-item-copy"><strong>' +
+        return '<li class="kitchen-item" data-stage="' + line.status + '"><div class="kitchen-item-copy"><strong>' +
           line.quantity + ' × ' + esc(names.get(line.dish_id) ?? "Dish #" + line.dish_id) +
-          '</strong><p>' + esc(status) + (line.note ? ' · ' + esc(line.note) : '') + '</p></div>' +
+          '</strong><span class="kitchen-item-stage">' + esc(status) + '</span>' +
+          (line.note ? '<p class="kitchen-note"><b>Note</b> ' + esc(line.note) + '</p>' : '') + '</div>' +
           (action ? '<button type="button" class="kitchen-action" data-kitchen-item="' + line.order_item_id +
             '" data-kitchen-step="' + action + '">' + label + '</button>' : '') + '</li>';
       }).join("");
-      return '<article class="kitchen-ticket" data-kitchen-ticket="' + order + '"><div class="kitchen-ticket-heading">' +
-        '<h3>Order #' + order + '</h3></div><ul class="kitchen-item-list">' + items + '</ul></article>';
+      const table = tableLabel(lines[0].table_id);
+      return '<article class="kitchen-ticket" data-kitchen-ticket="' + order + '" data-stage="' + lines[0].status +
+        '"><div class="kitchen-ticket-heading"><div>' +
+        '<h3>Order #' + order + '</h3><p>' + esc(queueAge(lines)) + '</p></div>' +
+        (table ? '<strong class="kitchen-table-label">Table ' + esc(table) + '</strong>' : '') +
+        '</div><ul class="kitchen-item-list">' + items + '</ul></article>';
     }).join("") || '<p class="kitchen-empty">No orders in the preparation queue.</p>';
-    find("[data-kitchen-count]").textContent = rows.length + (rows.length === 1 ? " item" : " items");
+
+    if (tickets.innerHTML !== markup) {
+      const active = tickets.contains(document.activeElement) && document.activeElement.dataset.kitchenItem;
+      tickets.innerHTML = markup;
+      if (active) (find('[data-kitchen-item="' + active + '"]') ?? find("[data-kitchen-refresh]")).focus({ preventScroll: true });
+    }
+    const count = orders.size + (orders.size === 1 ? " order" : " orders");
+    const total = find("[data-kitchen-count]");
+    if (total.textContent !== count) total.textContent = count;
+    for (const stage of Object.keys(stages)) {
+      const quantity = rows.filter(row => row.status === stage).reduce((sum, row) => sum + row.quantity, 0);
+      find('[data-kitchen-stage="' + stage + '"]').textContent = quantity;
+    }
   }
 
   function renderMenu(rows) {
@@ -63,8 +89,12 @@ function mountKitchenWorkspace(workspace) {
       if (current !== revision) return;
       if (view === "queue") renderQueue(rows, menuRows);
       else renderMenu(menuRows);
+      syncNotice.textContent = view === "queue" ? "Auto-updates on" : "";
     } catch (error) {
-      if (current === revision) feedback.textContent = error.message;
+      if (current === revision) {
+        feedback.textContent = error.message;
+        if (view === "queue") syncNotice.textContent = "Updates paused · Refresh";
+      }
     }
   }
 
@@ -99,9 +129,17 @@ function mountKitchenWorkspace(workspace) {
     }
   });
 
-  setInterval(() => {
-    if (view === "queue" && !pending && !document.hidden && !tickets.contains(document.activeElement)) refresh();
-  }, 8000);
+  async function poll() {
+    if (view !== "queue" || pending || polling || document.hidden) return;
+    polling = true;
+    try {
+      await refresh();
+    } finally {
+      polling = false;
+    }
+  }
+  setInterval(poll, 5000);
+  document.addEventListener("visibilitychange", poll);
   return (section, focus) => {
     view = section;
     const queue = find("#kitchen-queue");

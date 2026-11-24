@@ -350,6 +350,7 @@ function syncDraft() {
   floorLink.hidden = availableCount === 0;
   floorLink.textContent = d.table ? "Change table" : "Choose a table";
   app.querySelector(".booking-continue").hidden = !d.table;
+  app.querySelector("#booking-table-help").hidden = Boolean(d.table) || availabilityLoading || availableCount === 0;
   app.querySelector("#reservation button[type=submit]").disabled = customerPending || !customerLoaded || !d.table || availabilityLoading;
   app.querySelector(".statusline").textContent = customerFeedback;
   persist();
@@ -649,7 +650,11 @@ function customerPage() {
 let dismissedReceipt;
 let customerQueue = null;
 let resumeOrderHistory = null;
-async function refreshCustomer() {
+let checkingVisit = false;
+const visitUpdatesAllowed = () => route() === "Your table" && !document.hidden && !customerPending &&
+  !document.querySelector("dialog[open], #app [data-order-record][open]");
+
+async function refreshCustomer({ background = false } = {}) {
   const version = ++customerRefreshVersion;
   try {
     const [reservationData, orderData, visits, waitlist] = await Promise.all([
@@ -661,7 +666,8 @@ async function refreshCustomer() {
     const latest = orders.find(order => order.visit_id === visit?.visit_id && order.status !== "cancelled");
     const detail = latest && latest.order_id !== dismissedReceipt
       ? (await restaurantRequest("/orders/" + latest.order_id)).order : null;
-    if (version !== customerRefreshVersion) return;
+    if (version !== customerRefreshVersion || (background && !visitUpdatesAllowed())) return;
+    const snapshot = background && JSON.stringify([customerVisit, customerQueue, state.bookingHistory, state.orderHistory, state.bill]);
     customerVisit = visit;
     customerQueue = waitlist.queue;
     const reservations = reservationData.bookings.map(bookingRecord);
@@ -676,7 +682,9 @@ async function refreshCustomer() {
       total: detail.total_amount,
     } : null;
     customerLoaded = true;
+    if (background && snapshot === JSON.stringify([customerVisit, customerQueue, reservations, orders, state.bill])) return;
   } catch (error) {
+    if (background) return;
     if (version === customerRefreshVersion) customerFeedback = error.message;
   }
   if (version === customerRefreshVersion && customerPage() && !edit) show(false);
@@ -702,37 +710,64 @@ async function runCustomer(control, work) {
 function renderVisitHistory() {
   const section = app.querySelector("[data-visit-history]");
   if (!section) return;
-  const reservations = [...state.bookingHistory];
-  const orders = state.orderHistory;
-  const bookingRecords = reservations.map(booking =>
+  const accountVisit = app.querySelector("[data-account-visit]");
+  const currentOrders = accountVisit ? state.orderHistory.filter(order => order.status !== "cancelled" && (
+    customerVisit ? order.visit_id === customerVisit.visit_id :
+      state.booking && !order.visit_id && order.booking_id === state.booking.id
+  )) : [];
+  const currentIds = new Set(currentOrders.map(order => order.order_id));
+  const pastOrders = state.orderHistory.filter(order => !currentIds.has(order.order_id));
+  const bookingRecords = state.bookingHistory.map(booking =>
     '<article class="history-record">' +
     '<div class="history-record-top"><strong>' + esc(bookingSummary(booking)) +
     '</strong><span class="history-status">' + esc(bookingLabels[booking.status] ?? booking.status) + '</span></div>' +
     (state.booking?.id === booking.id ? btn("View reservation", "Book a table", "bag-line-button") : '') +
     '</article>',
   ).join("");
-  const orderRecords = orders.map((order) => {
+  function orderRecord(order) {
     const date = order.created_at
       ? new Date(order.created_at.replace(" ", "T") + "Z").toLocaleString("en-GB", {
           timeZone: "Asia/Shanghai", dateStyle: "medium", timeStyle: "short",
         }) : "";
     const status = order.order_type === "preorder" && !order.visit_id && order.status === "active"
       ? "Awaiting check-in" : orderLabels[order.status] ?? order.status;
+    const number = (order.order_type === "preorder" ? "Preorder #" : "Order #") + order.order_id;
+    const payment = order.status === "cancelled" ? "" : order.payment_status === "paid" ? " · Paid" : " · Unpaid";
+    const amount = Number(order.total_amount);
+    const summary = accountVisit
+      ? '<span class="account-order-copy"><strong>' + esc(number) + '</strong><small>' + esc(date) +
+        '</small></span><span class="account-order-totals"><strong>' + (Number.isFinite(amount) ? '¥' + amount.toFixed(2) : '—') +
+        '</strong><span class="history-status" data-order-status="' + esc(order.status) + '">' +
+        esc(status + payment) + '</span></span>'
+      : '<strong>' + esc(number) + '</strong><span class="history-status">' + esc(status + payment) +
+        '</span><small>' + esc(date) + '</small>';
     return '<details class="history-record" data-order-record="' + order.order_id + '">' +
-      '<summary><strong>' + (order.order_type === "preorder" ? "Preorder #" : "Order #") + order.order_id + '</strong><span class="history-status">' +
-      esc(status) + ' · ' +
-      (order.payment_status === "paid" ? "Paid" : "Unpaid") +
-      '</span><small>' + esc(date) + '</small></summary><div data-order-lines></div></details>';
-  }).join("");
-  section.innerHTML =
-    '<p class="history-caption" role="status">' +
+      '<summary>' + summary + '</summary><div data-order-lines></div></details>';
+  }
+  const orderRecords = pastOrders.map(orderRecord).join("");
+  const notice = '<p class="history-caption" role="status">' +
     esc(route() === "My account" ? customerFeedback || (customerLoaded ? "" : "Loading restaurant records…") :
-      customerLoaded ? "" : "Loading restaurant records…") + '</p>' +
-    '<section class="history-group"><h3>My reservations</h3>' +
-    (bookingRecords || '<p class="history-empty">No reservations yet.</p>') +
-    '</section><section class="history-group"><h3>My orders</h3>' +
-    (orderRecords || '<p class="history-empty">No orders yet.</p>') + '</section>';
-  for (const record of section.querySelectorAll("[data-order-record]")) {
+      customerLoaded ? "" : "Loading restaurant records…") + '</p>';
+  const reservations = bookingRecords || '<p class="history-empty">No reservations yet.</p>';
+  if (accountVisit) {
+    const visitTitle = customerVisit ? "Current visit" : "Upcoming reservation";
+    const label = customerVisit ? "Table " + tableLabel(customerVisit.table_id) + " · Checked in" :
+      state.booking ? bookingSummary(state.booking) : "No upcoming reservation.";
+    const action = customerVisit ? btn("View your visit", "Your table", "secondary account-visit-link") :
+      state.booking ? btn("View reservation", "Book a table", "secondary account-visit-link") :
+      btn("Book a table", "Book a table", "secondary account-visit-link");
+    accountVisit.innerHTML = notice + (customerLoaded ? '<section class="account-visit"><div class="account-visit-heading">' +
+      '<div><h3>' + visitTitle + '</h3><p>' + esc(label) + '</p></div>' + action + '</div>' +
+      currentOrders.map(orderRecord).join("") + '</section>' : '');
+    section.innerHTML = customerLoaded ? '<section class="history-group"><h3>Order history</h3>' +
+      (orderRecords || '<p class="history-empty">No past orders yet.</p>') +
+      '</section><details class="account-reservation-history"><summary>Reservations</summary>' + reservations + '</details>' : '';
+  } else {
+    section.innerHTML = notice + '<section class="history-group"><h3>My reservations</h3>' + reservations +
+      '</section><section class="history-group"><h3>My orders</h3>' +
+      (orderRecords || '<p class="history-empty">No orders yet.</p>') + '</section>';
+  }
+  for (const record of (accountVisit ? app : section).querySelectorAll("[data-order-record]")) {
     record.addEventListener("toggle", async () => {
       if (!record.open || record.dataset.loaded) return;
       const body = record.querySelector("[data-order-lines]");
@@ -1399,3 +1434,16 @@ if (customer && history.state?.returnTo?.startsWith("#")) {
 }
 show(false);
 if (customer && customerPage()) refreshCustomer();
+if (customer) {
+  const checkVisit = async () => {
+    if (checkingVisit || !visitUpdatesAllowed()) return;
+    checkingVisit = true;
+    try {
+      await refreshCustomer({ background: true });
+    } finally {
+      checkingVisit = false;
+    }
+  };
+  setInterval(checkVisit, 6000);
+  document.addEventListener("visibilitychange", checkVisit);
+}

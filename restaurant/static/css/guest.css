@@ -1408,6 +1408,69 @@ main.booking {
 .history-record .order-line:last-child {
   border-bottom: 0;
 }
+.account-content .account-visit {
+  padding: clamp(14px, 2vw, 22px);
+  border: 1px solid var(--ember-rule, #38362f);
+  border-radius: 8px;
+  background: var(--ember-surface, #141410);
+}
+.account-visit-heading,
+.account-profile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.account-visit-heading h3,
+.account-profile h3 {
+  margin: 0;
+  font-size: clamp(21px, 2vw, 28px);
+}
+.account-visit-heading p {
+  margin: 4px 0 0;
+  color: var(--ember-muted, #b9b6a8);
+}
+.account-visit .history-record:first-of-type {
+  margin-top: 14px;
+}
+.account-visit .history-record:last-child { margin-bottom: 0; }
+.account-content .account-profile {
+  margin-top: 20px;
+  padding-block: 12px;
+  border-bottom: 1px solid var(--ember-rule, #38362f);
+}
+.account-profile .account-details { order: 1; width: 100%; margin: 0; }
+.account-profile .account-details div { padding-block: 6px; }
+.account-profile form { margin: 0; }
+.account-content .guest-history { margin-top: 10px; padding-top: 0; border: 0; }
+.account-content .history-record { margin: 0; border-width: 0 0 1px; border-radius: 0; padding: 0; }
+.account-content .history-record summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 10px;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 4px;
+  list-style: none;
+}
+.account-content .history-record summary::-webkit-details-marker { display: none; }
+.account-content .history-record summary::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(-45deg);
+}
+.account-content .history-record[open] summary::after { transform: rotate(45deg); }
+.account-content .history-record summary .history-status { margin: 0; }
+.account-order-copy,
+.account-order-totals { display: grid; gap: 2px; }
+.account-order-totals { text-align: right; font-variant-numeric: tabular-nums; }
+.account-content .history-record [data-order-lines] { padding-inline: 4px; }
+.account-reservation-history { margin-top: 22px; }
+.account-reservation-history > summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
+.booking-table-help { margin: 0; color: var(--ember-muted, #b9b6a8); font-size: 0.9rem; }
 .dish-modal {
   padding: 0;
   width: min(650px, 94vw);

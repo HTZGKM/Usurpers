@@ -116,7 +116,15 @@ def get_order(order_id, customer_phone=None):
 
 def get_customer_orders(customer_phone):
     with get_connection() as db:
-        return [dict(r) for r in db.execute("SELECT * FROM orders WHERE customer_phone=? ORDER BY created_at DESC",(customer_phone,))]
+        rows = db.execute("""
+            SELECT o.*, ROUND(COALESCE(SUM(i.total_price), 0), 2) AS total_amount
+            FROM orders o
+            LEFT JOIN order_items i ON i.order_id=o.order_id AND i.status<>'cancelled'
+            WHERE o.customer_phone=?
+            GROUP BY o.order_id
+            ORDER BY o.created_at DESC, o.order_id DESC
+        """, (customer_phone,))
+        return [dict(row) for row in rows]
 
 
 def get_orders(active_only=False, phone=None, table_id=None):

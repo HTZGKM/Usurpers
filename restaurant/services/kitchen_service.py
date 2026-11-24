@@ -5,18 +5,28 @@ from .common import ServiceError, positive_int
 def get_waiting_items():
     from .queue_manager import QueueManager
     QueueManager.enqueue_due_preorders()
-    with get_connection() as db: items=[dict(r) for r in db.execute("SELECT q.*,l.note,l.status item_status FROM kitchen_queue q JOIN order_items l USING(order_item_id) WHERE q.status='waiting' ORDER BY q.priority DESC,COALESCE(q.estimated_ready_at,q.created_at),q.queue_id")]
-    return items
+    return _queue_items("waiting", "q.priority DESC, COALESCE(q.estimated_ready_at, q.created_at)")
 
 
 def get_cooking_items():
-    with get_connection() as db: items=[dict(r) for r in db.execute("SELECT q.*,l.note FROM kitchen_queue q JOIN order_items l USING(order_item_id) WHERE q.status='cooking' ORDER BY q.started_at,q.queue_id")]
-    return items
+    return _queue_items("cooking", "q.started_at")
 
 
 def get_ready_items():
-    with get_connection() as db: items=[dict(r) for r in db.execute("SELECT q.*,l.note FROM kitchen_queue q JOIN order_items l USING(order_item_id) WHERE q.status='ready' ORDER BY q.completed_at,q.queue_id")]
-    return items
+    return _queue_items("ready", "q.completed_at")
+
+
+def _queue_items(status, sort):
+    with get_connection() as db:
+        rows = db.execute(f"""
+            SELECT q.*, i.note, i.status AS item_status, o.table_id
+            FROM kitchen_queue q
+            JOIN order_items i USING (order_item_id)
+            JOIN orders o ON o.order_id=q.order_id
+            WHERE q.status=?
+            ORDER BY {sort}, q.queue_id
+        """, (status,))
+        return [dict(row) for row in rows]
 
 
 def _transition(item_id, expected, target):

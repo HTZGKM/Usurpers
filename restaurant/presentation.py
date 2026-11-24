@@ -21,17 +21,13 @@ CATEGORIES = {
 def seating_view(account):
     if not account or account["role"] not in ("customer", "frontdesk"):
         return []
-    visits = dining_service.get_dining_sessions()
     if account["role"] == "customer":
         return [
             {key: visit[key] for key in ("visit_id", "booking_id", "table_id")}
-            for visit in visits
+            for visit in dining_service.get_dining_sessions()
             if visit["status"] == "seated" and visit["customer_phone"] == account["username"]
         ]
-    return [
-        {key: visit[key] for key in ("visit_id", "booking_id", "table_id", "contact_name", "party_size", "status")}
-        for visit in visits if visit["status"] in ("waiting", "seated")
-    ]
+    return dining_service.get_frontdesk_visits()
 
 
 def restaurant_view(root):
