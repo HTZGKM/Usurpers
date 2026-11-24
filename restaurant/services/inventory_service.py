@@ -41,13 +41,30 @@ def create_ingredient(name, unit, on_hand, expires_at=None):
         return dict(db.execute("SELECT * FROM ingredients WHERE ingredient_id=?",(cur.lastrowid,)).fetchone())
 
 
+def _recipe_rows(db, dish_id):
+    if not db.execute("SELECT 1 FROM dishes WHERE dish_id=?", (dish_id,)).fetchone():
+        raise ServiceError("菜品不存在。", 404)
+    return [dict(row) for row in db.execute(
+        "SELECT * FROM dish_ingredients WHERE dish_id=? ORDER BY ingredient_id", (dish_id,)
+    )]
+
+
+def get_recipe(dish_id):
+    with get_connection() as db:
+        return _recipe_rows(db, positive_int(dish_id, "dish_id"))
+
+
 def set_recipe(dish_id, ingredients):
     did=positive_int(dish_id,"dish_id")
-    if not isinstance(ingredients,list) or not ingredients: raise ServiceError("ingredients 必须是非空数组。",field="ingredients")
+    if not isinstance(ingredients,list): raise ServiceError("ingredients 必须是数组。",field="ingredients")
     values=[]
+    seen = set()
     for index,item in enumerate(ingredients):
         if not isinstance(item,dict): raise ServiceError("配方明细格式不合法。",field=f"ingredients[{index}]")
         iid=positive_int(item.get("ingredient_id"),f"ingredients[{index}].ingredient_id")
+        if iid in seen:
+            raise ServiceError("同一食材只能使用一次。", 409, "ingredients", "DUPLICATE")
+        seen.add(iid)
         try: amount=float(item.get("quantity_per_dish"))
         except (TypeError,ValueError): raise ServiceError("配方用量必须是数字。",field=f"ingredients[{index}].quantity_per_dish")
         if not math.isfinite(amount) or amount<=0: raise ServiceError("配方用量必须是大于 0 的有效数字。",field=f"ingredients[{index}].quantity_per_dish")
@@ -59,7 +76,7 @@ def set_recipe(dish_id, ingredients):
             if not db.execute("SELECT 1 FROM ingredients WHERE ingredient_id=?",(iid,)).fetchone(): raise ServiceError("配方食材不存在。",404)
         db.execute("DELETE FROM dish_ingredients WHERE dish_id=?",(did,))
         db.executemany("INSERT INTO dish_ingredients(dish_id,ingredient_id,quantity_per_dish) VALUES(?,?,?)",[(did,iid,amount) for iid,amount in values])
-        return [dict(r) for r in db.execute("SELECT * FROM dish_ingredients WHERE dish_id=?",(did,))]
+        return _recipe_rows(db, did)
 
 
 def list_ingredients():

@@ -1,167 +1,204 @@
-"""Regression tests for inventory, remake tickets and simulated refunds."""
+"""Regression tests for the active database schema and restaurant workflows."""
 import os
-import unittest
-import socket
+import sqlite3
 import subprocess
 import sys
-import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
+from datetime import datetime, timedelta, timezone
 from threading import Barrier
-from pathlib import Path
+from unittest.mock import patch
 
-ROOT=Path(__file__).resolve().parent/".remaining_runtime"
-ROOT.mkdir(exist_ok=True)
-os.environ["USURPERS_DB_PATH"]=str(ROOT/"remaining.db")
-
-from restaurant.db.database import ensure_database,get_connection
-from restaurant.services.common import ServiceError
-from restaurant.services.inventory_service import adjust_stock
-from restaurant.services.order_service import create_dine_in_order,cancel_order_item,pay_order
-from restaurant.services.kitchen_service import start_item,finish_item,serve_item
-from restaurant.services.remake_service import create_remake,start_remake,complete_remake
-from restaurant.services.refund_service import create_refund
-from restaurant.services.kitchen_service import get_waiting_items
+from backend_test_helpers import RestaurantTestCase, login, write
+from restaurant.business_time import current_table_window
+from restaurant.db import database
 from restaurant.scheduler import run_scheduled_tasks
-from app import create_app
+from restaurant.services.booking_service import create_booking, find_available_tables, update_booking
+from restaurant.services.common import ServiceError
+from restaurant.services.dining_service import close_dining_session, register_arrival, register_walk_in
+from restaurant.services.order_service import create_dine_in_order, get_order
+from restaurant.services.queue_manager import QueueManager
 
 
-class RemainingFeatureTests(unittest.TestCase):
-    def setUp(self):
-        os.environ["USURPERS_DB_PATH"]=str(ROOT/"remaining.db")
-        ensure_database(reset=True)
+def dish(dish_id=1, quantity=1):
+    return {"items-0-dish_id": dish_id, "items-0-quantity": quantity}
 
-    def configure_recipe(self,stock):
-        with get_connection() as db:
-            db.execute("INSERT INTO ingredients(name,unit,on_hand) VALUES('test-cheese','g',?)",(stock,))
-            db.execute("INSERT INTO dish_ingredients(dish_id,ingredient_id,quantity_per_dish) VALUES(6,1,10)")
 
-    def test_stock_reservation_prevents_oversell_and_cancel_releases(self):
-        self.configure_recipe(10)
-        first=create_dine_in_order(1,[{"dish_id":6,"quantity":1}],"13900000002")
-        with get_connection() as db:
-            line=db.execute("SELECT order_item_id FROM order_lines WHERE order_id=?",(first["order_id"],)).fetchone()[0]
-            self.assertEqual(db.execute("SELECT reserved FROM ingredients WHERE ingredient_id=1").fetchone()[0],10)
-        with self.assertRaises(ServiceError):
-            create_dine_in_order(1,[{"dish_id":6,"quantity":1}],"13900000002")
-        cancel_order_item(first["order_id"],line,"13900000002")
-        with get_connection() as db:
-            self.assertEqual(db.execute("SELECT reserved FROM ingredients WHERE ingredient_id=1").fetchone()[0],0)
-            self.assertEqual(db.execute("SELECT status FROM inventory_reservations WHERE order_item_id=?",(line,)).fetchone()[0],"released")
+class RemainingFeatureTests(RestaurantTestCase):
+    def test_waitlist_to_payment_across_four_roles(self):
+        customer = self.signed_in("13900000001")
+        frontdesk = self.signed_in("frontdesk@shuangfen.local")
+        kitchen = self.signed_in("kitchen@shuangfen.local")
+        admin = self.signed_in("admin@shuangfen.local")
 
-    def test_concurrent_orders_cannot_reserve_the_same_last_stock(self):
-        self.configure_recipe(10)
-        gate=Barrier(2)
-        def submit():
+        joined = write(customer, "/waiting-queue", {"party_size": 2, "contact_name": "Waitlist fixture"})
+        self.assertEqual(joined.status_code, 201)
+        ticket = joined.json["queue"]["queue_id"]
+        self.assertEqual(customer.get("/waiting-queue/mine").json["queue"]["status"], "waiting")
+        self.assertEqual(write(frontdesk, "/frontdesk/tables/6/call-next").json["queue"]["queue_id"], ticket)
+        self.assertEqual(customer.get("/waiting-queue/mine").json["queue"]["called_table_id"], 6)
+        self.assertEqual(write(frontdesk, f"/frontdesk/waiting-queue/{ticket}/seat", {"table_id": 1}).status_code, 409)
+        visit = write(frontdesk, f"/frontdesk/waiting-queue/{ticket}/seat", {"table_id": 6}).json["visit"]["visit_id"]
+        self.assertIsNone(customer.get("/waiting-queue/mine").json["queue"])
+
+        placed = write(customer, f"/visits/{visit}/orders", dish())
+        self.assertEqual(placed.status_code, 201)
+        order = placed.json["order"]["order_id"]
+        self.assertEqual(write(customer, f"/orders/{order}/edit", dish(quantity=2)).json["order"]["total_amount"], 76)
+        self.assertEqual(write(frontdesk, f"/frontdesk/orders/{order}/edit", dish(quantity=3)).json["order"]["total_amount"], 114)
+        items = [item for item in kitchen.get("/kitchen/queue").json["items"] if item["order_id"] == order]
+        self.assertEqual(len(items), 1)
+        item = items[0]["order_item_id"]
+        self.assertEqual(write(kitchen, f"/kitchen/items/{item}/start").status_code, 200)
+        self.assertEqual(write(customer, f"/orders/{order}/cancel").status_code, 409)
+        self.assertEqual(write(kitchen, f"/kitchen/items/{item}/complete").status_code, 200)
+        self.assertEqual(write(frontdesk, f"/frontdesk/orders/{order}/items/{item}/serve").status_code, 200)
+        self.assertEqual(write(frontdesk, f"/frontdesk/visits/{visit}/close").status_code, 409)
+        self.assertEqual(write(frontdesk, f"/frontdesk/orders/{order}/pay").status_code, 200)
+        self.assertEqual(write(frontdesk, f"/frontdesk/visits/{visit}/close").status_code, 200)
+        self.assertEqual(admin.get(f"/admin/orders/{order}").json["order"]["payment_status"], "paid")
+        database.ensure_database()
+        self.assertEqual(get_order(order)["total_amount"], 114)
+
+    def test_preorder_edit_and_promotion_follow_visit(self):
+        customer = self.signed_in("13900000001")
+        desk = self.signed_in("frontdesk@shuangfen.local")
+        kitchen = self.signed_in("kitchen@shuangfen.local")
+        booking = create_booking("Preorder fixture", "13900000001", "2026-12-20", 1, 2, "13900000001", 6)["booking_id"]
+        response = write(customer, f"/bookings/{booking}/preorders",
+                         {**dish(), "estimated_ready_at": "2026-12-20T11:00:00+08:00"})
+        self.assertEqual(response.status_code, 201)
+        order = response.json["order"]["order_id"]
+        edited = write(customer, f"/orders/{order}/edit", dish(quantity=2))
+        line = next(item for item in edited.json["order"]["items"] if item["status"] == "waiting")
+        self.assertEqual(write(kitchen, f"/kitchen/items/{line['order_item_id']}/start").status_code, 409)
+        self.assertEqual(write(customer, f"/orders/{order}/pay").status_code, 409)
+        self.assertEqual(QueueManager.enqueue_due_preorders("2026-12-20 04:00:00"), 0)
+        update_booking(booking, "2026-12-21", 2, 2, "13900000001", 1)
+        arrival = write(desk, f"/frontdesk/bookings/{booking}/check-in")
+        self.assertEqual(arrival.status_code, 201)
+        visit = arrival.json["visit"]["visit_id"]
+        self.assertEqual(get_order(order)["visit_id"], visit)
+        self.assertEqual(get_order(order)["table_id"], 1)
+        self.assertEqual(run_scheduled_tasks("2026-12-21 08:59:00")["promoted_preorders"], 0)
+        self.assertEqual(run_scheduled_tasks("2026-12-21 09:00:00")["promoted_preorders"], 1)
+        self.assertEqual(run_scheduled_tasks("2026-12-21 09:00:00")["promoted_preorders"], 0)
+        self.assertEqual(write(desk, f"/frontdesk/visits/{visit}/close").status_code, 409)
+        self.assertEqual(write(desk, f"/frontdesk/orders/{order}/pay").status_code, 200)
+        self.assertEqual(write(desk, f"/frontdesk/visits/{visit}/close").status_code, 200)
+
+    def test_reserved_table_rules_use_current_window_and_release_is_atomic(self):
+        date = current_table_window()[0]
+        create_booking("Dinner fixture", "13900000001", date, 3, 2, table_id=6)
+        with patch("restaurant.services.dining_service.current_table_window", return_value=(date, "11:00-14:00")):
+            visit = register_walk_in(2, 6)["visit_id"]
+            self.assertEqual(close_dining_session(visit)["status"], "closed")
+        entry = QueueManager.join_waitlist(2, "Waiting fixture", "13900000001", "13900000001")
+        with patch("restaurant.services.dining_service.current_table_window", return_value=(date, "19:00-21:00")):
+            with self.assertRaises(ServiceError):
+                QueueManager.call_next(6)
+            call = QueueManager.call_next(1)
+            self.assertEqual(call["queue_id"], entry["queue_id"])
+            with self.assertRaises(ServiceError):
+                QueueManager.seat(entry["queue_id"], 6)
+            self.assertEqual(QueueManager.seat(entry["queue_id"], 1)["status"], "seated")
+
+    def test_concurrent_booking_cannot_take_same_table(self):
+        gate = Barrier(2)
+        day = "2026-12-21"
+
+        def submit(phone):
             gate.wait()
-            try: return create_dine_in_order(1,[{"dish_id":6,"quantity":1}],"13900000002")["order_id"]
-            except ServiceError: return None
-        with ThreadPoolExecutor(max_workers=2) as pool: results=list(pool.map(lambda _:submit(),range(2)))
-        self.assertEqual(sum(value is not None for value in results),1)
-        with get_connection() as db:
-            self.assertEqual(db.execute("SELECT reserved FROM ingredients WHERE ingredient_id=1").fetchone()[0],10)
-            self.assertEqual(db.execute("SELECT count(*) FROM inventory_reservations WHERE status='reserved'").fetchone()[0],1)
+            try:
+                return create_booking("Concurrent booking", phone, day, 2, 2, table_id=6)["status"]
+            except ServiceError as error:
+                return error.status_code
 
-    def test_starting_item_consumes_reserved_stock_once(self):
-        self.configure_recipe(30)
-        order=create_dine_in_order(1,[{"dish_id":6,"quantity":2}],"13900000002")
-        with get_connection() as db: iid=db.execute("SELECT order_item_id FROM order_lines WHERE order_id=?",(order["order_id"],)).fetchone()[0]
-        start_item(iid)
-        with self.assertRaises(ServiceError): start_item(iid)
-        with get_connection() as db:
-            ingredient=db.execute("SELECT on_hand,reserved FROM ingredients WHERE ingredient_id=1").fetchone()
-            self.assertEqual(tuple(ingredient),(10,0))
-            self.assertEqual(db.execute("SELECT status FROM inventory_reservations WHERE order_item_id=?",(iid,)).fetchone()[0],"consumed")
-            self.assertEqual(db.execute("SELECT count(*) FROM inventory_movements WHERE reference=?",(str(iid),)).fetchone()[0],1)
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            results = list(workers.map(submit, ["13900000001", "13900000002"]))
+        self.assertCountEqual(results, ["booked", 409])
 
-    def test_order_header_completes_only_after_all_lines_are_served(self):
-        order=create_dine_in_order(1,[{"dish_id":5,"quantity":1},{"dish_id":6,"quantity":1}],"13900000002")
-        with get_connection() as db: ids=[r[0] for r in db.execute("SELECT order_item_id FROM order_lines WHERE order_id=? ORDER BY order_item_id",(order["order_id"],))]
-        for iid in ids:
-            start_item(iid); finish_item(iid); serve_item(iid)
-        with get_connection() as db:
-            self.assertEqual(db.execute("SELECT status FROM order_headers WHERE order_id=?",(order["order_id"],)).fetchone()[0],"completed")
+    def test_booking_query_and_write_agree_in_active_slot(self):
+        date = current_table_window()[0]
+        with patch("restaurant.services.booking_service.current_table_window", return_value=(date, "11:00-14:00")):
+            self.assertNotIn(2, [row["table_id"] for row in find_available_tables(date, 1, 2)])
+            with self.assertRaises(ServiceError):
+                create_booking("Busy table", "13900000001", date, 1, 2, table_id=2)
+        self.assertIn(2, [row["table_id"] for row in find_available_tables("2026-12-22", 1, 2)])
+        self.assertEqual(create_booking("Future table", "13900000001", "2026-12-22", 1, 2, table_id=2)["table_id"], 2)
 
-    def test_remake_is_separate_duplicate_safe_and_preserves_original(self):
-        with get_connection() as db: db.execute("UPDATE order_lines SET status='served' WHERE order_item_id=9001")
-        ticket=create_remake(9001,"送错桌",2)
-        with self.assertRaises(ServiceError): create_remake(9001,"重复点击",2)
-        self.assertEqual(start_remake(ticket["remake_id"])["status"],"cooking")
-        self.assertEqual(complete_remake(ticket["remake_id"])["status"],"completed")
-        self.assertTrue(any(x.get("task_type")=="remake" for x in get_waiting_items()) is False)
-        with get_connection() as db:
-            self.assertEqual(db.execute("SELECT status FROM order_lines WHERE order_item_id=9001").fetchone()[0],"served")
-            self.assertEqual(db.execute("SELECT count(*) FROM remake_tickets WHERE order_item_id=9001").fetchone()[0],1)
+    def test_admin_inventory_recipe_and_manual_stock(self):
+        admin = self.signed_in("admin@shuangfen.local")
+        response = write(admin, "/admin/inventory/ingredients", {"name": "Test cheese", "unit": "g", "on_hand": 100})
+        self.assertEqual(response.status_code, 201)
+        ingredient = response.json["ingredient"]["ingredient_id"]
+        self.assertEqual(write(admin, f"/admin/inventory/ingredients/{ingredient}/adjust", {"quantity": -5}).status_code, 200)
+        path = "/admin/dishes/1/recipe"
+        fields = {"ingredients-0-ingredient_id": ingredient, "ingredients-0-quantity_per_dish": 12.5}
+        self.assertEqual(write(admin, path, fields, "PUT").status_code, 200)
+        self.assertEqual(admin.get(path).json["recipe"][0]["quantity_per_dish"], 12.5)
+        duplicate = {**fields, "ingredients-1-ingredient_id": ingredient, "ingredients-1-quantity_per_dish": 4}
+        self.assertEqual(write(admin, path, duplicate, "PUT").status_code, 409)
+        self.assertEqual(admin.get(path).json["recipe"][0]["quantity_per_dish"], 12.5)
+        create_dine_in_order(1, [{"dish_id": 1, "quantity": 1}], "13900000002")
+        self.assertEqual(admin.get("/admin/inventory/ingredients").json["ingredients"][0]["on_hand"], 95)
+        self.assertEqual(write(admin, path, {}, "PUT").json["recipe"], [])
 
-    def test_refund_is_idempotent_and_cumulative_amount_is_bounded(self):
-        pay_order(9001)
-        first=create_refund(9001,20,"顾客反馈",2,"refund-request-1")
-        retry=create_refund(9001,20,"顾客反馈",2,"refund-request-1")
-        self.assertTrue(retry["already_refunded"])
-        with self.assertRaises(ServiceError): create_refund(9001,100,"超额退款",2,"refund-request-2")
-        with get_connection() as db:
-            self.assertEqual(db.execute("SELECT count(*) FROM refunds WHERE order_id=9001").fetchone()[0],1)
-            self.assertEqual(float(db.execute("SELECT amount FROM refunds WHERE refund_id=?",(first["refund_id"],)).fetchone()[0]),20)
-            self.assertEqual(db.execute("SELECT payment_status FROM order_headers WHERE order_id=9001").fetchone()[0],"paid")
+    def test_deactivation_reset_and_customer_history(self):
+        customer = self.signed_in("13900000002")
+        admin = self.signed_in("admin@shuangfen.local")
+        self.assertEqual(write(admin, "/admin/customers/13900000002/deactivate").status_code, 200)
+        self.assertEqual(customer.get("/orders").status_code, 403)
+        self.assertEqual(write(admin, "/admin/customers/13900000002/activate").status_code, 200)
+        self.assertEqual(login(customer, "13900000002").status_code, 303)
+        self.assertIn(9001, [row["order_id"] for row in customer.get("/orders").json["orders"]])
+        self.assertEqual(write(admin, "/admin/staff/1/deactivate").status_code, 409)
+        self.assertEqual(write(admin, "/admin/staff/2/deactivate").status_code, 200)
+        self.assertEqual(write(admin, "/admin/staff/2/activate").status_code, 200)
+        self.assertEqual(write(admin, "/admin/staff/2/reset-password", {"password": "TestReset-2026"}).status_code, 200)
+        self.signed_in("frontdesk@shuangfen.local", "TestReset-2026")
 
-    def test_deactivated_customer_session_is_rejected_and_history_remains(self):
-        app=create_app(); customer=app.test_client(); admin=app.test_client()
-        self.assertEqual(customer.post("/auth/login",json={"account":"13900000002","password":"123456"}).status_code,200)
-        self.assertEqual(admin.post("/auth/login",json={"account":"admin@shuangfen.local","password":"123456"}).status_code,200)
-        self.assertEqual(admin.post("/admin/customers/13900000002/deactivate",json={}).status_code,200)
-        self.assertEqual(customer.get("/orders").status_code,403)
-        with get_connection() as db:
-            self.assertEqual(db.execute("SELECT is_active FROM customers WHERE customer_phone='13900000002'").fetchone()[0],0)
-            self.assertEqual(db.execute("SELECT count(*) FROM order_headers WHERE customer_phone='13900000002'").fetchone()[0],1)
-        self.assertEqual(admin.post("/admin/customers/13900000002/activate",json={}).status_code,200)
-        self.assertEqual(customer.post("/auth/login",json={"account":"13900000002","password":"123456"}).status_code,200)
-        self.assertEqual(customer.get("/orders").status_code,200)
+    def test_seed_does_not_add_future_payments_or_kitchen_tasks(self):
+        for now in (
+            datetime(2026, 11, 24, 1, tzinfo=timezone.utc),
+            datetime(2026, 11, 24, 18, tzinfo=timezone.utc),
+        ):
+            with self.subTest(now=now):
+                with patch.object(database, "datetime", wraps=datetime) as date_time:
+                    date_time.now.return_value = now
+                    database.ensure_database()
+                with database.get_connection() as conn:
+                    invalid = conn.execute("SELECT COUNT(*) FROM orders WHERE order_id BETWEEN 2000 AND 2999 AND paid_at>?",
+                                           (now.strftime("%Y-%m-%d %H:%M:%S"),)).fetchone()[0]
+                    self.assertEqual(invalid, 0)
+                    oldest = conn.execute("SELECT MIN(date(created_at,'+8 hours')) FROM orders WHERE order_id BETWEEN 2000 AND 2999").fetchone()[0]
+                    self.assertEqual(oldest, (now + timedelta(hours=8, days=-6)).date().isoformat())
+                    self.assertEqual(conn.execute("SELECT COUNT(*) FROM kitchen_queue WHERE order_id BETWEEN 2000 AND 2999").fetchone()[0], 0)
+                    self.assertFalse(conn.execute("""SELECT 1 FROM bookings JOIN dining_sessions USING(booking_id)
+                        WHERE bookings.status='booked' AND dining_sessions.status='seated'""").fetchone())
 
-    def test_background_tick_promotes_due_preorder_idempotently(self):
-        with get_connection() as db:
-            db.execute("INSERT INTO bookings(booking_id,contact_name,phone_number,customer_phone,booking_date,time_slot_id,party_size,status,table_id) VALUES(77,'scheduler','13900000001','13900000001','2026-12-10',1,2,'booked',1)")
-        from restaurant.services.order_service import create_preorder
-        order=create_preorder(77,"13900000001",[{"dish_id":6,"quantity":1}],"2026-11-20 10:00:00")
-        first=run_scheduled_tasks("2026-11-20 11:00:00")
-        second=run_scheduled_tasks("2026-11-20 11:00:00")
-        with get_connection() as db:
-            self.assertEqual(db.execute("SELECT count(*) FROM kitchen_queue WHERE order_id=?",(order["order_id"],)).fetchone()[0],1)
-        self.assertGreaterEqual(first["promoted_preorders"],1)
-        self.assertEqual(second["promoted_preorders"],0)
+    def test_legacy_database_is_rejected_without_rewriting_it(self):
+        legacy = self.db.with_name("legacy.sqlite")
+        with closing(sqlite3.connect(legacy)) as conn, conn:
+            conn.execute("CREATE TABLE bookings (booking_id INTEGER PRIMARY KEY, time_slot_id INTEGER)")
+        before = legacy.read_bytes()
+        with patch.dict(os.environ, {"USURPERS_DB_PATH": str(legacy)}):
+            with self.assertRaisesRegex(RuntimeError, "Back it up"):
+                database.ensure_database()
+        self.assertEqual(legacy.read_bytes(), before)
 
-    def test_flask_server_process_restart_recovers_persistent_queue(self):
-        with get_connection() as db:
-            before=db.execute("SELECT count(*) FROM kitchen_queue").fetchone()[0]
-            db.execute("UPDATE kitchen_queue SET status='cooking',started_at=CURRENT_TIMESTAMP WHERE order_item_id=9001")
-        with socket.socket() as sock:
-            sock.bind(("127.0.0.1",0)); port=sock.getsockname()[1]
-        env=dict(os.environ,USURPERS_DB_PATH=str(ROOT/"remaining.db"))
-        command=[sys.executable,"-c",f"from app import create_app; create_app().run(host='127.0.0.1',port={port},use_reloader=False)"]
-        processes=[]
-        log_files=[]
-        log_path=ROOT/"server.log"
-        try:
-            for _ in range(2):
-                log_file=log_path.open("w",encoding="utf-8")
-                log_files.append(log_file)
-                proc=subprocess.Popen(command,cwd=str(Path(__file__).resolve().parents[1]),env=env,stdout=log_file,stderr=subprocess.STDOUT)
-                processes.append(proc)
-                deadline=time.time()+10
-                while time.time()<deadline:
-                    if proc.poll() is not None: self.fail("Flask 子进程意外退出")
-                    try:
-                        import urllib.request
-                        urllib.request.urlopen(f"http://127.0.0.1:{port}/health",timeout=0.5); break
-                    except Exception: time.sleep(0.1)
-                else: self.fail("Flask 子进程未能启动: "+log_path.read_text(encoding="utf-8",errors="replace"))
-                proc.terminate(); proc.wait(timeout=5); log_file.close()
-            with get_connection() as db:
-                self.assertEqual(db.execute("SELECT status FROM kitchen_queue WHERE order_item_id=9001").fetchone()[0],"cooking")
-                self.assertEqual(db.execute("SELECT count(*) FROM kitchen_queue").fetchone()[0],before)
-        finally:
-            for proc in processes:
-                if proc.poll() is None: proc.kill(); proc.wait(timeout=5)
-            for log_file in log_files:
-                if not log_file.closed: log_file.close()
-
-
-if __name__=="__main__": unittest.main()
+    def test_flask_process_restart_preserves_kitchen_work(self):
+        env = dict(os.environ, USURPERS_DB_PATH=str(self.db))
+        command = [sys.executable, "-c", """from app import app
+from restaurant.db.database import get_connection
+from restaurant.services.kitchen_service import start_item
+import sys
+assert app.test_client().get('/health').status_code == 200
+if sys.argv[1] == 'start':
+    start_item(9001)
+with get_connection() as db:
+    assert db.execute('SELECT status FROM kitchen_queue WHERE order_item_id=9001').fetchone()[0] == 'cooking'
+"""]
+        for action in ("start", "read"):
+            result = subprocess.run([*command, action], env=env, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import random
 import sqlite3
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
+
+from restaurant.business_time import RESTAURANT_TIME
 
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = PACKAGE_DIR / "data"
@@ -129,8 +132,16 @@ def get_connection() -> sqlite3.Connection:
 
 
 def create_schema(connection: sqlite3.Connection) -> None:
+    for table, required in (("bookings", "time_slot"), ("staff", "password_hash"), ("customers", "password_hash")):
+        columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+        if columns and required not in columns:
+            raise RuntimeError(
+                "The SQLite database uses the old schema. Back it up before running "
+                "python -m restaurant.db --reset, or set USURPERS_DB_PATH to a new file."
+            )
     connection.executescript(
         """
+        BEGIN IMMEDIATE;
         CREATE TABLE IF NOT EXISTS staff (
             staff_id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
@@ -205,8 +216,9 @@ def create_schema(connection: sqlite3.Connection) -> None:
             customer_phone TEXT, party_size INTEGER NOT NULL CHECK(party_size>0),
             table_type INTEGER, queue_position INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'waiting'
               CHECK(status IN ('waiting','called','seated','cancelled','expired')),
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, called_at TEXT,
-            FOREIGN KEY(customer_phone) REFERENCES customers(customer_phone)
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, called_at TEXT, called_table_id INTEGER,
+            FOREIGN KEY(customer_phone) REFERENCES customers(customer_phone),
+            FOREIGN KEY(called_table_id) REFERENCES dining_tables(table_id)
         );
         CREATE TABLE IF NOT EXISTS kitchen_queue (
             queue_id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER NOT NULL,
@@ -246,6 +258,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
         ("customers", "is_active", "INTEGER NOT NULL DEFAULT 1"),
         ("dishes", "is_archived", "INTEGER NOT NULL DEFAULT 0"),
         ("order_items", "estimated_ready_at", "TEXT"),
+        ("waiting_queue", "called_table_id", "INTEGER REFERENCES dining_tables(table_id)"),
         ("dishes", "ingredients", "TEXT NOT NULL DEFAULT ''"),
         ("dishes", "prep_time_minutes", "INTEGER NOT NULL DEFAULT 10"),
         ("dishes", "image_url", "TEXT"),
@@ -294,8 +307,8 @@ def seed_defaults(connection: sqlite3.Connection) -> None:
     connection.execute("INSERT OR IGNORE INTO bookings (booking_id,contact_name,phone_number,booking_date,time_slot,party_size,status,table_id,customer_phone) VALUES (1,'演示预约','13900000001','2026-12-01','11:00-14:00',2,'booked',1,'13900000001')")
     # 额外顾客预约：覆盖今天/明天、不同时段、已入座/未入座
     connection.execute("INSERT OR IGNORE INTO bookings (booking_id,contact_name,phone_number,booking_date,time_slot,party_size,status,table_id,customer_phone) VALUES "
-        "(2,'朱哥','18612345678',date('now','+8 hours'),'11:00-14:00',4,'booked',3,'18612345678'),"
-        "(3,'散客甲','13900000003',date('now','+8 hours'),'17:00-19:00',6,'booked',5,'13900000003'),"
+        "(2,'朱哥','18612345678',date('now','+8 hours'),'11:00-14:00',4,'arrived',3,'18612345678'),"
+        "(3,'散客甲','13900000003',date('now','+8 hours'),'17:00-19:00',6,'arrived',5,'13900000003'),"
         "(4,'常客丙','13900000005',date('now','+8 hours'),'19:00-21:00',4,'arrived',4,'13900000005'),"
         "(5,'散客乙','13900000004',date('now','+1 day','+8 hours'),'11:00-14:00',2,'booked',2,'13900000004')")
     connection.execute("INSERT OR IGNORE INTO dining_sessions (visit_id,booking_id,customer_phone,contact_name,phone_number,party_size,table_id,status) VALUES "
@@ -303,6 +316,14 @@ def seed_defaults(connection: sqlite3.Connection) -> None:
         "(2,2,'18612345678','朱哥','18612345678',4,3,'seated'),"
         "(3,3,'13900000003','散客甲','13900000003',6,5,'seated'),"
         "(4,4,'13900000005','常客丙','13900000005',4,4,'seated')")
+    connection.execute("""UPDATE bookings SET status='arrived' WHERE status='booked' AND EXISTS (
+        SELECT 1 FROM dining_sessions s WHERE s.booking_id=bookings.booking_id
+        AND s.table_id=bookings.table_id AND s.status IN ('seated','closed'))""")
+    connection.execute("""UPDATE orders SET
+        visit_id=(SELECT s.visit_id FROM dining_sessions s WHERE s.booking_id=orders.booking_id AND s.status='seated' ORDER BY s.visit_id DESC LIMIT 1),
+        table_id=(SELECT s.table_id FROM dining_sessions s WHERE s.booking_id=orders.booking_id AND s.status='seated' ORDER BY s.visit_id DESC LIMIT 1)
+        WHERE order_type='preorder' AND visit_id IS NULL AND status<>'cancelled'
+        AND EXISTS (SELECT 1 FROM dining_sessions s WHERE s.booking_id=orders.booking_id AND s.status='seated')""")
     connection.execute("INSERT OR IGNORE INTO orders (order_id,visit_id,customer_phone,contact_name,phone_number,table_id,order_type,status,payment_status) VALUES "
         "(9001,1,'13900000002','测试顾客','13900000002',2,'dine_in','active','unpaid'),"
         "(9002,2,'18612345678','朱哥','18612345678',3,'dine_in','active','unpaid'),"
@@ -336,8 +357,6 @@ def seed_defaults(connection: sqlite3.Connection) -> None:
     connection.execute("DELETE FROM order_items WHERE order_id BETWEEN 2000 AND 2999")
     connection.execute("DELETE FROM kitchen_queue WHERE order_id BETWEEN 2000 AND 2999")
     connection.execute("DELETE FROM orders WHERE order_id BETWEEN 2000 AND 2999")
-    import random
-
     dish_ids = [d["dish_id"] for d in DEFAULT_DISHES]
     dish_prices = {d["dish_id"]: float(d["price"]) for d in DEFAULT_DISHES}
     rng = random.Random(20261123)
@@ -349,11 +368,12 @@ def seed_defaults(connection: sqlite3.Connection) -> None:
         ("13900000004", "散客乙"),
         ("13900000005", "常客丙"),
     ]
-    now_utc = datetime.utcnow()
+    now_utc = datetime.now(timezone.utc)
+    local_today = now_utc.astimezone(RESTAURANT_TIME).date()
     line_id = 9100
 
     for day_offset in range(7):  # 0 = today, 6 = six days ago
-        day_base = now_utc.replace(second=0, microsecond=0) - timedelta(days=day_offset)
+        service_day = local_today - timedelta(days=day_offset)
         # Number of orders this day: 8-13, today gets a few more
         order_count = rng.randint(8, 13) if day_offset > 0 else rng.randint(10, 15)
         for _ in range(order_count):
@@ -370,7 +390,7 @@ def seed_defaults(connection: sqlite3.Connection) -> None:
             else:
                 hour_utc = rng.randint(9, 13)  # Beijing 17:00-21:00
             minute = rng.choice([0, 15, 30, 45])
-            order_time = day_base.replace(hour=hour_utc, minute=minute)
+            order_time = datetime.combine(service_day, time(hour_utc, minute), timezone.utc)
             created_at = order_time.strftime("%Y-%m-%d %H:%M:%S")
 
             phone, contact = rng.choice(customers)
@@ -379,12 +399,14 @@ def seed_defaults(connection: sqlite3.Connection) -> None:
             pay_status = "paid" if is_paid else "unpaid"
             paid_at = created_at if is_paid else None
 
-            connection.execute(
-                "INSERT OR IGNORE INTO orders(order_id,customer_phone,contact_name,phone_number,table_id,order_type,status,payment_status,created_at,paid_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (order_id, phone, contact, phone, table_id, "dine_in",
-                 "completed", pay_status, created_at, paid_at),
-            )
+            has_occurred = order_time <= now_utc
+            if has_occurred:
+                connection.execute(
+                    "INSERT OR IGNORE INTO orders(order_id,customer_phone,contact_name,phone_number,table_id,order_type,status,payment_status,created_at,paid_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (order_id, phone, contact, phone, table_id, "dine_in",
+                     "completed", pay_status, created_at, paid_at),
+                )
 
             # 1-4 items per order, weighted so sides/drinks appear more often
             item_count = rng.randint(1, 4)
@@ -392,6 +414,8 @@ def seed_defaults(connection: sqlite3.Connection) -> None:
             for did in chosen:
                 qty = rng.choices([1, 2, 3], weights=[7, 2, 1])[0]
                 line_id += 1
+                if not has_occurred:
+                    continue
                 unit_price = dish_prices[did]
                 total_price = round(unit_price * qty, 2)
                 connection.execute(
@@ -431,11 +455,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--reset",
         action="store_true",
-        help="Delete the existing shuangfen.db file before recreating it.",
+        help="Delete the configured database file before recreating it.",
     )
     args = parser.parse_args(argv)
 
-    db_path = ensure_database(reset=args.reset)
+    try:
+        db_path = ensure_database(reset=args.reset)
+    except RuntimeError as exc:
+        parser.exit(1, f"{exc}\n")
     summary = database_summary()
     print(f"SQLite database ready: {db_path}")
     print(f"Initialized at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

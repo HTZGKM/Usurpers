@@ -196,7 +196,7 @@ def serve_item(order_id, order_item_id):
 def waiting_queue():
     from restaurant.services.queue_manager import QueueManager
 
-    return jsonify({"ok": True, "queue": QueueManager.list_waiting()})
+    return jsonify({"ok": True, "queue": QueueManager.list_waiting(), "tables": QueueManager.available_tables()})
 
 
 @frontdesk_bp.post("/tables/<int:table_id>/call-next")

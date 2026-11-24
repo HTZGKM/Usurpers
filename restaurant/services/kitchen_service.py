@@ -23,9 +23,10 @@ def _transition(item_id, expected, target):
     iid=positive_int(item_id,"order_item_id")
     with get_connection() as db:
         db.execute("BEGIN IMMEDIATE")
-        cur=db.execute("UPDATE order_items SET status=? WHERE order_item_id=? AND status=?",(target,iid,expected))
+        cur=db.execute("""UPDATE order_items SET status=? WHERE order_item_id=? AND status=?
+            AND EXISTS (SELECT 1 FROM kitchen_queue WHERE order_item_id=? AND status=?)""",
+            (target,iid,expected,iid,expected))
         if cur.rowcount:
-            now="CURRENT_TIMESTAMP" if target in ("cooking","ready") else "NULL"
             if target == "cooking": db.execute("UPDATE kitchen_queue SET status=?,started_at=CURRENT_TIMESTAMP WHERE order_item_id=? AND status=?",(target,iid,expected))
             elif target in ("ready","served"): db.execute("UPDATE kitchen_queue SET status=?,completed_at=CURRENT_TIMESTAMP WHERE order_item_id=? AND status IN ('cooking','ready')",(target,iid))
             if target == "served":
@@ -35,6 +36,8 @@ def _transition(item_id, expected, target):
             return {"order_item_id":iid,"status":target}
         row=db.execute("SELECT status FROM order_items WHERE order_item_id=?",(iid,)).fetchone()
         if not row: raise ServiceError("订单菜品不存在。",404,"order_item_id","NOT_FOUND")
+        if row["status"] == expected:
+            raise ServiceError("菜品还没有进入该厨房队列。",409,"status","STATE_CONFLICT")
         raise ServiceError(f"不能从 {row['status']} 转为 {target}。",409,"status","STATE_CONFLICT")
 
 

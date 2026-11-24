@@ -11,6 +11,12 @@ def refresh_order_status(db, order_id):
     db.execute("UPDATE orders SET status=? WHERE order_id=?",(status,order_id))
 
 
+def _order_total(db, order_id):
+    row = db.execute("""SELECT COALESCE(SUM(total_price),0) FROM order_items
+        WHERE order_id=? AND status<>'cancelled'""", (order_id,)).fetchone()
+    return round(float(row[0]), 2)
+
+
 def create_dine_in_order(visit_id, items, customer_phone=None):
     visit = positive_int(visit_id, "visit_id")
     lines = order_items(items)
@@ -23,7 +29,7 @@ def create_dine_in_order(visit_id, items, customer_phone=None):
         order_id = header.lastrowid
         total = 0
         for line in lines:
-            dish = db.execute("SELECT price FROM dishes WHERE dish_id=? AND is_available=1",(line["dish_id"],)).fetchone()
+            dish = db.execute("SELECT price FROM dishes WHERE dish_id=? AND is_available=1 AND is_archived=0",(line["dish_id"],)).fetchone()
             if not dish: raise ServiceError(f"菜品 {line['dish_id']} 不存在或当前停售。",409,"items")
             price = float(dish["price"])
             line_total = round(price * line["quantity"], 2)
@@ -48,21 +54,21 @@ def create_preorder(booking_id, customer_phone, items, estimated_ready_at):
             price=float(dish["price"])
             item_total = round(price * item["quantity"], 2)
             total += item_total
-            cur=db.execute("INSERT INTO order_items(order_id,dish_id,quantity,unit_price,total_price,note,estimated_ready_at) VALUES(?,?,?,?,?,?,?)",(oid,item["dish_id"],item["quantity"],price,item_total,item["note"],ready))
+            db.execute("INSERT INTO order_items(order_id,dish_id,quantity,unit_price,total_price,note,estimated_ready_at) VALUES(?,?,?,?,?,?,?)",(oid,item["dish_id"],item["quantity"],price,item_total,item["note"],ready))
         return {"order_id":oid,"total_amount":round(total,2),"status":"active","payment_status":"unpaid","estimated_ready_at":ready,"kitchen_queued":False}
 
 
 def calculate_total(order_id):
     oid=positive_int(order_id,"order_id")
     with get_connection() as db:
-        row=db.execute("SELECT COALESCE(SUM(quantity*unit_price),0) total FROM order_items WHERE order_id=? AND status<>'cancelled'",(oid,)).fetchone()
         if not db.execute("SELECT 1 FROM orders WHERE order_id=?",(oid,)).fetchone(): raise ServiceError("订单不存在。",404)
-        return float(row["total"])
+        return _order_total(db, oid)
 
 
 def cancel_order_item(order_id, order_item_id, customer_phone=None):
     oid=positive_int(order_id,"order_id"); iid=positive_int(order_item_id,"order_item_id")
     with get_connection() as db:
+        db.execute("BEGIN IMMEDIATE")
         q="SELECT l.status,h.payment_status,h.customer_phone FROM order_items l JOIN orders h USING(order_id) WHERE l.order_id=? AND l.order_item_id=?"
         row=db.execute(q,(oid,iid)).fetchone()
         if not row: raise ServiceError("订单明细不存在。",404)
@@ -71,21 +77,21 @@ def cancel_order_item(order_id, order_item_id, customer_phone=None):
         db.execute("UPDATE order_items SET status='cancelled' WHERE order_item_id=? AND status='waiting'",(iid,))
         db.execute("UPDATE kitchen_queue SET status='cancelled',completed_at=CURRENT_TIMESTAMP WHERE order_item_id=? AND status='waiting'",(iid,))
         refresh_order_status(db,oid)
-        total = float(db.execute("SELECT COALESCE(SUM(quantity*unit_price),0) FROM order_items WHERE order_id=? AND status<>'cancelled'",(oid,)).fetchone()[0])
-        return {"order_id":oid,"order_item_id":iid,"total_amount":total}
+        return {"order_id":oid,"order_item_id":iid,"total_amount":_order_total(db, oid)}
 
 
 def pay_order(order_id, customer_phone=None):
     oid=positive_int(order_id,"order_id")
     with get_connection() as db:
         db.execute("BEGIN IMMEDIATE")
-        q="SELECT status,payment_status FROM orders WHERE order_id=?"; args=[oid]
+        q="SELECT status,payment_status,order_type,visit_id FROM orders WHERE order_id=?"; args=[oid]
         if customer_phone: q += " AND customer_phone=?"; args.append(customer_phone)
         row=db.execute(q,args).fetchone()
         if not row: raise ServiceError("订单不存在。",404)
         if row["payment_status"]=="paid": return {"order_id":oid,"payment_status":"paid","already_paid":True}
         if row["status"]=="cancelled": raise ServiceError("已取消订单不能付款。",409)
-        amount=db.execute("SELECT COALESCE(SUM(quantity*unit_price),0) FROM order_items WHERE order_id=? AND status<>'cancelled'",(oid,)).fetchone()[0]
+        if row["order_type"] == "preorder" and row["visit_id"] is None:
+            raise ServiceError("预点订单须到店后结账。",409,code="STATE_CONFLICT")
         db.execute("UPDATE orders SET payment_status='paid',paid_at=CURRENT_TIMESTAMP WHERE order_id=? AND payment_status='unpaid'",(oid,))
         return {"order_id":oid,"payment_status":"paid","already_paid":False}
 
@@ -99,7 +105,7 @@ def get_order(order_id, customer_phone=None):
         if not order: raise ServiceError("订单不存在。",404,"order_id","NOT_FOUND")
         result=dict(order)
         result["items"]=[dict(r) for r in db.execute("SELECT l.*,d.dish_name FROM order_items l JOIN dishes d USING(dish_id) WHERE l.order_id=? ORDER BY l.order_item_id",(oid,))]
-        result["total_amount"]=float(db.execute("SELECT COALESCE(SUM(quantity*unit_price),0) FROM order_items WHERE order_id=? AND status<>'cancelled'",(oid,)).fetchone()[0])
+        result["total_amount"]=_order_total(db, oid)
         result["refunded_amount"]=0.0
         return result
 
@@ -150,14 +156,24 @@ def update_order(order_id, items, customer_phone=None):
             dish=db.execute("SELECT price FROM dishes WHERE dish_id=? AND is_available=1 AND is_archived=0",(line["dish_id"],)).fetchone()
             if not dish: raise ServiceError(f"菜品 {line['dish_id']} 不存在或停售。",409,"items","RESOURCE_CONFLICT")
             dishes[line["dish_id"]]=float(dish["price"])
+        preorder = order["order_type"] == "preorder"
+        ready_at = None
+        if preorder:
+            schedule = db.execute("""SELECT estimated_ready_at FROM order_items
+                WHERE order_id=? AND estimated_ready_at IS NOT NULL ORDER BY order_item_id DESC LIMIT 1""", (oid,)).fetchone()
+            if not schedule:
+                raise ServiceError("预点订单缺少制作时段。",409,code="STATE_CONFLICT")
+            ready_at = schedule["estimated_ready_at"]
         db.execute("UPDATE order_items SET status='cancelled' WHERE order_id=? AND status='waiting'",(oid,))
         db.execute("UPDATE kitchen_queue SET status='cancelled',completed_at=CURRENT_TIMESTAMP WHERE order_id=? AND status='waiting'",(oid,))
         for line in lines:
             price = dishes[line["dish_id"]]
             line_total = round(price * line["quantity"], 2)
-            cur=db.execute("INSERT INTO order_items(order_id,dish_id,quantity,unit_price,total_price,note) VALUES(?,?,?,?,?,?)",(oid,line["dish_id"],line["quantity"],price,line_total,line["note"]))
-            db.execute("INSERT INTO kitchen_queue(order_id,order_item_id,dish_id,quantity) VALUES(?,?,?,?)",(oid,cur.lastrowid,line["dish_id"],line["quantity"]))
+            cur=db.execute("INSERT INTO order_items(order_id,dish_id,quantity,unit_price,total_price,note,estimated_ready_at) VALUES(?,?,?,?,?,?,?)",
+                           (oid,line["dish_id"],line["quantity"],price,line_total,line["note"],ready_at))
+            if not preorder:
+                db.execute("INSERT INTO kitchen_queue(order_id,order_item_id,dish_id,quantity) VALUES(?,?,?,?)",(oid,cur.lastrowid,line["dish_id"],line["quantity"]))
         result=dict(db.execute("SELECT * FROM orders WHERE order_id=?",(oid,)).fetchone())
         result["items"]=[dict(r) for r in db.execute("SELECT l.*,d.dish_name FROM order_items l JOIN dishes d USING(dish_id) WHERE l.order_id=? ORDER BY l.order_item_id",(oid,))]
-        result["total_amount"]=sum(float(r["unit_price"])*r["quantity"] for r in result["items"] if r["status"]!="cancelled")
+        result["total_amount"]=_order_total(db, oid)
         return result
