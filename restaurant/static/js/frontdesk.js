@@ -12,6 +12,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
   const callForm = find("[data-desk-call]");
   const feedback = find("[data-desk-floor-feedback]");
   const workspaceNotice = find("[data-desk-live-notice]");
+  const syncNotice = find("[data-desk-sync]");
   let view = "reservations";
   let bookingId;
   let tableId;
@@ -27,6 +28,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
   let draft = [];
   let revision = 0;
   let pending = false;
+  let polling = false;
   let filtersTimer;
 
   dateFilter.value = today();
@@ -36,22 +38,49 @@ function mountFrontdeskWorkspace(workspace, navigate) {
   const fieldValues = (form) => Object.fromEntries([...new FormData(form)].filter(([, value]) => value !== ""));
   const option = (value, label) => '<option value="' + value + '">' + esc(label) + '</option>';
   const deskButton = (label, attrs) => '<button type="button" class="desk-subtle" ' + attrs + '>' + label + '</button>';
+  const readyVisits = () => visits.filter(row => row.status === "seated" && row.ready_count > 0);
+  const readyDishes = (count) => count + (count === 1 ? " dish ready" : " dishes ready");
+
+  function replaceList(target, markup, background) {
+    if (target.innerHTML === markup) return;
+    const focused = document.activeElement;
+    const hasFocus = target.contains(focused);
+    const key = hasFocus && focused.matches("button") && !focused.closest("form") ? Object.keys(focused.dataset)[0] : null;
+    if (background && hasFocus && !key) return;
+    target.innerHTML = markup;
+    if (key) Array.from(target.querySelectorAll("button")).find(button =>
+      button.dataset[key] === focused.dataset[key])?.focus({ preventScroll: true });
+  }
+
+  function renderTasks() {
+    const counts = {
+      ready: readyVisits().reduce((sum, row) => sum + row.ready_count, 0),
+      arrivals: bookings.filter(row => row.status === "booked" && row.booking_date === today()).length,
+      waitlist: queue.length,
+    };
+    for (const task of workspace.querySelectorAll("[data-desk-task]")) {
+      const count = counts[task.dataset.deskTask];
+      task.querySelector("strong").textContent = count;
+      task.disabled = !count;
+    }
+  }
 
   function setTableOptions(select, rows, selected) {
     select.innerHTML = rows.map(row => option(row.table_id, tableLabel(row.table_id) + " · " + row.capacity + " seats")).join("");
     if (rows.some(row => row.table_id === selected)) select.value = selected;
   }
 
-  function renderReception() {
+  function renderReception(background = false) {
     const visible = bookings.filter(row => !phoneFilter.value.trim() ||
-      row.phone_number.includes(phoneFilter.value.trim()));
-    find("[data-desk-bookings]").innerHTML = visible.map(row =>
+      row.phone_number.includes(phoneFilter.value.trim())).sort((a, b) => (b.status === "booked") - (a.status === "booked"));
+    replaceList(find("[data-desk-bookings]"), visible.map(row =>
       '<li><button type="button" class="desk-booking" data-desk-booking="' + row.booking_id +
-      '" aria-pressed="' + (row.booking_id === bookingId) + '"><strong>' + esc(row.contact_name) +
-      '</strong><span>' + esc(row.phone_number) + '</span><span class="desk-booking-time">' +
-      esc(row.time_slot) + ' · ' + esc(tableLabel(row.table_id) || "Unassigned") + ' · ' +
+      '" aria-pressed="' + (row.booking_id === bookingId) + '"><span class="desk-booking-guest"><strong>' + esc(row.contact_name) +
+      '</strong><small>' + esc(row.phone_number) + '</small></span><span class="desk-booking-time">' +
+      esc(row.time_slot) + ' · ' + esc(tableLabel(row.table_id) || "Unassigned") + '</span><span class="desk-chip" data-tone="' +
+      (row.status === "booked" ? "reserved" : row.status === "arrived" ? "available" : "cancelled") + '">' +
       esc(bookingLabels[row.status] ?? row.status) + '</span></button></li>'
-    ).join("");
+    ).join(""), background);
     find("[data-desk-empty]").hidden = visible.length > 0;
     find("[data-desk-booking-count]").textContent = visible.length + " reservations";
     find("[data-desk-occupied]").textContent = occupancy.filter(table => table.status === "occupied").length +
@@ -60,6 +89,11 @@ function mountFrontdeskWorkspace(workspace, navigate) {
       const id = tableIds[tile.dataset.deskTable];
       const row = occupancy.find(table => table.table_id === id);
       tile.dataset.tone = row?.status ?? "available";
+      const tableStatus = tile.dataset.tone;
+      const status = tile.querySelector("small");
+      status.textContent = tableStatus[0].toUpperCase() + tableStatus.slice(1);
+      tile.setAttribute("aria-label", "Table " + tile.dataset.deskTable + " · " + status.textContent +
+        (row?.capacity ? " · " + row.capacity + " seats" : ""));
       tile.setAttribute("aria-pressed", id === tableId);
     }
     const selectedTable = occupancy.find(table => table.table_id === tableId);
@@ -77,7 +111,11 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     if (canCheckIn) {
       const available = occupancy.filter(table => table.capacity >= row.party_size &&
         (table.status === "available" || (table.status === "reserved" && table.table_id === row.table_id)));
-      setTableOptions(checkIn.elements.table_id, available, row.table_id);
+      const selection = checkIn.dataset.booking === String(row.booking_id) ? Number(checkIn.elements.table_id.value) : row.table_id;
+      if (!background || !checkIn.contains(document.activeElement)) {
+        setTableOptions(checkIn.elements.table_id, available, selection);
+        checkIn.dataset.booking = row.booking_id;
+      }
       checkIn.querySelector("[type=submit]").disabled = available.length === 0;
     }
   }
@@ -89,13 +127,13 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     find("[data-place-desk-order]").disabled = !draft.length;
   }
 
-  function renderWaitlist() {
+  function renderWaitlist(background = false) {
     const select = callForm.elements.table_id;
-    setTableOptions(select, freeTables, Number(select.value));
+    if (!background || !callForm.contains(document.activeElement)) setTableOptions(select, freeTables, Number(select.value));
     select.disabled = !freeTables.length;
     callForm.querySelector("[type=submit]").disabled = !freeTables.length || !queue.some(row => row.status === "waiting");
     find("[data-desk-waiting-empty]").hidden = queue.length > 0;
-    find("[data-desk-waiting-list]").innerHTML = queue.map(row => {
+    replaceList(find("[data-desk-waiting-list]"), queue.map(row => {
       const called = row.status === "called";
       const chairs = Math.max(row.party_size, row.table_type || 0);
       const choices = row.called_table_id
@@ -106,16 +144,17 @@ function mountFrontdeskWorkspace(workspace, navigate) {
         (called && choices ? '<form class="desk-check-in" data-seat-ticket="' + row.queue_id +
           '"><label>Table <select name="table_id" required>' + choices +
           '</select></label><button type="submit" class="desk-confirm">Seat party</button></form>' : '') + '</li>';
-    }).join("");
+    }).join(""), background);
   }
 
   function orderCard(order) {
-    const items = order.items.map(item => {
+    const items = [...order.items].sort((a, b) => Number(b.status === "ready") - Number(a.status === "ready")).map(item => {
       const path = "/frontdesk/orders/" + order.order_id + "/items/" + item.order_item_id;
-      return '<li><span>' + item.quantity + ' × ' + esc(item.dish_name) + ' · ' +
-        esc({ waiting: "Waiting", cooking: "Cooking", ready: "Ready", served: "Served", cancelled: "Cancelled" }[item.status] ?? item.status) +
-        (item.note ? '<small>' + esc(item.note) + '</small>' : '') + '</span>' +
-        (item.status === "ready" ? deskButton("Mark served", 'data-desk-write="' + path + '/serve"') :
+      return '<li data-item-stage="' + esc(item.status) + '"><div><strong>' + item.quantity + ' × ' + esc(item.dish_name) +
+        '</strong><span class="desk-item-status">' +
+        esc({ waiting: "Waiting", cooking: "Cooking", ready: "Ready to serve", served: "Served", cancelled: "Cancelled" }[item.status] ?? item.status) +
+        '</span>' + (item.note ? '<small>' + esc(item.note) + '</small>' : '') + '</div>' +
+        (item.status === "ready" ? '<button type="button" class="desk-confirm" data-desk-write="' + path + '/serve">Mark served</button>' :
           item.status === "waiting" && order.payment_status === "unpaid"
             ? deskButton("Cancel item", 'data-desk-write="' + path + '/cancel"') : '') + '</li>';
     }).join("");
@@ -146,13 +185,26 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     } else if (orders.some(order => order.items.some(item => !["served", "cancelled"].includes(item.status)))) {
       message = "Serve all remaining dishes before releasing this table.";
     }
-    find("[data-service-feedback]").textContent = message;
+    const releaseNotice = find("[data-service-feedback]");
+    if (releaseNotice.textContent !== message) releaseNotice.textContent = message;
     find("[data-close-desk-visit]").disabled = Boolean(message);
     find("[data-release-desk-table]").disabled = Boolean(message);
     if (message) find("[data-confirm-desk-close]").hidden = true;
   }
 
-  async function refresh() {
+  function selectServiceVisit(next) {
+    if (visitId === next) return;
+    visitId = next;
+    draft = [];
+    serviceForm.reset();
+    serviceOrders = [];
+    find("[data-service-orders]").textContent = "Loading orders…";
+    find("[data-confirm-desk-close]").hidden = true;
+  }
+
+  const canPoll = () => !pending && !document.hidden && view !== "billing" && !document.querySelector("dialog[open]");
+
+  async function refresh(background = false) {
     const current = ++revision;
     if (view === "reservations") {
       const filters = { date: dateFilter.value };
@@ -165,34 +217,47 @@ function mountFrontdeskWorkspace(workspace, navigate) {
         restaurantSeating(),
         restaurantRequest("/frontdesk/waiting-queue"),
       ]);
-      if (current !== revision) return;
+      if (current !== revision || (background && !canPoll())) return;
       bookings = list.bookings;
       occupancy = floor.tables;
       visits = seating;
       queue = waiting.queue;
       freeTables = waiting.tables;
-      renderReception();
-      renderWaitlist();
+      renderTasks();
+      renderReception(background);
+      renderWaitlist(background);
     } else if (view === "service") {
-      renderCloseControls(null);
+      if (!background) renderCloseControls(null);
       const [seating, waiting] = await Promise.all([restaurantSeating(), restaurantRequest("/frontdesk/waiting-queue")]);
-      if (current !== revision) return;
+      if (current !== revision || (background && !canPoll())) return;
       visits = seating;
       const unassigned = visits.filter(row => row.status === "waiting");
-      find("[data-desk-unassigned]").innerHTML = unassigned.map(row =>
+      replaceList(find("[data-desk-unassigned]"), unassigned.map(row =>
         '<form class="desk-check-in" data-assign-visit="' + row.visit_id + '"><span>' + esc(row.contact_name || "Walk-in") +
         '</span><label>Table <select name="table_id" required>' +
         waiting.tables.filter(table => table.capacity >= row.party_size).map(table => option(table.table_id, tableLabel(table.table_id))).join("") +
         '</select></label><button type="submit" class="desk-confirm">Assign table</button></form>'
-      ).join("");
-      const seated = visits.filter(row => row.status === "seated");
-      find("[data-desk-service-picker]").innerHTML = seated.map(row => deskButton(
-        esc(tableLabel(row.table_id)) + " · " + esc(row.contact_name || "Walk-in"),
-        'data-live-visit="' + row.visit_id + '" aria-pressed="' + (visitId === row.visit_id) + '"'
-      )).join("") || "<p>No guests are seated.</p>";
+      ).join(""), background);
+      const seated = visits.filter(row => row.status === "seated").sort((a, b) =>
+        Number(b.ready_count > 0) - Number(a.ready_count > 0) || a.table_id - b.table_id);
+      replaceList(find("[data-desk-service-picker]"), seated.map(row =>
+        '<button type="button" class="desk-table-card" data-live-visit="' + row.visit_id +
+        '" data-ready="' + Boolean(row.ready_count) + '" aria-pressed="' + (visitId === row.visit_id) +
+        '"><span class="desk-table-card-top"><strong>' + esc(tableLabel(row.table_id)) + '</strong>' +
+        '<span>' + row.party_size + (row.party_size === 1 ? ' guest' : ' guests') + '</span></span>' +
+        '<span class="desk-table-guest">' + esc(row.contact_name || "Walk-in") + '</span>' +
+        '<span class="desk-table-status">' + (row.ready_count ? readyDishes(row.ready_count) :
+          row.unpaid_count ? "Payment due" : "In service") + '</span></button>'
+      ).join("") || "<p>No guests are seated.</p>", background);
+      const totalReady = seated.reduce((sum, row) => sum + row.ready_count, 0);
+      find("[data-desk-service-count]").textContent = seated.length + " occupied · " + readyDishes(totalReady);
       const visit = chosenVisit();
       find("[data-desk-service]").hidden = !visit;
-      if (!visit) return;
+      find("[data-desk-choose-table]").hidden = Boolean(visit) || !seated.length;
+      if (!visit) {
+        syncNotice.textContent = "Auto-updates on";
+        return;
+      }
       find("[data-service-visit]").textContent = "Table " + tableLabel(visit.table_id);
       const [menuData, orderData] = await Promise.all([
         restaurantRequest("/frontdesk/menu"),
@@ -200,21 +265,22 @@ function mountFrontdeskWorkspace(workspace, navigate) {
       ]);
       const orders = await Promise.all(orderData.orders.filter(row => row.visit_id === visit.visit_id)
         .map(row => restaurantRequest("/frontdesk/orders/" + row.order_id)));
-      if (current !== revision) return;
+      if (current !== revision || (background && !canPoll())) return;
       serviceMenu = menuData.items;
       serviceOrders = orders.map(result => result.order);
       const dishField = serviceForm.elements.dish;
       const selected = dishField.value;
-      dishField.innerHTML = menuData.items.map(row => option(row.dish_id, row.dish_name + " · ¥" + row.price)).join("");
+      replaceList(dishField, menuData.items.map(row => option(row.dish_id, row.dish_name + " · ¥" + row.price)).join(""), background);
       if (menuData.items.some(row => row.dish_id === Number(selected))) dishField.value = selected;
       serviceForm.querySelector("[type=submit]").disabled = !menuData.items.length;
-      renderDraft();
-      find("[data-service-orders]").innerHTML = serviceOrders.map(orderCard).join("") || "<p>No orders for this visit.</p>";
+      if (!background) renderDraft();
+      replaceList(find("[data-service-orders]"), serviceOrders.map(orderCard).join("") || "<p>No orders for this visit.</p>", background);
       renderCloseControls(serviceOrders);
     } else {
       const { orders } = await restaurantRequest("/frontdesk/orders");
       if (current === revision) renderBilling(orders);
     }
+    if (current === revision) syncNotice.textContent = view === "billing" ? "" : "Auto-updates on";
   }
 
   async function update(work) {
@@ -290,8 +356,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
         "/frontdesk/visits/" + form.dataset.assignVisit + "/assign";
       const { visit } = await restaurantRequest(path, fields);
       tableId = visit.table_id;
-      visitId = visit.visit_id;
-      draft = [];
+      selectServiceVisit(visit.visit_id);
       return "Guests seated at " + tableLabel(tableId) + ".";
     });
     if (form === serviceForm) {
@@ -320,8 +385,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
       if (form === walkIn) fields.table_id = tableId;
       const { visit } = await restaurantRequest(path, fields);
       tableId = visit.table_id;
-      visitId = visit.visit_id;
-      draft = [];
+      selectServiceVisit(visit.visit_id);
       if (dialog.open) dialog.close();
       return "Guests seated at " + tableLabel(visit.table_id) + ".";
     });
@@ -333,9 +397,19 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     const data = button.dataset;
     if (button.matches("[data-desk-refresh]")) return update(async () => "");
     if (button.matches("[data-desk-close]")) return dialog.close();
+    if (data.deskTask === "ready") {
+      selectServiceVisit(readyVisits()[0]?.visit_id);
+      return navigate("service");
+    }
+    if (data.deskTask) {
+      const target = find(data.deskTask === "arrivals" ? "#desk-bookings-title" : "#desk-waitlist-title");
+      target.focus();
+      target.scrollIntoView({ block: "start" });
+      return;
+    }
     if (data.deskBooking) {
       bookingId = Number(data.deskBooking);
-      tableId = chosenBooking().table_id;
+      tableId = chosenBooking()?.table_id;
       renderReception();
       return update(async () => "");
     }
@@ -345,16 +419,12 @@ function mountFrontdeskWorkspace(workspace, navigate) {
       return renderReception();
     }
     if (data.deskOpen === "service") {
-      visitId = visits.find(row => row.table_id === tableId && row.status === "seated")?.visit_id;
-      draft = [];
+      selectServiceVisit(visits.find(row => row.table_id === tableId && row.status === "seated")?.visit_id);
       return navigate("service");
     }
     if (data.deskOpen) return openDialog(data.deskOpen);
     if (data.liveVisit) {
-      const next = Number(data.liveVisit);
-      if (visitId !== next) draft = [];
-      visitId = next;
-      find("[data-confirm-desk-close]").hidden = true;
+      selectServiceVisit(Number(data.liveVisit));
       return update(async () => "");
     }
     if (data.draftRemove !== undefined) {
@@ -383,9 +453,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     }
     if (button.matches("[data-release-desk-table]")) return update(async () => {
       const { visit } = await restaurantRequest("/frontdesk/visits/" + visitId + "/close", {});
-      closeConfirmation.hidden = true;
-      visitId = undefined;
-      draft = [];
+      selectServiceVisit(undefined);
       return visit.next_queue ? "Table released. Ticket #" + visit.next_queue.queue_id + " was called." : "Table released.";
     });
   });
@@ -414,11 +482,27 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     filtersTimer = setTimeout(renderReception, 100);
   });
 
+  async function poll() {
+    if (polling || !canPoll()) return;
+    polling = true;
+    try {
+      await refresh(true);
+    } catch (error) {
+      if (canPoll()) syncNotice.textContent = "Updates paused · Refresh";
+    } finally {
+      polling = false;
+    }
+  }
+  setInterval(poll, 5000);
+  document.addEventListener("visibilitychange", poll);
+
   return (section, focus) => {
+    if (view !== section) workspaceNotice.textContent = "";
     view = section;
     const sections = { reservations: find("[data-desk-reception]"), service: find("[data-desk-service-view]"),
       billing: find("[data-desk-billing]") };
     for (const [key, panel] of Object.entries(sections)) panel.hidden = key !== view;
+    find("[data-desk-tasks]").hidden = view !== "reservations";
     find("[data-desk-waitlist]").hidden = view !== "reservations";
     if (focus) (sections[view].querySelector("h2[tabindex]") ?? find("h1")).focus();
     refresh().catch(error => { workspaceNotice.textContent = error.message; });

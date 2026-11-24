@@ -58,7 +58,10 @@ class ServiceAndApiTests(RestaurantTestCase):
         response = other.get("/orders/9001")
         self.assertEqual(response.status_code,404)
         owner = self.signed_in("13900000002")
-        self.assertEqual(owner.get("/orders/9001").status_code,200)
+        detail = owner.get("/orders/9001")
+        self.assertEqual(detail.status_code, 200)
+        summary = next(row for row in owner.get("/orders").json["orders"] if row["order_id"] == 9001)
+        self.assertEqual(summary["total_amount"], detail.json["order"]["total_amount"])
         from restaurant.services.order_service import pay_order
         first=pay_order(9001)
         second=pay_order(9001)

@@ -21,10 +21,13 @@ main.kitchen-page {
 }
 
 .kitchen-heading {
-  justify-content: flex-start;
   flex-wrap: wrap;
   gap: 10px 20px;
 }
+
+.kitchen-heading-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.kitchen-heading-meta span { color: #bfd4a4; font-size: 13px; }
+.kitchen-heading-meta span:empty { display: none; }
 
 .kitchen-page h1 {
   position: static;
@@ -68,8 +71,38 @@ main.kitchen-page {
 .kitchen-ticket-grid,
 .kitchen-menu-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 315px), 1fr));
   gap: 16px;
+}
+
+.kitchen-ticket-grid { align-items: start; }
+.kitchen-stages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0 0 18px; }
+.kitchen-stages > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 10px;
+  padding: 10px 13px;
+  border: 1px solid #3b392e;
+  border-radius: 8px;
+  background: #141510;
+}
+.kitchen-stages dd { order: -1; margin: 0; font-size: 23px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.kitchen-stages [data-stage="waiting"] { color: #f6e6c4; border-color: #6b6045; }
+.kitchen-stages [data-stage="ready"], .kitchen-item[data-stage="ready"] .kitchen-item-stage { color: #bfd4a4; }
+.kitchen-stages [data-stage="cooking"], .kitchen-item[data-stage="cooking"] .kitchen-item-stage { color: #e2be81; }
+.kitchen-ticket[data-stage="waiting"] { border-top-color: #e2be81; }
+.kitchen-ticket[data-stage="ready"] { border-top-color: #bfd4a4; }
+.kitchen-ticket-heading p { margin: 4px 0 0; font-size: 13px; color: #c2baa7; }
+.kitchen-table-label { flex: 0 0 auto; color: #f6e6c4; font-size: 14px; }
+.kitchen-item-stage { display: block; margin-top: 4px; color: #c2baa7; font-size: 13px; }
+.kitchen-item-copy .kitchen-note { color: #e2be81; font-size: 13px; }
+.kitchen-item[data-stage="waiting"] .kitchen-action { background: #e2be81; border-color: #e2be81; color: #17150f; }
+.kitchen-item[data-stage="waiting"] .kitchen-action:hover:enabled { background: #f6e6c4; }
+.kitchen-item[data-stage="waiting"] .kitchen-action:disabled { opacity: 0.65; }
+@media (max-width: 480px) {
+  .kitchen-stages { gap: 6px; }
+  .kitchen-stages > div { padding-inline: 8px; }
 }
 
 .kitchen-menu-grid {

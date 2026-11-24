@@ -37,7 +37,8 @@
       <label class="field">Guest name<input id="name" value="{{ account.name }}" readonly></label>
       <label class="field">Phone<input type="tel" id="phone" value="{{ account.username }}" readonly></label>
     </div>
-    <button class="primary" type="submit">Confirm reservation</button>
+    <p id="booking-table-help" class="booking-table-help" hidden>Choose an available table on the dining room map to continue.</p>
+    <button class="primary" type="submit" aria-describedby="booking-table-help">Confirm reservation</button>
     <p class="statusline" role="status"></p>
   </form>
   <dialog id="booking-calendar" class="booking-calendar" aria-labelledby="booking-calendar-title">

@@ -77,6 +77,22 @@ def get_dining_sessions():
     with get_connection() as db: return [dict(r) for r in db.execute("SELECT * FROM dining_sessions ORDER BY arrived_at DESC")]
 
 
+def get_frontdesk_visits():
+    with get_connection() as db:
+        rows = db.execute("""
+            SELECT v.visit_id, v.booking_id, v.table_id, v.contact_name, v.party_size, v.status,
+                   SUM(CASE WHEN i.status='ready' THEN i.quantity ELSE 0 END) AS ready_count,
+                   COUNT(DISTINCT CASE WHEN o.payment_status='unpaid' THEN o.order_id END) AS unpaid_count
+            FROM dining_sessions v
+            LEFT JOIN orders o ON o.visit_id=v.visit_id AND o.status<>'cancelled'
+            LEFT JOIN order_items i ON i.order_id=o.order_id
+            WHERE v.status IN ('waiting', 'seated')
+            GROUP BY v.visit_id
+            ORDER BY v.arrived_at DESC, v.visit_id DESC
+        """)
+        return [dict(row) for row in rows]
+
+
 def get_active_customer_visit(customer_phone):
     with get_connection() as db:
         row=db.execute("SELECT visit_id FROM dining_sessions WHERE customer_phone=? AND status='seated' ORDER BY arrived_at DESC LIMIT 1",(customer_phone,)).fetchone()

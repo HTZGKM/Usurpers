@@ -395,14 +395,15 @@ main.frontdesk-page {
 }
 
 .desk-service-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
+  gap: 10px;
 }
 
 .desk-service-picker [aria-pressed="true"] {
   background: #32291b;
   border-color: #bc9f68;
+  box-shadow: inset 0 0 0 1px #bc9f68;
 }
 
 .desk-billing-scroll {
@@ -428,7 +429,7 @@ main.frontdesk-page {
 
 .desk-service-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
   gap: 24px;
 }
 
@@ -500,3 +501,67 @@ main.frontdesk-page {
 }
 .desk-waitlist { margin-top: 1rem; }
 .desk-waitlist [data-desk-waiting-list] > li { flex-wrap: wrap; }
+
+.desk-sync { color: #c3d7ae; font-size: 13px; }
+.desk-sync:empty { display: none; }
+.desk-tasks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.desk-tasks[hidden] { display: none; }
+.desk-tasks button {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 12px;
+  min-height: 60px;
+  padding: 10px 14px;
+  border: 1px solid #39372d;
+  border-radius: 8px;
+  background: #141510;
+  color: #f0ecdf;
+  text-align: start;
+}
+.desk-tasks button strong { font-size: 23px; font-variant-numeric: tabular-nums; }
+.desk-tasks button:disabled { color: #c0b79f; }
+.desk-tasks [data-desk-task="ready"]:enabled { border-color: #c3d7ae; background: #263324; color: #c3d7ae; }
+.desk-tasks button:enabled:hover,
+.desk-table-card:hover { border-color: #bc9f68; }
+.desk-booking { gap: 6px 12px; }
+.desk-booking-guest { flex: 1 1 100px; min-width: 0; text-align: start; }
+.desk-booking-guest strong, .desk-booking-guest small { display: block; overflow-wrap: anywhere; }
+.desk-booking-guest small { color: #c0b79f; font-variant-numeric: tabular-nums; }
+.desk-booking .desk-chip { color: var(--state-ink); background: var(--state-fill); white-space: nowrap; }
+.desk-floor .seat small { display: block; font: 600 10px/1.2 system-ui, sans-serif; }
+.desk-table-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid #494331;
+  border-radius: 8px;
+  background: #202017;
+  color: #f0ecdf;
+  text-align: start;
+}
+.desk-table-card-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 8px; }
+.desk-table-card-top strong { font-size: 24px; line-height: 1; }
+.desk-table-card-top > span, .desk-table-status { color: #c0b79f; font-size: 13px; }
+.desk-table-guest { overflow-wrap: anywhere; }
+.desk-table-card[data-ready="true"] { border-color: #c3d7ae; }
+.desk-table-card[data-ready="true"] .desk-table-status { color: #c3d7ae; font-weight: 650; }
+.desk-service-section { min-width: 0; }
+.desk-service-order .desk-item-status { margin-inline-start: 8px; }
+.desk-service-order [data-item-stage="ready"] {
+  padding: 8px;
+  border-radius: 5px;
+  background: #263324;
+}
+.desk-service-order [data-item-stage="ready"] .desk-item-status { color: #c3d7ae; }
+@media (max-width: 460px) {
+  .desk-tasks { gap: 6px; }
+  .desk-tasks button { padding-inline: 8px; }
+  .desk-booking .desk-booking-time { white-space: normal; }
+}

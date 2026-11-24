@@ -3,15 +3,21 @@
   <div class="kitchen-content">
     <div class="kitchen-heading">
       <h1 tabindex="-1">Kitchen</h1>
-      <button type="button" class="kitchen-action" data-kitchen-refresh>Refresh</button>
+      <div class="kitchen-heading-meta"><span data-kitchen-sync>Connecting…</span>
+        <button type="button" class="kitchen-action" data-kitchen-refresh>Refresh</button></div>
     </div>
     <p role="status" data-kitchen-feedback></p>
 
     <section id="kitchen-queue" aria-labelledby="kitchen-queue-title">
       <div class="kitchen-section-heading">
         <h2 id="kitchen-queue-title" tabindex="-1">Preparation queue</h2>
-        <p data-kitchen-count role="status" tabindex="-1"></p>
+        <p data-kitchen-count role="status"></p>
       </div>
+      <dl class="kitchen-stages" aria-label="Items by preparation stage">
+        <div data-stage="waiting"><dt>To start</dt><dd data-kitchen-stage="waiting">—</dd></div>
+        <div data-stage="cooking"><dt>Cooking</dt><dd data-kitchen-stage="cooking">—</dd></div>
+        <div data-stage="ready"><dt>Ready for service</dt><dd data-kitchen-stage="ready">—</dd></div>
+      </dl>
       <div class="kitchen-ticket-grid" data-kitchen-tickets></div>
     </section>
 
