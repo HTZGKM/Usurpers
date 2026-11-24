@@ -7,6 +7,7 @@ async function restaurantRequest(path, fields, method = fields === undefined ? "
   const response = await fetch(path, {
     method,
     body: form,
+    headers: { Accept: "application/json" },
     cache: "no-store",
     mode: "same-origin",
     credentials: "same-origin",
