@@ -1,5 +1,7 @@
-from restaurant.business_time import MEAL_SLOTS, current_table_window
-from restaurant.db.database import get_connection
+from datetime import datetime, timezone
+
+from restaurant.business_time import MEAL_SLOTS, current_table_window, utc_clock
+from restaurant.db.database import begin_write, get_connection, insert_id
 from .common import ServiceError, phone_number, positive_int, required_text, valid_date
 
 
@@ -17,7 +19,7 @@ def _normalize_time_slot(value):
 def table_has_booking(db, table_id, date, slot, exclude_booking_id=None):
     return db.execute("""SELECT 1 FROM bookings
         WHERE table_id=? AND booking_date=? AND time_slot=? AND status='booked'
-        AND (? IS NULL OR booking_id<>?)""",
+        AND (CAST(? AS INTEGER) IS NULL OR booking_id<>?)""",
         (table_id, date, slot, exclude_booking_id, exclude_booking_id)).fetchone() is not None
 
 
@@ -28,8 +30,8 @@ def table_has_visit(db, table_id):
 
 def table_has_call(db, table_id):
     return db.execute("""SELECT 1 FROM waiting_queue
-        WHERE called_table_id=? AND status='called' AND called_at>=datetime('now','-10 minutes')""",
-        (table_id,)).fetchone() is not None
+        WHERE called_table_id=? AND status='called' AND called_at>=?""",
+        (table_id, utc_clock(10))).fetchone() is not None
 
 
 def _available_tables(db, date, slot, size, exclude_booking_id=None):
@@ -37,12 +39,12 @@ def _available_tables(db, date, slot, size, exclude_booking_id=None):
     rows = db.execute("""SELECT t.table_id,t.capacity FROM dining_tables t
         WHERE t.capacity>=? AND NOT EXISTS (
             SELECT 1 FROM bookings b WHERE b.table_id=t.table_id AND b.booking_date=?
-            AND b.time_slot=? AND b.status='booked' AND (? IS NULL OR b.booking_id<>?))
+            AND b.time_slot=? AND b.status='booked' AND (CAST(? AS INTEGER) IS NULL OR b.booking_id<>?))
         AND (NOT ? OR (NOT EXISTS (
             SELECT 1 FROM dining_sessions s WHERE s.table_id=t.table_id AND s.status IN ('waiting','seated'))
         AND NOT EXISTS (SELECT 1 FROM waiting_queue q WHERE q.called_table_id=t.table_id
-            AND q.status='called' AND q.called_at>=datetime('now','-10 minutes'))))
-        ORDER BY t.capacity,t.table_id""", (size, date, slot, exclude_booking_id, exclude_booking_id, live))
+            AND q.status='called' AND q.called_at>=?)))
+        ORDER BY t.capacity,t.table_id""", (size, date, slot, exclude_booking_id, exclude_booking_id, live, utc_clock(10)))
     return [dict(row) for row in rows]
 
 
@@ -79,10 +81,12 @@ def create_booking(contact_name, phone, booking_date, time_slot, party_size, cus
     size = positive_int(party_size, "party_size")
     tid = positive_int(table_id, "table_id") if table_id is not None else None
     with get_connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         table_id_final = _resolve_table(db, date, slot, size, tid)
-        cur = db.execute("INSERT INTO bookings(contact_name,phone_number,booking_date,time_slot,party_size,table_id,customer_phone) VALUES(?,?,?,?,?,?,?)", (name, phone, date, slot, size, table_id_final, customer_phone))
-        return {"booking_id": cur.lastrowid, "table_id": table_id_final, "status": "booked"}
+        booking_id = insert_id(db, """INSERT INTO bookings
+            (contact_name,phone_number,booking_date,time_slot,party_size,table_id,customer_phone)
+            VALUES(?,?,?,?,?,?,?)""", (name, phone, date, slot, size, table_id_final, customer_phone), "booking_id")
+        return {"booking_id": booking_id, "table_id": table_id_final, "status": "booked"}
 
 
 def update_booking(booking_id, booking_date, time_slot, party_size, customer_phone=None, table_id=None):
@@ -92,7 +96,7 @@ def update_booking(booking_id, booking_date, time_slot, party_size, customer_pho
     size = positive_int(party_size, "party_size")
     tid = positive_int(table_id, "table_id") if table_id is not None else None
     with get_connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         current = db.execute("SELECT status,customer_phone,booking_date,time_slot FROM bookings WHERE booking_id=?", (bid,)).fetchone()
         if not current: raise ServiceError("预订不存在。", 404)
         if customer_phone and current["customer_phone"] != customer_phone: raise ServiceError("无权修改此预订。",403,code="FORBIDDEN")
@@ -102,20 +106,31 @@ def update_booking(booking_id, booking_date, time_slot, party_size, customer_pho
         db.execute("""UPDATE orders SET table_id=?
             WHERE booking_id=? AND order_type='preorder' AND visit_id IS NULL AND status='active'""", (table_id_final, bid))
         if (date, slot) != (current["booking_date"], current["time_slot"]):
-            old_start = current["booking_date"] + " " + current["time_slot"][:5] + ":00+08:00"
-            new_start = date + " " + slot[:5] + ":00+08:00"
-            db.execute("""UPDATE order_items SET estimated_ready_at=COALESCE(
-                datetime(estimated_ready_at, printf('%+d seconds',unixepoch(?)-unixepoch(?))),datetime(?))
-                WHERE status='waiting' AND order_id IN (SELECT order_id FROM orders
-                    WHERE booking_id=? AND order_type='preorder' AND visit_id IS NULL AND status='active')""",
-                (new_start, old_start, new_start, bid))
+            old_start = datetime.fromisoformat(current["booking_date"] + " " + current["time_slot"][:5] + ":00+08:00")
+            new_start = datetime.fromisoformat(date + " " + slot[:5] + ":00+08:00")
+            delta = new_start - old_start
+            lines = db.execute("""SELECT i.order_item_id, i.estimated_ready_at
+                FROM order_items i JOIN orders o USING (order_id)
+                WHERE i.status='waiting' AND o.booking_id=? AND o.order_type='preorder'
+                AND o.visit_id IS NULL AND o.status='active'""", (bid,)).fetchall()
+            changes = []
+            for line in lines:
+                ready_at = line["estimated_ready_at"]
+                if ready_at:
+                    updated = datetime.fromisoformat(ready_at) + delta
+                    if updated.tzinfo is not None:
+                        updated = updated.astimezone(timezone.utc).replace(tzinfo=None)
+                else:
+                    updated = new_start.astimezone(timezone.utc).replace(tzinfo=None)
+                changes.append((updated.isoformat(sep=" ", timespec="seconds"), line["order_item_id"]))
+            db.executemany("UPDATE order_items SET estimated_ready_at=? WHERE order_item_id=?", changes)
         return {"booking_id": bid, "table_id": table_id_final, "status": "booked"}
 
 
 def cancel_booking(booking_id, customer_phone=None):
     bid = positive_int(booking_id, "booking_id")
     with get_connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         query="UPDATE bookings SET status='cancelled',table_id=NULL WHERE booking_id=? AND status='booked'"
         args=[bid]
         if customer_phone: query += " AND customer_phone=?"; args.append(customer_phone)
@@ -152,7 +167,7 @@ def get_table_occupancy(booking_date, time_slot):
         return [dict(r) for r in db.execute("""SELECT t.table_id,t.capacity,
           CASE WHEN s.visit_id IS NOT NULL THEN 'occupied' WHEN b.booking_id IS NOT NULL OR EXISTS (
               SELECT 1 FROM waiting_queue q WHERE q.called_table_id=t.table_id AND q.status='called'
-              AND q.called_at>=datetime('now','-10 minutes')) THEN 'reserved' ELSE 'available' END status
+              AND q.called_at>=?) THEN 'reserved' ELSE 'available' END status
           FROM dining_tables t LEFT JOIN dining_sessions s ON s.table_id=t.table_id AND s.status IN ('waiting','seated')
           LEFT JOIN bookings b ON b.table_id=t.table_id AND b.booking_date=? AND b.time_slot=? AND b.status='booked'
-          ORDER BY t.table_id""",(date,slot))]
+          ORDER BY t.table_id""",(utc_clock(10),date,slot))]

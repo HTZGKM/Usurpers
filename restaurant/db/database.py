@@ -20,6 +20,10 @@ def configured_db_path() -> Path:
     return Path(os.environ.get("USURPERS_DB_PATH", DB_PATH))
 
 
+def using_postgres() -> bool:
+    return bool(os.environ.get("DATABASE_URL"))
+
+
 class ClosingConnection(sqlite3.Connection):
     """Make `with get_connection()` commit/rollback and close the handle."""
     def __exit__(self, exc_type, exc, traceback):
@@ -122,13 +126,38 @@ DEFAULT_DISHES = [
 ]
 
 
-def get_connection() -> sqlite3.Connection:
-    db_path=configured_db_path()
+def sqlite_connection(db_path):
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path, factory=ClosingConnection, timeout=15)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     return connection
+
+
+def get_connection():
+    if using_postgres():
+        from .postgres import connect
+
+        return connect(os.environ["DATABASE_URL"])
+    return sqlite_connection(configured_db_path())
+
+
+def begin_write(connection):
+    if isinstance(connection, sqlite3.Connection):
+        connection.execute("BEGIN IMMEDIATE")
+    else:
+        # Preserve SQLite's serial writer semantics for workflows that read before writing.
+        connection.execute("SELECT pg_advisory_xact_lock(731593001)")
+
+
+def begin_read(connection):
+    connection.execute("BEGIN" if isinstance(connection, sqlite3.Connection) else
+                       "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
+
+
+def insert_id(connection, query, params, column):
+    row = connection.execute(query + " RETURNING " + column, params).fetchone()
+    return row[0] if row else None
 
 
 def create_schema(connection: sqlite3.Connection) -> None:
@@ -430,7 +459,7 @@ def ensure_database(reset: bool = False) -> Path:
     if reset and db_path.exists():
         db_path.unlink()
 
-    with get_connection() as connection:
+    with sqlite_connection(db_path) as connection:
         create_schema(connection)
         seed_defaults(connection)
         connection.commit()

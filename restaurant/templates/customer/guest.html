@@ -12,7 +12,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="{{ '#0b0b09' if staff_links else '#000000' }}">
   <title>Double Portion · Burgers &amp; Pizza</title>
-  <link rel="icon" href="data:,">
+  <link rel="icon" type="image/png" sizes="64x64" href="{{ url_for('static', filename='favicon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/guest.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/guest-type.css') }}">
   {% if not staff_links %}

@@ -1,4 +1,4 @@
-from restaurant.db.database import get_connection, hash_password
+from restaurant.db.database import begin_write, get_connection, hash_password
 from .common import ServiceError, phone_number, required_text
 
 
@@ -18,7 +18,7 @@ def set_customer_active(customer_phone, is_active):
     phone=phone_number(customer_phone,"customer_phone")
     if not isinstance(is_active,bool): raise ServiceError("is_active 必须是布尔值。",field="is_active")
     with get_connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         cur=db.execute("UPDATE customers SET is_active=? WHERE customer_phone=?",(int(is_active),phone))
         if not cur.rowcount: raise ServiceError("顾客账号不存在。",404)
         row=db.execute("SELECT customer_phone,name,is_active FROM customers WHERE customer_phone=?",(phone,)).fetchone()
@@ -34,7 +34,7 @@ def register_customer(name, phone, password):
     name=required_text(name,"name",limit=100); phone=phone_number(phone,"phone_number")
     if not isinstance(password,str) or len(password)<6: raise ServiceError("密码至少需要6位。",field="password")
     with get_connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         if db.execute("SELECT 1 FROM customers WHERE customer_phone=?",(phone,)).fetchone(): raise ServiceError("手机号已注册。",409,"phone_number","DUPLICATE")
         db.execute("INSERT INTO customers(customer_phone,name,password_hash) VALUES(?,?,?)",(phone,name,hash_password(password)))
         return {"username":phone,"name":name,"role":"customer"}

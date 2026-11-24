@@ -5,6 +5,10 @@ RESTAURANT_TIME = timezone(timedelta(hours=8))
 MEAL_SLOTS = ("11:00-14:00", "17:00-19:00", "19:00-21:00")
 
 
+def utc_clock(minutes_ago=0):
+    return (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def current_table_window(now=None):
     local = (now or datetime.now(RESTAURANT_TIME)).astimezone(RESTAURANT_TIME)
     clock = local.strftime("%H:%M")

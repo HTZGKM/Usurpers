@@ -7,6 +7,7 @@ from werkzeug.exceptions import HTTPException
 from restaurant.api.auth.forms import LoginForm, LogoutForm, RegisterForm
 from restaurant.api.auth.routes import auth_bp, current_account
 from restaurant.db import ensure_database
+from restaurant.db.database import using_postgres
 from restaurant.services.common import ServiceError
 from restaurant.api.admin.routes import admin_bp
 from restaurant.api.customer.routes import customer_bp
@@ -33,7 +34,11 @@ def create_app() -> Flask:
         SESSION_COOKIE_SECURE=https,
     )
 
-    ensure_database()
+    on_vercel = os.environ.get("VERCEL") == "1"
+    if on_vercel and (not using_postgres() or not secret or not https):
+        raise RuntimeError("Set DATABASE_URL, USURPERS_SECRET_KEY and USURPERS_HTTPS=1 for Vercel.")
+    if not using_postgres():
+        ensure_database()
     app.register_blueprint(auth_bp)
     app.register_blueprint(customer_bp)
     app.register_blueprint(frontdesk_bp)
