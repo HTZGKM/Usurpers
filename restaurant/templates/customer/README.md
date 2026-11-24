@@ -8,15 +8,9 @@
 
 顾客专用样式为 `restaurant/static/css/guest-ember.css`，仅在公共/顾客身份加载，不影响三类员工工作区。四张原创场景图位于 `restaurant/static/images/ember/`，生成提示词和来源见该目录 `assets.json`。菜品目录图、菜名与价格保持原有对应关系。
 
-本轮预览：`http://127.0.0.1:5001/`。启动：`.venv/bin/python -m flask --app app run --host 127.0.0.1 --port 5001`。
-
 ## 运行与预览
 
-```powershell
-.\.venv\Scripts\python.exe -m flask --app app run --debug --no-debugger --port 18749
-```
-
-浏览器打开 [顾客首页](http://127.0.0.1:18749/)。也可以按仓库根 README 运行 `python app.py`，默认端口 5000。在当前对话侧边预览本机 Flask 地址，修改模板或静态资源后刷新。旧的 18748 端口是独立 HTML 演示。
+按 [仓库启动说明](../../../README.md#本地启动) 从 `Usurpers` 根目录启动 Flask，再打开 [顾客首页](http://127.0.0.1:5000/)。
 
 ## 文件索引
 
