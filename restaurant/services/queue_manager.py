@@ -36,12 +36,14 @@ class QueueManager:
 
     @staticmethod
     def enqueue_due_preorders(now=None):
-        """Promote accepted preorder lines only when their requested prep time arrives."""
+        """Promote accepted preorder lines only when their requested prep time arrives AND the customer is seated."""
         with get_connection() as db:
             db.execute("BEGIN IMMEDIATE")
-            sql="""SELECT l.* FROM order_lines l JOIN order_headers h USING(order_id)
+            sql="""SELECT l.* FROM order_items l JOIN orders h USING(order_id)
+                   JOIN dining_sessions ds ON ds.booking_id = h.booking_id
                    WHERE h.order_type='preorder' AND l.status='waiting' AND l.estimated_ready_at IS NOT NULL
                    AND l.estimated_ready_at<=COALESCE(?,CURRENT_TIMESTAMP)
+                   AND ds.status='seated'
                    AND NOT EXISTS(SELECT 1 FROM kitchen_queue q WHERE q.order_item_id=l.order_item_id)"""
             due=db.execute(sql,(now,)).fetchall()
             for line in due:
@@ -94,7 +96,7 @@ class QueueManager:
         estimated_ready_at=date_time(estimated_ready_at) if estimated_ready_at is not None else None
         with get_connection() as db:
             db.execute("BEGIN IMMEDIATE")
-            line=db.execute("SELECT * FROM order_lines WHERE order_item_id=?",(iid,)).fetchone()
+            line=db.execute("SELECT * FROM order_items WHERE order_item_id=?",(iid,)).fetchone()
             if not line: raise ServiceError("订单菜品不存在。",404)
             if line["status"]!='waiting': raise ServiceError("只有待制作菜品可以加入厨房队列。",409)
             cur=db.execute("INSERT OR IGNORE INTO kitchen_queue(order_id,order_item_id,dish_id,quantity,priority,estimated_ready_at) VALUES(?,?,?,?,?,?)",(line["order_id"],iid,line["dish_id"],line["quantity"],priority,estimated_ready_at))

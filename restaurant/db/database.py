@@ -4,7 +4,7 @@ import argparse
 import hashlib
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
@@ -37,7 +37,7 @@ DEFAULT_STAFF = [
         "role": "admin",
         "phone": "13800000001",
         "email": "admin@shuangfen.local",
-        "password": hash_password("123456"),
+        "password_hash": hash_password("123456"),
     },
     {
         "staff_id": 2,
@@ -45,7 +45,7 @@ DEFAULT_STAFF = [
         "role": "frontdesk",
         "phone": "13800000002",
         "email": "frontdesk@shuangfen.local",
-        "password": hash_password("123456"),
+        "password_hash": hash_password("123456"),
     },
     {
         "staff_id": 3,
@@ -53,7 +53,7 @@ DEFAULT_STAFF = [
         "role": "kitchen",
         "phone": "13800000003",
         "email": "kitchen@shuangfen.local",
-        "password": hash_password("123456"),
+        "password_hash": hash_password("123456"),
     },
 ]
 
@@ -63,17 +63,32 @@ DEFAULT_CUSTOMERS = [
     {
         "customer_phone": "13900000001",
         "name": "演示顾客",
-        "password": hash_password("123456"),
+        "password_hash": hash_password("123456"),
     },
     {
         "customer_phone": "13900000002",
         "name": "测试顾客",
-        "password": hash_password("123456"),
+        "password_hash": hash_password("123456"),
+    },
+    {
+        "customer_phone": "13900000003",
+        "name": "散客甲",
+        "password_hash": hash_password("123456"),
+    },
+    {
+        "customer_phone": "13900000004",
+        "name": "散客乙",
+        "password_hash": hash_password("123456"),
+    },
+    {
+        "customer_phone": "13900000005",
+        "name": "常客丙",
+        "password_hash": hash_password("123456"),
     },
     {
         "customer_phone": "18612345678",
         "name": "朱哥",
-        "password": hash_password("111111"),
+        "password_hash": hash_password("111111"),
     },
 ]
 
@@ -87,47 +102,20 @@ DEFAULT_TABLES = [
 ]
 
 DEFAULT_DISHES = [
-    {"dish_id": 1, "dish_name": "芝士牛肉堡", "price": 38.00, "is_available": 1},
-    {"dish_id": 2, "dish_name": "双层招牌堡", "price": 46.00, "is_available": 1},
-    {"dish_id": 3, "dish_name": "番茄芝麻菜披萨", "price": 62.00, "is_available": 1},
-    {"dish_id": 4, "dish_name": "蘑菇白酱披萨", "price": 68.00, "is_available": 1},
-    {"dish_id": 5, "dish_name": "炸薯条", "price": 16.00, "is_available": 1},
-    {"dish_id": 6, "dish_name": "冰柠檬茶", "price": 14.00, "is_available": 1},
-]
-
-DEFAULT_ORDERS = [
-    {
-        "order_id": 1001,
-        "created_at": "2026-10-28 18:00:00",
-        "paid_at": "2026-10-28 18:05:00",
-        "table_id": 3,
-        "total_amount": 130.00,
-        "customer_phone": "13900000001",
-    }
-]
-
-DEFAULT_ORDER_ITEMS = [
-    {
-        "order_id": 1001,
-        "dish_id": 1,
-        "quantity": 1,
-        "total_price": 38.00,
-        "remarks": "少冰",
-    },
-    {
-        "order_id": 1001,
-        "dish_id": 3,
-        "quantity": 1,
-        "total_price": 62.00,
-        "remarks": "薄底",
-    },
-    {
-        "order_id": 1001,
-        "dish_id": 6,
-        "quantity": 2,
-        "total_price": 28.00,
-        "remarks": "正常糖",
-    },
+    {"dish_id": 1, "dish_name": "House Cheeseburger", "price": 38.00, "is_available": 1, "category": "burgers"},
+    {"dish_id": 2, "dish_name": "Double Cheddar", "price": 48.00, "is_available": 1, "category": "burgers"},
+    {"dish_id": 3, "dish_name": "Herb Chicken", "price": 42.00, "is_available": 1, "category": "burgers"},
+    {"dish_id": 4, "dish_name": "Portobello", "price": 40.00, "is_available": 1, "category": "burgers"},
+    {"dish_id": 5, "dish_name": "Crisp Fish", "price": 46.00, "is_available": 1, "category": "burgers"},
+    {"dish_id": 6, "dish_name": "Margherita", "price": 58.00, "is_available": 1, "category": "pizzas"},
+    {"dish_id": 7, "dish_name": "Mushroom & Pepper", "price": 62.00, "is_available": 1, "category": "pizzas"},
+    {"dish_id": 8, "dish_name": "Bianca", "price": 60.00, "is_available": 1, "category": "pizzas"},
+    {"dish_id": 9, "dish_name": "Olive & Oregano", "price": 56.00, "is_available": 1, "category": "pizzas"},
+    {"dish_id": 10, "dish_name": "Potato & Rosemary", "price": 64.00, "is_available": 1, "category": "pizzas"},
+    {"dish_id": 11, "dish_name": "Sea Salt Fries", "price": 18.00, "is_available": 1, "category": "sides"},
+    {"dish_id": 12, "dish_name": "Crispy Onion Rings", "price": 22.00, "is_available": 0, "category": "sides"},
+    {"dish_id": 13, "dish_name": "Lemon Soda", "price": 16.00, "is_available": 1, "category": "drinks"},
+    {"dish_id": 14, "dish_name": "Iced Black Tea", "price": 14.00, "is_available": 1, "category": "drinks"},
 ]
 
 
@@ -149,14 +137,14 @@ def create_schema(connection: sqlite3.Connection) -> None:
             role TEXT NOT NULL,
             phone TEXT NOT NULL UNIQUE,
             email TEXT NOT NULL UNIQUE,
-            password TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
             is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1))
         );
 
         CREATE TABLE IF NOT EXISTS customers (
             customer_phone TEXT PRIMARY KEY,
             name TEXT NOT NULL,
-            password TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
             is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1))
         );
 
@@ -175,39 +163,12 @@ def create_schema(connection: sqlite3.Connection) -> None:
             image_url TEXT
         );
 
-        CREATE TABLE IF NOT EXISTS orders (
-            order_id INTEGER PRIMARY KEY,
-            created_at TEXT NOT NULL,
-            paid_at TEXT,
-            table_id INTEGER NOT NULL,
-            total_amount NUMERIC NOT NULL CHECK (total_amount >= 0),
-            customer_phone TEXT NOT NULL,
-            FOREIGN KEY (table_id) REFERENCES dining_tables(table_id),
-            FOREIGN KEY (customer_phone) REFERENCES customers(customer_phone)
-        );
-
-        CREATE TABLE IF NOT EXISTS order_items (
-            order_id INTEGER NOT NULL,
-            dish_id INTEGER NOT NULL,
-            quantity INTEGER NOT NULL CHECK (quantity > 0),
-            total_price NUMERIC NOT NULL CHECK (total_price >= 0),
-            remarks TEXT,
-            status TEXT NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting','cooking','ready','served','cancelled')),
-            PRIMARY KEY (order_id, dish_id),
-            FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE CASCADE,
-            FOREIGN KEY (dish_id) REFERENCES dishes(dish_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS time_slots (
-            time_slot_id INTEGER PRIMARY KEY, label TEXT NOT NULL UNIQUE, starts_at TEXT NOT NULL, ends_at TEXT NOT NULL
-        );
         CREATE TABLE IF NOT EXISTS bookings (
             booking_id INTEGER PRIMARY KEY AUTOINCREMENT, contact_name TEXT NOT NULL, phone_number TEXT NOT NULL,
             customer_phone TEXT,
-            booking_date TEXT NOT NULL, time_slot_id INTEGER NOT NULL, party_size INTEGER NOT NULL CHECK(party_size > 0),
+            booking_date TEXT NOT NULL, time_slot TEXT NOT NULL, party_size INTEGER NOT NULL CHECK(party_size > 0),
             status TEXT NOT NULL DEFAULT 'booked' CHECK(status IN ('booked','arrived','cancelled')),
             table_id INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(time_slot_id) REFERENCES time_slots(time_slot_id),
             FOREIGN KEY(table_id) REFERENCES dining_tables(table_id),
             FOREIGN KEY(customer_phone) REFERENCES customers(customer_phone)
         );
@@ -220,7 +181,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
             FOREIGN KEY(customer_phone) REFERENCES customers(customer_phone),
             FOREIGN KEY(table_id) REFERENCES dining_tables(table_id)
         );
-        CREATE TABLE IF NOT EXISTS order_headers (
+        CREATE TABLE IF NOT EXISTS orders (
             order_id INTEGER PRIMARY KEY AUTOINCREMENT, visit_id INTEGER, booking_id INTEGER, customer_phone TEXT,
             contact_name TEXT, phone_number TEXT, table_id INTEGER, order_type TEXT NOT NULL DEFAULT 'dine_in',
             status TEXT NOT NULL DEFAULT 'active', payment_status TEXT NOT NULL DEFAULT 'unpaid',
@@ -229,19 +190,15 @@ def create_schema(connection: sqlite3.Connection) -> None:
             FOREIGN KEY(booking_id) REFERENCES bookings(booking_id),
             FOREIGN KEY(customer_phone) REFERENCES customers(customer_phone)
         );
-        CREATE TABLE IF NOT EXISTS order_lines (
+        CREATE TABLE IF NOT EXISTS order_items (
             order_item_id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER NOT NULL, dish_id INTEGER NOT NULL,
             quantity INTEGER NOT NULL CHECK(quantity > 0), unit_price NUMERIC NOT NULL CHECK(unit_price >= 0),
+            total_price NUMERIC NOT NULL DEFAULT 0 CHECK(total_price >= 0),
             note TEXT, status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('waiting','cooking','ready','served','cancelled')),
             enqueued_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             estimated_ready_at TEXT,
-            FOREIGN KEY(order_id) REFERENCES order_headers(order_id) ON DELETE CASCADE,
+            FOREIGN KEY(order_id) REFERENCES orders(order_id) ON DELETE CASCADE,
             FOREIGN KEY(dish_id) REFERENCES dishes(dish_id)
-        );
-        CREATE TABLE IF NOT EXISTS table_reservations (
-            booking_id INTEGER NOT NULL, table_id INTEGER NOT NULL,
-            PRIMARY KEY(booking_id, table_id), FOREIGN KEY(booking_id) REFERENCES bookings(booking_id),
-            FOREIGN KEY(table_id) REFERENCES dining_tables(table_id)
         );
         CREATE TABLE IF NOT EXISTS waiting_queue (
             queue_id INTEGER PRIMARY KEY AUTOINCREMENT, contact_name TEXT, phone_number TEXT,
@@ -257,19 +214,13 @@ def create_schema(connection: sqlite3.Connection) -> None:
             priority INTEGER NOT NULL DEFAULT 0, estimated_ready_at TEXT,
             status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('waiting','cooking','ready','served','cancelled')),
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, started_at TEXT, completed_at TEXT,
-            FOREIGN KEY(order_id) REFERENCES order_headers(order_id) ON DELETE CASCADE,
-            FOREIGN KEY(order_item_id) REFERENCES order_lines(order_item_id) ON DELETE CASCADE,
+            FOREIGN KEY(order_id) REFERENCES orders(order_id) ON DELETE CASCADE,
+            FOREIGN KEY(order_item_id) REFERENCES order_items(order_item_id) ON DELETE CASCADE,
             FOREIGN KEY(dish_id) REFERENCES dishes(dish_id)
-        );
-        CREATE TABLE IF NOT EXISTS payments (
-            payment_id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER NOT NULL UNIQUE,
-            amount NUMERIC NOT NULL CHECK(amount>=0), paid_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(order_id) REFERENCES order_headers(order_id)
         );
         CREATE TABLE IF NOT EXISTS ingredients (
             ingredient_id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE,
             unit TEXT NOT NULL, on_hand REAL NOT NULL CHECK(on_hand>=0),
-            reserved REAL NOT NULL DEFAULT 0 CHECK(reserved>=0 AND reserved<=on_hand),
             expires_at TEXT, is_available INTEGER NOT NULL DEFAULT 1 CHECK(is_available IN (0,1))
         );
         CREATE TABLE IF NOT EXISTS dish_ingredients (
@@ -278,52 +229,23 @@ def create_schema(connection: sqlite3.Connection) -> None:
             PRIMARY KEY(dish_id,ingredient_id), FOREIGN KEY(dish_id) REFERENCES dishes(dish_id),
             FOREIGN KEY(ingredient_id) REFERENCES ingredients(ingredient_id)
         );
-        CREATE TABLE IF NOT EXISTS inventory_reservations (
-            order_item_id INTEGER NOT NULL, ingredient_id INTEGER NOT NULL, quantity REAL NOT NULL CHECK(quantity>0),
-            status TEXT NOT NULL CHECK(status IN ('reserved','consumed','released')),
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY(order_item_id,ingredient_id), FOREIGN KEY(order_item_id) REFERENCES order_lines(order_item_id),
-            FOREIGN KEY(ingredient_id) REFERENCES ingredients(ingredient_id)
-        );
-        CREATE TABLE IF NOT EXISTS inventory_movements (
-            movement_id INTEGER PRIMARY KEY AUTOINCREMENT, ingredient_id INTEGER NOT NULL,
-            quantity REAL NOT NULL, movement_type TEXT NOT NULL, reference TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(ingredient_id) REFERENCES ingredients(ingredient_id)
-        );
-        CREATE TABLE IF NOT EXISTS remake_tickets (
-            remake_id INTEGER PRIMARY KEY AUTOINCREMENT, order_item_id INTEGER NOT NULL,
-            reason TEXT NOT NULL, staff_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'waiting'
-              CHECK(status IN ('waiting','cooking','ready','completed','cancelled')),
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, started_at TEXT, completed_at TEXT,
-            FOREIGN KEY(order_item_id) REFERENCES order_lines(order_item_id), FOREIGN KEY(staff_id) REFERENCES staff(staff_id)
-        );
-        CREATE TABLE IF NOT EXISTS refunds (
-            refund_id INTEGER PRIMARY KEY AUTOINCREMENT, payment_id INTEGER NOT NULL, order_id INTEGER NOT NULL,
-            amount NUMERIC NOT NULL CHECK(amount>0), reason TEXT NOT NULL, staff_id INTEGER NOT NULL,
-            idempotency_key TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(payment_id) REFERENCES payments(payment_id), FOREIGN KEY(order_id) REFERENCES order_headers(order_id),
-            FOREIGN KEY(staff_id) REFERENCES staff(staff_id)
-        );
-        CREATE INDEX IF NOT EXISTS idx_bookings_slot ON bookings(booking_date,time_slot_id,status);
-        CREATE INDEX IF NOT EXISTS idx_sessions_table_status ON dining_sessions(table_id,status);
-        CREATE INDEX IF NOT EXISTS idx_order_lines_status_queue ON order_lines(status,enqueued_at);
-        CREATE INDEX IF NOT EXISTS idx_order_headers_service_day ON order_headers(date(created_at, '+8 hours'));
-        CREATE INDEX IF NOT EXISTS idx_order_headers_status ON order_headers(status);
-        CREATE INDEX IF NOT EXISTS idx_kitchen_queue_order ON kitchen_queue(status,priority,estimated_ready_at,created_at);
-        CREATE INDEX IF NOT EXISTS idx_waiting_queue_order ON waiting_queue(status,queue_position);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_bookings_table_slot ON bookings(table_id, booking_date, time_slot) WHERE status = 'booked';
+        CREATE INDEX IF NOT EXISTS idx_bookings_date ON bookings(booking_date, time_slot, status);
+        CREATE INDEX IF NOT EXISTS idx_sessions_table_status ON dining_sessions(table_id, status);
+        CREATE INDEX IF NOT EXISTS idx_order_items_status_queue ON order_items(status, enqueued_at);
+        CREATE INDEX IF NOT EXISTS idx_orders_service_day ON orders(date(created_at, '+8 hours'));
+        CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+        CREATE INDEX IF NOT EXISTS idx_kitchen_queue_order ON kitchen_queue(status, priority, estimated_ready_at, created_at);
+        CREATE INDEX IF NOT EXISTS idx_waiting_queue_order ON waiting_queue(status, queue_position);
         """
     )
-    # Migrate databases created before item-level kitchen tracking.
-    columns = {row[1] for row in connection.execute("PRAGMA table_info(order_items)")}
-    if "status" not in columns:
-        connection.execute("ALTER TABLE order_items ADD COLUMN status TEXT NOT NULL DEFAULT 'waiting'")
     for table, field, declaration in (
         ("bookings", "customer_phone", "TEXT REFERENCES customers(customer_phone)"),
-        ("order_headers", "booking_id", "INTEGER REFERENCES bookings(booking_id)"),
+        ("orders", "booking_id", "INTEGER REFERENCES bookings(booking_id)"),
         ("staff", "is_active", "INTEGER NOT NULL DEFAULT 1"),
         ("customers", "is_active", "INTEGER NOT NULL DEFAULT 1"),
         ("dishes", "is_archived", "INTEGER NOT NULL DEFAULT 0"),
-        ("order_lines", "estimated_ready_at", "TEXT"),
+        ("order_items", "estimated_ready_at", "TEXT"),
         ("dishes", "ingredients", "TEXT NOT NULL DEFAULT ''"),
         ("dishes", "prep_time_minutes", "INTEGER NOT NULL DEFAULT 10"),
         ("dishes", "image_url", "TEXT"),
@@ -335,10 +257,6 @@ def create_schema(connection: sqlite3.Connection) -> None:
 
 
 def seed_defaults(connection: sqlite3.Connection) -> None:
-    connection.executemany(
-        "INSERT OR IGNORE INTO time_slots (time_slot_id,label,starts_at,ends_at) VALUES (?,?,?,?)",
-        [(1, "午餐", "11:00", "14:00"), (2, "晚餐早段", "17:00", "19:00"), (3, "晚餐晚段", "19:00", "21:00")],
-    )
     placeholders = ", ".join("?" for _ in ALLOWED_STAFF_ROLES)
     connection.execute(
         f"DELETE FROM staff WHERE role NOT IN ({placeholders})",
@@ -346,15 +264,15 @@ def seed_defaults(connection: sqlite3.Connection) -> None:
     )
     connection.executemany(
         """
-        INSERT OR IGNORE INTO staff (staff_id, name, role, phone, email, password)
-        VALUES (:staff_id, :name, :role, :phone, :email, :password)
+        INSERT OR IGNORE INTO staff (staff_id, name, role, phone, email, password_hash)
+        VALUES (:staff_id, :name, :role, :phone, :email, :password_hash)
         """,
         DEFAULT_STAFF,
     )
     connection.executemany(
         """
-        INSERT OR IGNORE INTO customers (customer_phone, name, password)
-        VALUES (:customer_phone, :name, :password)
+        INSERT OR IGNORE INTO customers (customer_phone, name, password_hash)
+        VALUES (:customer_phone, :name, :password_hash)
         """,
         DEFAULT_CUSTOMERS,
     )
@@ -367,44 +285,120 @@ def seed_defaults(connection: sqlite3.Connection) -> None:
     )
     connection.executemany(
         """
-        INSERT OR IGNORE INTO dishes (dish_id, dish_name, price, is_available)
-        VALUES (:dish_id, :dish_name, :price, :is_available)
+        INSERT OR IGNORE INTO dishes (dish_id, dish_name, price, is_available, category)
+        VALUES (:dish_id, :dish_name, :price, :is_available, :category)
         """,
         DEFAULT_DISHES,
     )
     # Stable demo records make the new booking/visit/order flows inspectable.
-    connection.execute("INSERT OR IGNORE INTO bookings (booking_id,contact_name,phone_number,booking_date,time_slot_id,party_size,status,table_id,customer_phone) VALUES (1,'演示预约','13900000001','2026-12-01',1,2,'booked',1,'13900000001')")
-    connection.execute("INSERT OR IGNORE INTO dining_sessions (visit_id,booking_id,customer_phone,contact_name,phone_number,party_size,table_id,status) VALUES (1,NULL,'13900000002','测试顾客','13900000002',2,2,'seated')")
-    connection.execute("INSERT OR IGNORE INTO order_headers (order_id,visit_id,customer_phone,contact_name,phone_number,table_id,order_type,status,payment_status) VALUES (9001,1,'13900000002','测试顾客','13900000002',2,'dine_in','active','unpaid')")
-    connection.execute("INSERT OR IGNORE INTO order_lines (order_item_id,order_id,dish_id,quantity,unit_price,note,status) VALUES (9001,9001,1,1,38,'演示：少酱','waiting'),(9002,9001,5,1,16,'演示：不加盐','cooking')")
-    connection.execute("INSERT OR IGNORE INTO kitchen_queue(order_id,order_item_id,dish_id,quantity,status) VALUES (9001,9001,1,1,'waiting'),(9001,9002,5,1,'cooking')")
-    connection.executemany(
-        """
-        INSERT OR IGNORE INTO orders (order_id, created_at, paid_at, table_id, total_amount, customer_phone)
-        VALUES (:order_id, :created_at, :paid_at, :table_id, :total_amount, :customer_phone)
-        """,
-        DEFAULT_ORDERS,
-    )
-    connection.executemany(
-        """
-        INSERT OR IGNORE INTO order_items (order_id, dish_id, quantity, total_price, remarks)
-        VALUES (:order_id, :dish_id, :quantity, :total_price, :remarks)
-        """,
-        DEFAULT_ORDER_ITEMS,
-    )
-    # One-time, idempotent bridge from the original sample order tables.
-    connection.execute("""INSERT OR IGNORE INTO order_headers(order_id,customer_phone,table_id,status,payment_status,created_at,paid_at)
-        SELECT order_id,customer_phone,table_id,'active',CASE WHEN paid_at IS NULL THEN 'unpaid' ELSE 'paid' END,created_at,paid_at FROM orders""")
-    connection.execute("""INSERT INTO order_lines(order_id,dish_id,quantity,unit_price,note,status)
-        SELECT oi.order_id,oi.dish_id,oi.quantity,oi.total_price/oi.quantity,oi.remarks,
-        CASE WHEN o.paid_at IS NOT NULL THEN 'served' ELSE COALESCE(oi.status,'waiting') END
-        FROM order_items oi JOIN orders o USING(order_id)
-        WHERE NOT EXISTS (SELECT 1 FROM order_lines x WHERE x.order_id=oi.order_id AND x.dish_id=oi.dish_id AND x.quantity=oi.quantity AND x.unit_price=oi.total_price/oi.quantity)""")
-    connection.execute("""INSERT OR IGNORE INTO kitchen_queue(order_id,order_item_id,dish_id,quantity,status)
-        SELECT l.order_id,l.order_item_id,l.dish_id,l.quantity,l.status FROM order_lines l
-        WHERE l.status IN ('waiting','cooking','ready','served')""")
-    connection.execute("""INSERT OR IGNORE INTO payments(order_id,amount,paid_at)
-        SELECT order_id,total_amount,paid_at FROM orders WHERE paid_at IS NOT NULL""")
+    connection.execute("INSERT OR IGNORE INTO bookings (booking_id,contact_name,phone_number,booking_date,time_slot,party_size,status,table_id,customer_phone) VALUES (1,'演示预约','13900000001','2026-12-01','11:00-14:00',2,'booked',1,'13900000001')")
+    # 额外顾客预约：覆盖今天/明天、不同时段、已入座/未入座
+    connection.execute("INSERT OR IGNORE INTO bookings (booking_id,contact_name,phone_number,booking_date,time_slot,party_size,status,table_id,customer_phone) VALUES "
+        "(2,'朱哥','18612345678',date('now','+8 hours'),'11:00-14:00',4,'booked',3,'18612345678'),"
+        "(3,'散客甲','13900000003',date('now','+8 hours'),'17:00-19:00',6,'booked',5,'13900000003'),"
+        "(4,'常客丙','13900000005',date('now','+8 hours'),'19:00-21:00',4,'arrived',4,'13900000005'),"
+        "(5,'散客乙','13900000004',date('now','+1 day','+8 hours'),'11:00-14:00',2,'booked',2,'13900000004')")
+    connection.execute("INSERT OR IGNORE INTO dining_sessions (visit_id,booking_id,customer_phone,contact_name,phone_number,party_size,table_id,status) VALUES "
+        "(1,NULL,'13900000002','测试顾客','13900000002',2,2,'seated'),"
+        "(2,2,'18612345678','朱哥','18612345678',4,3,'seated'),"
+        "(3,3,'13900000003','散客甲','13900000003',6,5,'seated'),"
+        "(4,4,'13900000005','常客丙','13900000005',4,4,'seated')")
+    connection.execute("INSERT OR IGNORE INTO orders (order_id,visit_id,customer_phone,contact_name,phone_number,table_id,order_type,status,payment_status) VALUES "
+        "(9001,1,'13900000002','测试顾客','13900000002',2,'dine_in','active','unpaid'),"
+        "(9002,2,'18612345678','朱哥','18612345678',3,'dine_in','active','unpaid'),"
+        "(9003,3,'13900000003','散客甲','13900000003',5,'dine_in','active','unpaid')")
+    connection.execute("INSERT OR IGNORE INTO order_items (order_item_id,order_id,dish_id,quantity,unit_price,total_price,note,status) VALUES "
+        "(9001,9001,1,1,38.00,38.00,'演示：少酱','waiting'),"
+        "(9002,9001,11,1,18.00,18.00,'演示：不加盐','cooking'),"
+        "(9003,9002,2,1,48.00,48.00,NULL,'cooking'),"
+        "(9004,9002,3,1,42.00,42.00,'不要香菜','ready'),"
+        "(9005,9002,11,1,18.00,18.00,NULL,'waiting'),"
+        "(9006,9003,4,1,40.00,40.00,NULL,'ready'),"
+        "(9007,9003,13,2,16.00,32.00,'少冰','waiting')")
+    connection.execute("INSERT OR IGNORE INTO kitchen_queue(order_id,order_item_id,dish_id,quantity,status,started_at,completed_at) VALUES "
+        "(9001,9001,1,1,'waiting',NULL,NULL),"
+        "(9001,9002,11,1,'cooking',datetime('now','-12 minutes'),NULL),"
+        "(9002,9003,2,1,'cooking',datetime('now','-10 minutes'),NULL),"
+        "(9002,9004,3,1,'ready',datetime('now','-20 minutes'),datetime('now','-5 minutes')),"
+        "(9002,9005,11,1,'waiting',NULL,NULL),"
+        "(9003,9006,4,1,'ready',datetime('now','-25 minutes'),datetime('now','-8 minutes')),"
+        "(9003,9007,13,2,'waiting',NULL,NULL)")
+
+    # Historical demo orders for the admin dashboard (last 7 days, UTC timestamps).
+    # Deterministic generation with a fixed seed so the dataset is reproducible.
+    # Service hours in +8 timezone: lunch 11:00-14:00, dinner 17:00-21:00.
+    # In UTC that maps to 03:00-06:00 and 09:00-13:00 so date(created_at, '+8 hours')
+    # stays on the intended calendar day.
+    #
+    # Auto-roll: delete previously generated seed history (order_id 2000-2999) and
+    # regenerate so the "last 7 days" window always ends on the current date.
+    # Real user orders (order_id >= 9000) are left untouched.
+    connection.execute("DELETE FROM order_items WHERE order_id BETWEEN 2000 AND 2999")
+    connection.execute("DELETE FROM kitchen_queue WHERE order_id BETWEEN 2000 AND 2999")
+    connection.execute("DELETE FROM orders WHERE order_id BETWEEN 2000 AND 2999")
+    import random
+
+    dish_ids = [d["dish_id"] for d in DEFAULT_DISHES]
+    dish_prices = {d["dish_id"]: float(d["price"]) for d in DEFAULT_DISHES}
+    rng = random.Random(20261123)
+
+    customers = [
+        ("13900000001", "演示顾客"),
+        ("13900000002", "测试顾客"),
+        ("13900000003", "散客甲"),
+        ("13900000004", "散客乙"),
+        ("13900000005", "常客丙"),
+    ]
+    now_utc = datetime.utcnow()
+    line_id = 9100
+
+    for day_offset in range(7):  # 0 = today, 6 = six days ago
+        day_base = now_utc.replace(second=0, microsecond=0) - timedelta(days=day_offset)
+        # Number of orders this day: 8-13, today gets a few more
+        order_count = rng.randint(8, 13) if day_offset > 0 else rng.randint(10, 15)
+        for _ in range(order_count):
+            order_id = 2000 + day_offset * 100 + rng.randint(1, 99)
+            # Pick a service hour in UTC so date(created_at, '+8 hours') lands on the
+            # intended service day. For historical days use the normal lunch/dinner
+            # windows (Beijing 11-14 and 17-21). For today, only generate orders in
+            # already-passed hours (Beijing 08-10) so the dashboard never shows
+            # paid orders for times that haven't happened yet.
+            if day_offset == 0:
+                hour_utc = rng.choice([0, 0, 1, 1, 2])  # Beijing 08:00-10:00, already passed
+            elif rng.random() < 0.45:
+                hour_utc = rng.randint(3, 6)  # Beijing 11:00-14:00
+            else:
+                hour_utc = rng.randint(9, 13)  # Beijing 17:00-21:00
+            minute = rng.choice([0, 15, 30, 45])
+            order_time = day_base.replace(hour=hour_utc, minute=minute)
+            created_at = order_time.strftime("%Y-%m-%d %H:%M:%S")
+
+            phone, contact = rng.choice(customers)
+            table_id = rng.randint(1, 6)
+            is_paid = rng.random() < 0.92
+            pay_status = "paid" if is_paid else "unpaid"
+            paid_at = created_at if is_paid else None
+
+            connection.execute(
+                "INSERT OR IGNORE INTO orders(order_id,customer_phone,contact_name,phone_number,table_id,order_type,status,payment_status,created_at,paid_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (order_id, phone, contact, phone, table_id, "dine_in",
+                 "completed", pay_status, created_at, paid_at),
+            )
+
+            # 1-4 items per order, weighted so sides/drinks appear more often
+            item_count = rng.randint(1, 4)
+            chosen = rng.sample(dish_ids, k=min(item_count, len(dish_ids)))
+            for did in chosen:
+                qty = rng.choices([1, 2, 3], weights=[7, 2, 1])[0]
+                line_id += 1
+                unit_price = dish_prices[did]
+                total_price = round(unit_price * qty, 2)
+                connection.execute(
+                    "INSERT OR IGNORE INTO order_items(order_item_id,order_id,dish_id,quantity,unit_price,total_price,status) "
+                    "VALUES (?,?,?,?,?,?,?)",
+                    (line_id, order_id, did, qty, unit_price, total_price, "served"),
+                )
 
 
 def ensure_database(reset: bool = False) -> Path:

@@ -56,6 +56,7 @@ def create_booking():
                     data.get("time_slot_id", data.get("time_slot")),
                     data.get("party_size", data.get("guests")),
                     customer_phone,
+                    data.get("table_id"),
                 ),
             }
         ),
@@ -221,42 +222,19 @@ def seat_waiting(queue_id):
 
 @frontdesk_bp.post("/orders/<int:order_id>/items/<int:order_item_id>/remakes")
 def create_remake(order_id, order_item_id):
-    data = validated_data(RemakeForm)
-    from restaurant.services.remake_service import create_remake as create
-
-    _order_item(order_id, order_item_id)
-    return (
-        jsonify(
-            {
-                "ok": True,
-                "task": create(order_item_id, data.get("reason"), _current_staff_id()),
-            }
-        ),
-        201,
-    )
+    # 补做功能已移除（remake_tickets 表已删除）
+    return jsonify({"ok": False, "error": "补做功能已移除。"}), 501
 
 
 @frontdesk_bp.post("/orders/<int:order_id>/refunds")
 def refund_order(order_id):
-    data = validated_data(RefundForm)
-    from restaurant.services.refund_service import create_refund
-
-    data = data
-    result = create_refund(
-        order_id,
-        data.get("amount"),
-        data.get("reason"),
-        _current_staff_id(),
-        data.get("idempotency_key"),
-    )
-    return (jsonify({"ok": True, "refund": result}), 200)
+    # 退款功能已移除（payments/refunds 表已删除）
+    return jsonify({"ok": False, "error": "退款功能已移除。"}), 501
 
 
 @frontdesk_bp.get("/orders/<int:order_id>/refunds")
 def list_order_refunds(order_id):
-    from restaurant.services.refund_service import get_refunds
-
-    return jsonify({"ok": True, "refunds": get_refunds(order_id)})
+    return jsonify({"ok": True, "refunds": []})
 
 
 def _order_item(order_id, order_item_id):
@@ -286,15 +264,6 @@ def _current_staff_id():
     return member["staff_id"]
 
 
-@frontdesk_bp.get("/bookings/new")
-def new_booking():
-    raise ServiceError(
-        "The staff booking form page is not implemented yet.",
-        501,
-        code="NOT_IMPLEMENTED",
-    )
-
-
 @frontdesk_bp.route("/bookings/<int:booking_id>/edit", methods=["GET", "POST"])
 def edit_booking(booking_id):
     if request.method == "GET":
@@ -319,6 +288,8 @@ def edit_booking(booking_id):
                 data.get("booking_date"),
                 data.get("time_slot_id"),
                 data.get("party_size"),
+                None,
+                data.get("table_id"),
             ),
         }
     )

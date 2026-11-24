@@ -64,27 +64,18 @@ def serve_item(order_item_id):
 
 @kitchen_bp.get("/remakes")
 def kitchen_remakes():
-    from restaurant.services.remake_service import list_remakes
-
-    return jsonify(
-        {"ok": True, "tasks": list_remakes(request.args.get("status", "waiting"))}
-    )
+    # 补做功能已移除（remake_tickets 表已删除）
+    return jsonify({"ok": True, "tasks": []})
 
 
 @kitchen_bp.post("/remakes/<int:remake_id>/start")
 def start_remake(remake_id):
-    data = validated_data(ActionForm)
-    from restaurant.services.remake_service import start_remake as start
-
-    return jsonify({"ok": True, "task": start(remake_id)})
+    return jsonify({"ok": False, "error": "补做功能已移除。"}), 501
 
 
 @kitchen_bp.post("/remakes/<int:remake_id>/complete")
 def complete_remake(remake_id):
-    data = validated_data(ActionForm)
-    from restaurant.services.remake_service import complete_remake as complete
-
-    return jsonify({"ok": True, "task": complete(remake_id)})
+    return jsonify({"ok": False, "error": "补做功能已移除。"}), 501
 
 
 @kitchen_bp.post("/menu/<int:dish_id>/availability")

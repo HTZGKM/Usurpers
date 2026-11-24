@@ -7,10 +7,10 @@ def authenticate(account, password):
     if not isinstance(password,str) or not password: raise ServiceError("密码不能为空。",field="password")
     hashed=hash_password(password)
     with get_connection() as db:
-        staff=db.execute("SELECT email,name,role,password FROM staff WHERE email=? AND is_active=1",(account,)).fetchone()
-        if staff and staff["password"]==hashed: return {"username":staff["email"],"name":staff["name"],"role":staff["role"]}
-        customer=db.execute("SELECT customer_phone,name,password FROM customers WHERE customer_phone=? AND is_active=1",(account,)).fetchone()
-        if customer and customer["password"]==hashed: return {"username":customer["customer_phone"],"name":customer["name"],"role":"customer"}
+        staff=db.execute("SELECT email,name,role,password_hash FROM staff WHERE email=? AND is_active=1",(account,)).fetchone()
+        if staff and staff["password_hash"]==hashed: return {"username":staff["email"],"name":staff["name"],"role":staff["role"]}
+        customer=db.execute("SELECT customer_phone,name,password_hash FROM customers WHERE customer_phone=? AND is_active=1",(account,)).fetchone()
+        if customer and customer["password_hash"]==hashed: return {"username":customer["customer_phone"],"name":customer["name"],"role":"customer"}
     return None
 
 
@@ -36,5 +36,5 @@ def register_customer(name, phone, password):
     with get_connection() as db:
         db.execute("BEGIN IMMEDIATE")
         if db.execute("SELECT 1 FROM customers WHERE customer_phone=?",(phone,)).fetchone(): raise ServiceError("手机号已注册。",409,"phone_number","DUPLICATE")
-        db.execute("INSERT INTO customers(customer_phone,name,password) VALUES(?,?,?)",(phone,name,hash_password(password)))
+        db.execute("INSERT INTO customers(customer_phone,name,password_hash) VALUES(?,?,?)",(phone,name,hash_password(password)))
         return {"username":phone,"name":name,"role":"customer"}
