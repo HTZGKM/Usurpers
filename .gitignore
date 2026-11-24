@@ -10,4 +10,5 @@ venv/
 restaurant/data/*.db
 restaurant/data/*.db-shm
 restaurant/data/*.db-wal
+/restaurant/static/fonts/Satoshi-Light.local.woff2
 zhu/

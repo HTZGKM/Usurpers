@@ -1,8 +1,7 @@
-import json
+import os
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template
-from flask_cors import CORS
+from flask import Flask, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException
 
 from restaurant.api.auth.forms import LoginForm, LogoutForm, RegisterForm
@@ -13,6 +12,7 @@ from restaurant.api.admin.routes import admin_bp
 from restaurant.api.customer.routes import customer_bp
 from restaurant.api.frontdesk.routes import frontdesk_bp
 from restaurant.api.kitchen.routes import kitchen_bp
+from restaurant.presentation import restaurant_view, seating_view
 
 def create_app() -> Flask:
     app = Flask(
@@ -22,8 +22,16 @@ def create_app() -> Flask:
         static_url_path="/static",
     )
 
-    app.config["SECRET_KEY"] = "dev-secret-key"
-    CORS(app, supports_credentials=True)
+    https = os.environ.get("USURPERS_HTTPS") == "1"
+    secret = os.environ.get("USURPERS_SECRET_KEY")
+    if https and not secret:
+        raise RuntimeError("Set USURPERS_SECRET_KEY before serving the app over HTTPS.")
+    app.config.update(
+        SECRET_KEY=secret or "dev-secret-key",
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=https,
+    )
 
     ensure_database()
     app.register_blueprint(auth_bp)
@@ -31,6 +39,20 @@ def create_app() -> Flask:
     app.register_blueprint(frontdesk_bp)
     app.register_blueprint(kitchen_bp)
     app.register_blueprint(admin_bp)
+
+    @app.after_request
+    def protect_rendered_pages(response):
+        if response.mimetype == "text/html":
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; connect-src 'self'; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                "font-src 'self' https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data:; "
+                "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+            )
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["Referrer-Policy"] = "same-origin"
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.errorhandler(ServiceError)
     def service_error(error: ServiceError):
@@ -48,23 +70,22 @@ def create_app() -> Flask:
     @app.get("/")
     def home():
         account = current_account()
-        with (Path(app.root_path) / "restaurant/api/customer/catalog.json").open(encoding="utf-8") as source:
-            catalog = json.load(source)
+        if request.args.get("fragment") == "seating":
+            if not account:
+                return "", 401
+            if account["role"] not in ("customer", "frontdesk"):
+                return "", 403
+            return render_template("_seating_data.html", visits=seating_view(account)), {"Cache-Control": "no-store"}
+        fonts = Path(app.static_folder) / "fonts"
         return render_template(
             "customer/guest.html",
             account=account,
             login_form=LoginForm() if account is None else None,
             register_form=RegisterForm() if account is None else None,
             logout_form=LogoutForm() if account else None,
-            has_cheltenham=(Path(app.static_folder) / "fonts/CheltenhamBT-Roman.woff2").is_file(),
-            catalog=catalog,
-            categories={"burger": "Burgers", "pizza": "Pizzas", "sides": "Sides", "drinks": "Drinks"},
-            slots=("17:30", "18:00", "19:30"),
-            tables=[
-                ("A1", 2, 16, 23), ("A2", 2, 42, 23), ("A3", 4, 67, 23),
-                ("B1", 4, 19, 53), ("B2", 4, 48, 53), ("B3", 6, 77, 53),
-                ("C1", 2, 19, 81), ("C2", 6, 48, 81),
-            ],
+            has_cheltenham=(fonts / "CheltenhamBT-Roman.woff2").is_file(),
+            has_local_satoshi=(fonts / "Satoshi-Light.local.woff2").is_file(),
+            **restaurant_view(app.root_path),
         ), {"Cache-Control": "no-store"}
 
     @app.get("/health")

@@ -498,3 +498,5 @@ main.frontdesk-page {
     grid-column: 1 / -1;
   }
 }
+.desk-waitlist { margin-top: 1rem; }
+.desk-waitlist [data-desk-waiting-list] > li { flex-wrap: wrap; }

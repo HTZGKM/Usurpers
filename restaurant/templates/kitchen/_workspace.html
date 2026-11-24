@@ -3,8 +3,9 @@
   <div class="kitchen-content">
     <div class="kitchen-heading">
       <h1 tabindex="-1">Kitchen</h1>
-      <p class="kitchen-demo">Demo workspace</p>
+      <button type="button" class="kitchen-action" data-kitchen-refresh>Refresh</button>
     </div>
+    <p role="status" data-kitchen-feedback></p>
 
     <section id="kitchen-queue" aria-labelledby="kitchen-queue-title">
       <div class="kitchen-section-heading">
@@ -26,6 +27,11 @@
           <ul class="kitchen-item-list" data-kitchen-category="{{ category }}"></ul>
         </section>
         {% endfor %}
+        {% if 'other' not in categories %}
+        <section class="kitchen-menu-group" hidden>
+          <h3>Other</h3><ul class="kitchen-item-list" data-kitchen-category="other"></ul>
+        </section>
+        {% endif %}
       </div>
     </section>
   </div>

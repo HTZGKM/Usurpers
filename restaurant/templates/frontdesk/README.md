@@ -2,27 +2,28 @@
 
 在首页 **My account** 用前台员工账号登录，进入 `/#workspace`。前台模板为 `_workspace.html`，样式和交互分别在 `restaurant/static/css/frontdesk.css` 与 `restaurant/static/js/frontdesk.js`。
 
-全屏目录和紧凑导航共用 **Reservations**、**Table service**、**Billing records**。可以从预约区的占用桌进入服务，也可以在 Table service 选择占用桌。账单列表从现有演示订单读取订单号、桌号、下单和付款时间、付款状态与金额。
+全屏目录和紧凑导航共用 **Reservations**、**Table service**、**Billing records**。可以从预约区的占用桌进入服务，也可以在 Table service 选择占用桌。账单列表读取 SQLite 订单，可展开查看明细与金额。
 
 前台和顾客端共用 `restaurant/templates/_floor_map.html`、桌位坐标、容纳人数和桌子造型。前台用颜色区分 **Available**、**Reserved** 与 **Occupied**。日期和时段筛选同时更新列表与预订桌位，手机号筛选只更新列表。
 
-- 点 **New booking** 代订。演示按日期、时段与人数选择能容纳的空桌。找到预约后用 **Edit booking** 修改日期、时段或人数，原桌仍可用时保留原桌。用 **Cancel booking** 确认取消后释放预订桌位，列表保留 **Cancelled** 记录。
+- 点 **New booking** 代订。可以指定桌位或交给 Flask 分配。编辑时默认选择原桌，时段冲突由后端返回错误。取消后列表保留 **Cancelled** 记录。
 - 当天预约可从桌位或列表进入签到。预分配的桌位可直接确认，也可选择另一张合适的桌位。签到后列表显示 **Checked in**，桌位显示 **Occupied**。
 - 点今日桌位图里显示为 **Available** 的桌位，再用 **Seat walk-in** 填人数。确认后桌位变为 **Occupied**，点该桌可看到散客人数。散客不出现在预约列表中。
+- 在 **Walk-in waitlist** 选当前可用桌，点 **Call next party**，顾客到台后点 **Seat party**。叫号后的桌位保留 10 分钟，等位状态和分配桌号可在顾客页刷新查看。
 
-- 点已占用的桌位，再选 **Open table service**。选择菜品、数量与可选备注，添加明细并提交。未付款、尚在排队的明细可以取消，金额会重算。厨房账号在同一标签页把菜品标记为 **Ready** 后，前台可确认 **Served**。
+- 点已占用的桌位，再选 **Open table service**。选择菜品、数量与可选备注，添加明细并提交。未付款且未开始制作的整单可以编辑，尚在排队的明细可以取消。签到后同一桌的预点单也会显示。厨房标记 **Ready** 后，在前台点击 **Refresh** 即可确认 **Served**。
 - **Record payment** 记录模拟收款，桌位仍占用。**Close visit** 只在当前到店记录没有未结清的订单时可用，确认释放后桌位更新，预约保留已完成状态。
 
-前台与厨房在同一标签页共享演示订单及供应状态，刷新或切换员工账号后仍可演示。旧的前台签到和预约演示记录可迁入共享数据。真实顾客菜单、订单、员工登录和 SQLite 继续沿用现有实现。演示只支持修改或取消尚未签到的当天及未来预约，具体可取消时限由后端确认。没有模拟跨时段自动释放。
+前台、顾客和厨房共用 SQLite 中的预约与订单。前台未提交的点餐草稿保存在当前工作台。
 
-## 后续联调
+## 接入接口
 
-复用 `restaurant/api/frontdesk/routes.py` 中已有接口。当前工作台沿用原有认证与首页，未新增 Flask 路由，正式业务等后端接通。
+写操作复用 `restaurant/api/frontdesk/routes.py` 的表单接口。已到店列表由首页的 `GET /?fragment=seating` 模板片段提供，前台权限由 Flask 会话确认。
 
 | 方法与路径 | 数据与分工 |
 | --- | --- |
 | `GET /frontdesk/bookings` | 后端接收可选 `date`、`time_slot_id`、`phone_number`，返回预约、桌号与桌位状态。前端接入当日列表和桌位图。 |
-| `GET /frontdesk/bookings/new`、`POST /frontdesk/bookings` | 代订表单可与列表同页，由现有工作台打开。后端校验 `contact_name`、`phone_number`、`booking_date`、`time_slot_id`、`party_size` 并确认桌位。 |
+| `POST /frontdesk/bookings` | 工作台内代订表单提交 `contact_name`、`phone_number`、`booking_date`、`time_slot_id`、`party_size` 和可选 `table_id`。 |
 | `GET /frontdesk/bookings/<booking_id>/edit`、`POST /frontdesk/bookings/<booking_id>/edit` | 返回原预约，按 `booking_date`、`time_slot_id` 和 `party_size` 校验并更新。失败保留原预约。 |
 | `POST /frontdesk/bookings/<booking_id>/cancel` | 带 `csrf_token`。后端校验可取消状态和时限，释放预订桌位。 |
 | `POST /frontdesk/bookings/<booking_id>/check-in` | 表单带 `csrf_token`，现场分桌时可传 `table_id`。后端校验预约状态、桌位和容量，保存到店记录，返回实际桌号及更新后的状态。前端同步列表和桌位图。 |

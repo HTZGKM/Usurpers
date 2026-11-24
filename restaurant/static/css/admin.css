@@ -504,3 +504,10 @@ main.admin-page {
   #dp-workspace .dp-overview-grid,#dp-workspace .dp-overview-grid.dp-overview-lower,#dp-workspace .dp-queue {grid-template-columns:minmax(0,1fr)}
   #dp-workspace .dp-summary {grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+.dp-recipe-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  align-items: end;
+  gap: .7rem;
+  margin-block: .85rem;
+}

@@ -1,90 +1,115 @@
-function mountKitchenWorkspace(workspace, username, demo) {
-  if (!demo.kitchenMigrated) {
-    const previous = readStaffPreview("double-portion-kitchen-preview-v1." + username);
-    const completed = new Set(previous?.completed ?? []);
-    const availability = new Map(previous?.availability ?? []);
-    for (const order of demo.orders) {
-      for (const item of order.items) {
-        if (item.status === "Queued" && completed.has(order.id + "-" + item.id)) item.status = "Ready";
-      }
+function mountKitchenWorkspace(workspace) {
+  const find = (selector) => workspace.querySelector(selector);
+  const tickets = find("[data-kitchen-tickets]");
+  const feedback = find("[data-kitchen-feedback]");
+  const stages = {
+    waiting: ["Waiting", "Start preparation", "start"],
+    cooking: ["Cooking", "Mark ready", "complete"],
+    ready: ["Ready for front desk", "", ""],
+  };
+  let view = "queue";
+  let revision = 0;
+  let pending = false;
+
+  function renderQueue(rows, menuRows) {
+    const names = new Map(menuRows.map(dish => [dish.dish_id, dish.dish_name]));
+    const orders = new Map();
+    for (const row of rows) {
+      if (!orders.has(row.order_id)) orders.set(row.order_id, []);
+      orders.get(row.order_id).push(row);
     }
-    for (const dish of demo.dishes) {
-      if (availability.has(dish.key)) dish.sold = !availability.get(dish.key);
-    }
-    demo.kitchenMigrated = true;
-    saveStaffDemo(demo);
+    tickets.innerHTML = [...orders].map(([order, lines]) => {
+      const items = lines.map(line => {
+        const [status, label, action] = stages[line.status];
+        return '<li class="kitchen-item"><div class="kitchen-item-copy"><strong>' +
+          line.quantity + ' × ' + esc(names.get(line.dish_id) ?? "Dish #" + line.dish_id) +
+          '</strong><p>' + esc(status) + (line.note ? ' · ' + esc(line.note) : '') + '</p></div>' +
+          (action ? '<button type="button" class="kitchen-action" data-kitchen-item="' + line.order_item_id +
+            '" data-kitchen-step="' + action + '">' + label + '</button>' : '') + '</li>';
+      }).join("");
+      return '<article class="kitchen-ticket" data-kitchen-ticket="' + order + '"><div class="kitchen-ticket-heading">' +
+        '<h3>Order #' + order + '</h3></div><ul class="kitchen-item-list">' + items + '</ul></article>';
+    }).join("") || '<p class="kitchen-empty">No orders in the preparation queue.</p>';
+    find("[data-kitchen-count]").textContent = rows.length + (rows.length === 1 ? " item" : " items");
   }
 
-  const queueCount = workspace.querySelector("[data-kitchen-count]");
-  const tickets = workspace.querySelector("[data-kitchen-tickets]");
-
-  function renderQueue() {
-    let pending = 0;
-    tickets.innerHTML = demo.orders.map((order) => {
-      const items = order.items.filter((item) => item.status === "Queued" || item.status === "Ready");
-      if (!items.length) return "";
-      const ready = items.every((item) => item.status === "Ready");
-      return '<article class="kitchen-ticket" data-kitchen-ticket="' + order.id + '" aria-labelledby="kitchen-order-' + order.id + '">' +
-        '<div class="kitchen-ticket-heading"><div><p class="kitchen-order-number" id="kitchen-order-' + order.id + '">' +
-        'Order #' + order.id + '</p><h3>Table ' + esc(order.table) + '</h3></div><span class="kitchen-status" data-tone="' +
-        (ready ? 'done">Ready' : 'waiting">In queue') + '</span></div><ul class="kitchen-item-list">' +
-        items.map((item) => {
-          const done = item.status === "Ready";
-          pending += Number(!done);
-          return '<li class="kitchen-item' + (done ? ' is-complete' : '') + '" data-kitchen-item="' + item.id +
-            '"><div class="kitchen-item-copy"><strong>' + item.quantity + ' × ' + esc(item.name) + '</strong>' +
-            (item.note ? '<p>' + esc(item.note) + '</p>' : '') + '</div><button type="button" class="kitchen-action" data-complete="' +
-            item.id + '" aria-label="' + esc(done ? item.name + " completed" : "Complete " + item.name + " for table " + order.table) +
-            '"' + (done ? ' disabled>Completed' : '>Complete') + '</button></li>';
-        }).join("") + '</ul></article>';
-    }).join("");
-    queueCount.textContent = pending === 0 ? "All items completed" : pending === 1 ? "1 item to prepare" : pending + " items to prepare";
-  }
-
-  function renderAvailability() {
+  function renderMenu(rows) {
+    const listed = rows.filter(dish => !dish.is_archived);
+    const categories = { burgers: "burger", pizzas: "pizza", sides: "sides", drinks: "drinks" };
     for (const group of workspace.querySelectorAll("[data-kitchen-category]")) {
-      group.innerHTML = demo.dishes.filter((dish) => !dish.archived && dish.category === group.dataset.kitchenCategory)
-        .map((dish) => {
-          const action = dish.sold ? "Mark available" : "Mark unavailable";
-          return '<li class="kitchen-item" data-kitchen-dish="' + esc(dish.key) + '"><div class="kitchen-item-copy"><strong>' +
-            esc(dish.name) + '</strong><span class="kitchen-status" data-tone="' + (dish.sold ? 'waiting">Unavailable' : 'done">Available') +
-            '</span></div><button type="button" class="kitchen-action" data-toggle-availability aria-label="' +
-            esc(action + ": " + dish.name) + '">' + action + '</button></li>';
+      group.innerHTML = listed.filter(dish => (categories[dish.category] ?? "other") === group.dataset.kitchenCategory)
+        .map(dish => {
+          const next = !dish.is_available;
+          const label = next ? "Mark available" : "Mark unavailable";
+          return '<li class="kitchen-item"><div class="kitchen-item-copy"><strong>' + esc(dish.dish_name) +
+            '</strong><p>' + (next ? "Unavailable" : "Available") +
+            '</p></div><button type="button" class="kitchen-action" data-kitchen-dish="' + dish.dish_id +
+            '" data-kitchen-next="' + next + '" aria-label="' + esc(label + ": " + dish.dish_name) + '">' +
+            label + '</button></li>';
         }).join("") || '<li class="kitchen-item">No listed dishes.</li>';
+      if (group.dataset.kitchenCategory === "other") group.closest("section").hidden =
+        !listed.some(dish => !categories[dish.category]);
     }
-    workspace.querySelector("[data-availability-count]").textContent =
-      demo.dishes.filter((dish) => !dish.archived && dish.sold).length + " unavailable";
+    find("[data-availability-count]").textContent = listed.filter(dish => !dish.is_available).length + " unavailable";
   }
 
-  workspace.addEventListener("click", (event) => {
+  async function refresh() {
+    const current = ++revision;
+    try {
+      const { items: menuRows } = await restaurantRequest("/kitchen/menu");
+      const rows = view === "queue" ? (await Promise.all(Object.keys(stages).map(status =>
+        restaurantRequest(restaurantQuery("/kitchen/queue", { status }))
+      ))).flatMap(result => result.items) : [];
+      if (current !== revision) return;
+      if (view === "queue") renderQueue(rows, menuRows);
+      else renderMenu(menuRows);
+    } catch (error) {
+      if (current === revision) feedback.textContent = error.message;
+    }
+  }
+
+  workspace.addEventListener("click", async (event) => {
     const button = event.target.closest("button");
-    if (!button || button.disabled) return;
-    if (button.matches("[data-complete]")) {
-      const order = demo.orders.find((entry) => entry.id === Number(button.closest("[data-kitchen-ticket]").dataset.kitchenTicket));
-      const item = order?.items.find((entry) => entry.id === Number(button.dataset.complete));
-      if (item?.status !== "Queued") return;
-      item.status = "Ready";
-      saveStaffDemo(demo);
-      renderQueue();
-      (workspace.querySelector("[data-complete]:enabled") ?? queueCount).focus({ preventScroll: true });
-    } else if (button.matches("[data-toggle-availability]")) {
-      const key = button.closest("[data-kitchen-dish]").dataset.kitchenDish;
-      const dish = demo.dishes.find((entry) => entry.key === key);
-      if (!dish || dish.archived) return;
-      dish.sold = !dish.sold;
-      saveStaffDemo(demo);
-      renderAvailability();
-      workspace.querySelector('[data-kitchen-dish="' + CSS.escape(key) + '"] button')?.focus();
+    if (!button || pending) return;
+    if (button.matches("[data-kitchen-refresh]")) {
+      feedback.textContent = "";
+      await refresh();
+      return;
+    }
+    const { kitchenItem, kitchenStep, kitchenDish, kitchenNext } = button.dataset;
+    if (!kitchenItem && !kitchenDish) return;
+    pending = true;
+    ++revision;
+    button.disabled = true;
+    feedback.textContent = "";
+    try {
+      if (kitchenItem) await restaurantRequest("/kitchen/items/" + kitchenItem + "/" + kitchenStep, {});
+      else await restaurantRequest("/kitchen/menu/" + kitchenDish + "/availability", { is_available: kitchenNext });
+      await refresh();
+      const replacement = kitchenItem
+        ? find('[data-kitchen-item="' + kitchenItem + '"]')
+        : find('[data-kitchen-dish="' + kitchenDish + '"]');
+      (replacement ?? find("[data-kitchen-refresh]")).focus();
+    } catch (error) {
+      feedback.textContent = error.message;
+      if (error.status === 409) await refresh();
+    } finally {
+      button.disabled = false;
+      pending = false;
     }
   });
 
-  renderQueue();
-  renderAvailability();
-  return (view, focus) => {
-    const queue = workspace.querySelector("#kitchen-queue");
-    const availability = workspace.querySelector("#kitchen-availability");
+  setInterval(() => {
+    if (view === "queue" && !pending && !document.hidden && !tickets.contains(document.activeElement)) refresh();
+  }, 8000);
+  return (section, focus) => {
+    view = section;
+    const queue = find("#kitchen-queue");
+    const availability = find("#kitchen-availability");
     queue.hidden = view !== "queue";
     availability.hidden = view !== "availability";
     if (focus) (view === "queue" ? queue : availability).querySelector("h2").focus();
+    feedback.textContent = "";
+    refresh();
   };
 }

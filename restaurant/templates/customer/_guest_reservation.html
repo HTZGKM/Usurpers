@@ -26,16 +26,16 @@
         {% for n in range(1,7) %}<option value="{{ n }}">{{ n }} {{ 'guest' if n == 1 else 'guests' }}</option>{% endfor %}
       </select></label>
     </div>
-    <fieldset><legend>Arrival time</legend>
-      {% for slot in slots %}<button type="button" class="choice" data-action="time:{{ slot }}" aria-pressed="false">{{ slot }}</button>{% endfor %}
+    <fieldset><legend>Dining time</legend>
+      {% for slot_id, slot in slots.items() %}<button type="button" class="choice" data-action="time:{{ slot_id }}" aria-pressed="false">{{ slot }}</button>{% endfor %}
     </fieldset>
     <div class="booking-table-choice">
       <p class="summary" id="summary" aria-live="polite"></p>
       {{ button('Choose a table', 'focus-floor', 'secondary') }}
     </div>
     <div class="twocol">
-      <label class="field">Guest name<input id="name" autocomplete="name" required maxlength="60"></label>
-      <label class="field">Phone<input type="tel" id="phone" autocomplete="tel" required minlength="6" maxlength="24"></label>
+      <label class="field">Guest name<input id="name" value="{{ account.name }}" readonly></label>
+      <label class="field">Phone<input type="tel" id="phone" value="{{ account.username }}" readonly></label>
     </div>
     <button class="primary" type="submit">Confirm reservation</button>
     <p class="statusline" role="status"></p>
