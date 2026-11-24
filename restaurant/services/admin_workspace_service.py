@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from restaurant.db.database import get_connection
+from restaurant.db.database import begin_read, get_connection, using_postgres
 from restaurant.services.common import valid_date
 
 
@@ -35,12 +35,18 @@ def _order_rows(db, condition="", values=()):
 
 def get_ledger(day):
     with get_connection() as db:
-        db.execute("BEGIN")
+        begin_read(db)
         if not day:
             return _order_rows(db)
         return _order_rows(
-            db, "WHERE date(h.created_at, '+8 hours') = ?", (valid_date(day, "date"),)
+            db, f"WHERE {_service_day_sql('h.created_at')} = ?", (valid_date(day, "date"),)
         )
+
+
+def _service_day_sql(column):
+    if using_postgres():
+        return f"to_char({column} + INTERVAL '8 hours', 'YYYY-MM-DD')"
+    return f"date({column}, '+8 hours')"
 
 
 def get_workspace():
@@ -51,18 +57,18 @@ def get_workspace():
     today = now.date()
     first_day = today - timedelta(days=6)
     with get_connection() as db:
-        db.execute("BEGIN")
+        begin_read(db)
         orders = _order_rows(
             db,
-            """WHERE date(h.created_at, '+8 hours') BETWEEN ? AND ?
+            f"""WHERE {_service_day_sql('h.created_at')} BETWEEN ? AND ?
                      OR h.status = 'active'""",
             (first_day.isoformat(), today.isoformat()),
         )
         days = [
             row[0]
             for row in db.execute(
-                "SELECT DISTINCT date(created_at, '+8 hours') day FROM orders "
-                "WHERE day IS NOT NULL ORDER BY day DESC"
+                f"SELECT DISTINCT {_service_day_sql('created_at')} AS service_day FROM orders "
+                "WHERE created_at IS NOT NULL ORDER BY service_day DESC"
             )
         ]
         tables = [

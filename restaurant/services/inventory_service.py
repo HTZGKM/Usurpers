@@ -1,5 +1,5 @@
 """食材库存管理。只判断现存量，不做预留。"""
-from restaurant.db.database import get_connection
+from restaurant.db.database import begin_write, get_connection, insert_id
 from .common import ServiceError, positive_int, required_text
 import math
 from datetime import date, datetime
@@ -14,7 +14,7 @@ def adjust_stock(ingredient_id, quantity, movement_type="adjustment", reference=
     if movement_type not in {"adjustment","delivery","spoilage","correction"}: raise ServiceError("movement_type 取值不合法。",field="movement_type")
     reference=required_text(reference,"reference",limit=120) if reference is not None else None
     with get_connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         row=db.execute("SELECT on_hand FROM ingredients WHERE ingredient_id=?",(iid,)).fetchone()
         if not row: raise ServiceError("食材不存在。",404)
         if float(row[0])+delta < 0: raise ServiceError("调整后库存不能为负。",409,code="INVENTORY_CONFLICT")
@@ -34,11 +34,11 @@ def create_ingredient(name, unit, on_hand, expires_at=None):
             try: expires_at=date.fromisoformat(expires_at).isoformat()+" 23:59:59"
             except ValueError as exc: raise ServiceError("expires_at 必须是 ISO 日期或日期时间。",field="expires_at") from exc
     with get_connection() as db:
-        try:
-            cur=db.execute("INSERT INTO ingredients(name,unit,on_hand,expires_at) VALUES(?,?,?,?)",(name,unit,quantity,expires_at))
-        except __import__('sqlite3').IntegrityError as exc:
-            raise ServiceError("食材名称已存在。",409,"name","DUPLICATE") from exc
-        return dict(db.execute("SELECT * FROM ingredients WHERE ingredient_id=?",(cur.lastrowid,)).fetchone())
+        ingredient_id = insert_id(db, """INSERT INTO ingredients(name,unit,on_hand,expires_at) VALUES(?,?,?,?)
+            ON CONFLICT(name) DO NOTHING""", (name,unit,quantity,expires_at), "ingredient_id")
+        if ingredient_id is None:
+            raise ServiceError("食材名称已存在。",409,"name","DUPLICATE")
+        return dict(db.execute("SELECT * FROM ingredients WHERE ingredient_id=?",(ingredient_id,)).fetchone())
 
 
 def _recipe_rows(db, dish_id):
@@ -70,7 +70,7 @@ def set_recipe(dish_id, ingredients):
         if not math.isfinite(amount) or amount<=0: raise ServiceError("配方用量必须是大于 0 的有效数字。",field=f"ingredients[{index}].quantity_per_dish")
         values.append((iid,amount))
     with get_connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         if not db.execute("SELECT 1 FROM dishes WHERE dish_id=?",(did,)).fetchone(): raise ServiceError("菜品不存在。",404)
         for iid,_ in values:
             if not db.execute("SELECT 1 FROM ingredients WHERE ingredient_id=?",(iid,)).fetchone(): raise ServiceError("配方食材不存在。",404)

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -72,7 +72,9 @@ def date_time(value: Any, field: str = "estimated_ready_at") -> str:
     value=required_text(value,field,limit=32)
     try: parsed=datetime.fromisoformat(value.replace("Z","+00:00"))
     except ValueError as exc: raise ServiceError("时间必须是 ISO 日期时间格式。",field=field) from exc
-    return parsed.isoformat(sep=" ")
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed.isoformat(sep=" ", timespec="seconds")
 
 
 def enum_value(value: Any, choices: set[str] | tuple[str, ...], field: str) -> str:

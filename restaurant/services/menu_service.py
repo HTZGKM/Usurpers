@@ -1,4 +1,4 @@
-from restaurant.db.database import get_connection
+from restaurant.db.database import begin_write, get_connection, insert_id
 from .common import ServiceError, money, positive_int, required_text
 
 
@@ -40,14 +40,14 @@ def create_item(name, price, ingredients="", prep_time_minutes=10, image_url=Non
     if ingredients is None or len(ingredients)>1000: raise ServiceError("原料描述格式不正确。",field="ingredients")
     if image_url is not None and (not isinstance(image_url,str) or len(image_url)>500): raise ServiceError("图片地址格式不正确。",field="image_url")
     with get_connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         if db.execute("SELECT 1 FROM dishes WHERE dish_name=?",(name,)).fetchone(): raise ServiceError("菜品名称已存在。",409,"name","DUPLICATE")
-        cur=db.execute(
+        dish_id = insert_id(db,
             """INSERT INTO dishes(dish_name,price,ingredients,prep_time_minutes,image_url,category)
                VALUES(?,?,?,?,?,?)""",
-            (name, amount, ingredients, prep, image_url, _category(category)),
+            (name, amount, ingredients, prep, image_url, _category(category)), "dish_id",
         )
-        return dict(db.execute("SELECT * FROM dishes WHERE dish_id=?",(cur.lastrowid,)).fetchone())
+        return dict(db.execute("SELECT * FROM dishes WHERE dish_id=?",(dish_id,)).fetchone())
 
 
 def update_item(
@@ -56,7 +56,7 @@ def update_item(
 ):
     did=positive_int(dish_id,"dish_id")
     with get_connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         existing=db.execute("SELECT * FROM dishes WHERE dish_id=?",(did,)).fetchone()
         if not existing: raise ServiceError("菜品不存在。",404,"dish_id","NOT_FOUND")
         if name is not None: name=required_text(name,"name",limit=100)

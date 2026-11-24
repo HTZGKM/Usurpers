@@ -64,3 +64,17 @@ python3.12 -m venv .venv
 - 若 PowerShell 中曾手动设置 `USURPERS_DB_PATH`，运行 `Remove-Item Env:USURPERS_DB_PATH` 清除当前终端的覆盖设置，再按默认方式启动。
 
 公开部署使用 HTTPS，并设置 `USURPERS_HTTPS=1` 和私有的 `USURPERS_SECRET_KEY`。配置后的会话 Cookie 使用 Secure、HttpOnly 和 SameSite=Lax。前端和接口以同源方式运行。
+
+## Vercel 部署
+
+Vercel 从根目录导入 `app.py` 中的 Flask 应用。项目的 Production 环境需要配置 `DATABASE_URL`、`USURPERS_SECRET_KEY` 和 `USURPERS_HTTPS=1`。`DATABASE_URL` 使用 Neon 的 PostgreSQL 连接串。`vercel.json` 中的构建步骤会把样式、脚本、字体和图片发布到原有的 `/static/` 地址。
+
+首次上线前，从有原 SQLite 数据的电脑将数据导入一个空的 PostgreSQL 库。先在本机终端设置目标 `DATABASE_URL`，再运行以下命令。启动 Flask 和更新页面时直接使用已准备好的云数据库。
+
+```powershell
+.\.venv\Scripts\python.exe -m restaurant.db.migrate --source restaurant/data/shuangfen.db --credentials-file ..\local-runtime\vercel-accounts.tsv
+```
+
+迁移会只读打开源库并保留记录 ID。仍在使用公开演示密码的账号会在目标库获得新密码，登录信息只写到上面指定的本机文件。导入命令会拒绝已有业务数据的目标库。
+
+在已连接 Vercel 项目的目录中发布组员要测试的版本时，运行 `vercel deploy --prod`。部署成功后继续分享该项目的公开网址。更新前后端代码用日常 Git 分支和 PR 流程。修改表结构时单独执行对应的数据库迁移。

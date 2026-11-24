@@ -1,4 +1,4 @@
-from restaurant.db.database import get_connection
+from restaurant.db.database import begin_write, get_connection
 from .common import ServiceError, positive_int
 
 
@@ -22,7 +22,7 @@ def get_ready_items():
 def _transition(item_id, expected, target):
     iid=positive_int(item_id,"order_item_id")
     with get_connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         cur=db.execute("""UPDATE order_items SET status=? WHERE order_item_id=? AND status=?
             AND EXISTS (SELECT 1 FROM kitchen_queue WHERE order_item_id=? AND status=?)""",
             (target,iid,expected,iid,expected))

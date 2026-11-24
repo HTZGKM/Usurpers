@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "flask",
+  "buildCommand": "python scripts/vercel_assets.py",
+  "regions": ["sin1"],
+  "headers": [
+    {
+      "source": "/static/(.*).webp",
+      "headers": [{ "key": "Content-Type", "value": "image/webp" }]
+    },
+    {
+      "source": "/static/fonts/(.*).ttf",
+      "headers": [{ "key": "Content-Type", "value": "font/ttf" }]
+    }
+  ],
+  "functions": {
+    "app.py": {
+      "includeFiles": "restaurant/{templates/**,api/customer/catalog.json,static/fonts/**}"
+    }
+  }
+}

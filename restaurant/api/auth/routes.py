@@ -3,6 +3,7 @@ from restaurant.route_utils import require_form_request
 from contextlib import closing
 from hmac import compare_digest
 from sqlite3 import IntegrityError
+from psycopg import IntegrityError as PostgresIntegrityError
 from flask import (
     Blueprint,
     flash,
@@ -127,7 +128,7 @@ def register():
                         generate_password_hash(form.password.data),
                     ),
                 )
-        except IntegrityError:
+        except (IntegrityError, PostgresIntegrityError):
             form.phone_number.errors.append("This phone number is already registered.")
         else:
             flash("Your account was created. Please log in.", "success")

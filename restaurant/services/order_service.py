@@ -1,9 +1,11 @@
-from restaurant.db.database import get_connection
+from restaurant.db.database import begin_write, get_connection, insert_id
 from .common import ServiceError, date_time, order_items, positive_int
 
 
 def refresh_order_status(db, order_id):
-    counts=db.execute("SELECT COUNT(*) total,SUM(status='served') served,SUM(status='cancelled') cancelled FROM order_items WHERE order_id=?",(order_id,)).fetchone()
+    counts=db.execute("""SELECT COUNT(*) total, SUM(CASE WHEN status='served' THEN 1 ELSE 0 END) served,
+        SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) cancelled
+        FROM order_items WHERE order_id=?""", (order_id,)).fetchone()
     if not counts or not counts["total"]: return
     if counts["cancelled"]==counts["total"]: status="cancelled"
     elif counts["served"]+counts["cancelled"]==counts["total"]: status="completed"
@@ -21,12 +23,12 @@ def create_dine_in_order(visit_id, items, customer_phone=None):
     visit = positive_int(visit_id, "visit_id")
     lines = order_items(items)
     with get_connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         session = db.execute("SELECT * FROM dining_sessions WHERE visit_id=? AND status='seated'", (visit,)).fetchone()
         if not session: raise ServiceError("堂食记录不存在或已结束。", 409, "visit_id")
         if customer_phone and session["customer_phone"] != customer_phone: raise ServiceError("无权为该堂食记录下单。",403,code="FORBIDDEN")
-        header = db.execute("INSERT INTO orders(visit_id,customer_phone,contact_name,phone_number,table_id) VALUES(?,?,?,?,?)", (visit, customer_phone or session["customer_phone"],session["contact_name"],session["phone_number"],session["table_id"]))
-        order_id = header.lastrowid
+        order_id = insert_id(db, "INSERT INTO orders(visit_id,customer_phone,contact_name,phone_number,table_id) VALUES(?,?,?,?,?)",
+                             (visit, customer_phone or session["customer_phone"],session["contact_name"],session["phone_number"],session["table_id"]), "order_id")
         total = 0
         for line in lines:
             dish = db.execute("SELECT price FROM dishes WHERE dish_id=? AND is_available=1 AND is_archived=0",(line["dish_id"],)).fetchone()
@@ -34,8 +36,9 @@ def create_dine_in_order(visit_id, items, customer_phone=None):
             price = float(dish["price"])
             line_total = round(price * line["quantity"], 2)
             total += line_total
-            line_cur=db.execute("INSERT INTO order_items(order_id,dish_id,quantity,unit_price,total_price,note) VALUES(?,?,?,?,?,?)",(order_id,line["dish_id"],line["quantity"],price,line_total,line["note"]))
-            db.execute("INSERT INTO kitchen_queue(order_id,order_item_id,dish_id,quantity) VALUES(?,?,?,?)",(order_id,line_cur.lastrowid,line["dish_id"],line["quantity"]))
+            item_id = insert_id(db, "INSERT INTO order_items(order_id,dish_id,quantity,unit_price,total_price,note) VALUES(?,?,?,?,?,?)",
+                                (order_id,line["dish_id"],line["quantity"],price,line_total,line["note"]), "order_item_id")
+            db.execute("INSERT INTO kitchen_queue(order_id,order_item_id,dish_id,quantity) VALUES(?,?,?,?)",(order_id,item_id,line["dish_id"],line["quantity"]))
         return {"order_id": order_id, "total_amount": round(total,2), "status":"active", "payment_status":"unpaid"}
 
 
@@ -43,11 +46,12 @@ def create_preorder(booking_id, customer_phone, items, estimated_ready_at):
     bid=positive_int(booking_id,"booking_id"); ready=date_time(estimated_ready_at)
     lines=order_items(items)
     with get_connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         booking=db.execute("SELECT * FROM bookings WHERE booking_id=? AND customer_phone=? AND status='booked'",(bid,customer_phone)).fetchone()
         if not booking: raise ServiceError("预订不存在、已取消或不属于当前顾客。",404)
-        header=db.execute("INSERT INTO orders(booking_id,customer_phone,contact_name,phone_number,table_id,order_type) VALUES(?,?,?,?,?,'preorder')",(bid,customer_phone,booking["contact_name"],booking["phone_number"],booking["table_id"]))
-        oid=header.lastrowid; total=0
+        oid = insert_id(db, "INSERT INTO orders(booking_id,customer_phone,contact_name,phone_number,table_id,order_type) VALUES(?,?,?,?,?,'preorder')",
+                        (bid,customer_phone,booking["contact_name"],booking["phone_number"],booking["table_id"]), "order_id")
+        total = 0
         for item in lines:
             dish=db.execute("SELECT price FROM dishes WHERE dish_id=? AND is_available=1 AND is_archived=0",(item["dish_id"],)).fetchone()
             if not dish: raise ServiceError(f"菜品 {item['dish_id']} 不存在或停售。",409,"items","RESOURCE_CONFLICT")
@@ -68,7 +72,7 @@ def calculate_total(order_id):
 def cancel_order_item(order_id, order_item_id, customer_phone=None):
     oid=positive_int(order_id,"order_id"); iid=positive_int(order_item_id,"order_item_id")
     with get_connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         q="SELECT l.status,h.payment_status,h.customer_phone FROM order_items l JOIN orders h USING(order_id) WHERE l.order_id=? AND l.order_item_id=?"
         row=db.execute(q,(oid,iid)).fetchone()
         if not row: raise ServiceError("订单明细不存在。",404)
@@ -83,7 +87,7 @@ def cancel_order_item(order_id, order_item_id, customer_phone=None):
 def pay_order(order_id, customer_phone=None):
     oid=positive_int(order_id,"order_id")
     with get_connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         q="SELECT status,payment_status,order_type,visit_id FROM orders WHERE order_id=?"; args=[oid]
         if customer_phone: q += " AND customer_phone=?"; args.append(customer_phone)
         row=db.execute(q,args).fetchone()
@@ -127,7 +131,7 @@ def get_orders(active_only=False, phone=None, table_id=None):
 def cancel_order(order_id, customer_phone=None):
     oid=positive_int(order_id,"order_id")
     with get_connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         q="SELECT * FROM orders WHERE order_id=?"; args=[oid]
         if customer_phone: q += " AND customer_phone=?"; args.append(customer_phone)
         row=db.execute(q,args).fetchone()
@@ -143,7 +147,7 @@ def cancel_order(order_id, customer_phone=None):
 def update_order(order_id, items, customer_phone=None):
     oid=positive_int(order_id,"order_id"); lines=order_items(items)
     with get_connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         query="SELECT * FROM orders WHERE order_id=?"; args=[oid]
         if customer_phone: query+=" AND customer_phone=?"; args.append(customer_phone)
         order=db.execute(query,args).fetchone()
@@ -169,10 +173,10 @@ def update_order(order_id, items, customer_phone=None):
         for line in lines:
             price = dishes[line["dish_id"]]
             line_total = round(price * line["quantity"], 2)
-            cur=db.execute("INSERT INTO order_items(order_id,dish_id,quantity,unit_price,total_price,note,estimated_ready_at) VALUES(?,?,?,?,?,?,?)",
-                           (oid,line["dish_id"],line["quantity"],price,line_total,line["note"],ready_at))
+            item_id = insert_id(db, "INSERT INTO order_items(order_id,dish_id,quantity,unit_price,total_price,note,estimated_ready_at) VALUES(?,?,?,?,?,?,?)",
+                                (oid,line["dish_id"],line["quantity"],price,line_total,line["note"],ready_at), "order_item_id")
             if not preorder:
-                db.execute("INSERT INTO kitchen_queue(order_id,order_item_id,dish_id,quantity) VALUES(?,?,?,?)",(oid,cur.lastrowid,line["dish_id"],line["quantity"]))
+                db.execute("INSERT INTO kitchen_queue(order_id,order_item_id,dish_id,quantity) VALUES(?,?,?,?)",(oid,item_id,line["dish_id"],line["quantity"]))
         result=dict(db.execute("SELECT * FROM orders WHERE order_id=?",(oid,)).fetchone())
         result["items"]=[dict(r) for r in db.execute("SELECT l.*,d.dish_name FROM order_items l JOIN dishes d USING(dish_id) WHERE l.order_id=? ORDER BY l.order_item_id",(oid,))]
         result["total_amount"]=_order_total(db, oid)

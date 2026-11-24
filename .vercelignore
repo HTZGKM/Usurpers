@@ -1,0 +1,11 @@
+.idea/
+.venv/
+venv/
+.env
+.env.*
+restaurant/data/
+restaurant/assets/
+restaurant/static/fonts/*.local.woff2
+public/static/
+__pycache__/
+*.py[cod]
