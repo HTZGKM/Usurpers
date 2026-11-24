@@ -12,7 +12,7 @@ def _order_rows(db, condition="", values=()):
         dict(row, items=[])
         for row in db.execute(
             f"""SELECT h.order_id, h.table_id, h.created_at, h.status, h.payment_status
-                FROM order_headers h {condition}
+                FROM orders h {condition}
                 ORDER BY h.created_at DESC, h.order_id DESC""",
             values,
         )
@@ -21,8 +21,8 @@ def _order_rows(db, condition="", values=()):
     for row in db.execute(
         f"""SELECT l.order_id, l.dish_id, l.quantity, l.unit_price, l.note, l.status,
                    d.dish_name, d.category, q.status AS queue_status, q.completed_at AS ready_at
-            FROM order_headers h
-            JOIN order_lines l ON l.order_id = h.order_id
+            FROM orders h
+            JOIN order_items l ON l.order_id = h.order_id
             JOIN dishes d ON d.dish_id = l.dish_id
             LEFT JOIN kitchen_queue q ON q.order_item_id = l.order_item_id
             {condition}
@@ -61,7 +61,7 @@ def get_workspace():
         days = [
             row[0]
             for row in db.execute(
-                "SELECT DISTINCT date(created_at, '+8 hours') day FROM order_headers "
+                "SELECT DISTINCT date(created_at, '+8 hours') day FROM orders "
                 "WHERE day IS NOT NULL ORDER BY day DESC"
             )
         ]
@@ -72,10 +72,10 @@ def get_workspace():
         bookings = [
             dict(row)
             for row in db.execute(
-                """SELECT b.*, t.starts_at, t.ends_at
-                   FROM bookings b JOIN time_slots t USING(time_slot_id)
+                """SELECT b.*, substr(b.time_slot,1,5) AS starts_at, substr(b.time_slot,7,5) AS ends_at
+                   FROM bookings b
                    WHERE b.status IN ('booked', 'arrived')
-                   ORDER BY b.booking_date, t.starts_at, b.booking_id"""
+                   ORDER BY b.booking_date, b.time_slot, b.booking_id"""
             )
         ]
         visits = [

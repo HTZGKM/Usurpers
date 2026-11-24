@@ -17,7 +17,7 @@ python app.py
 
 浏览器打开 <http://127.0.0.1:5000/>。页面和登录接口使用同一个 Flask 服务，无需另外启动静态文件服务器。
 
-账号登录和注册使用 SQLite。菜单、订座和下单仍是前端演示。运行入口和演示边界见 [前端说明](restaurant/README.md)。
+顾客、前台、厨房和主管共用 Flask 与 SQLite。可以走通选桌预约、签到、下单、制作、上菜、记账付款和关桌。顾客的未提交购物袋保存在当前标签页。
 
 ### 顾客账号联调
 
@@ -25,7 +25,14 @@ python app.py
 2. 在 **Sign in** 先输入错误密码检查提示，再用正确密码登录。刷新页面，访问 `/auth/me` 可看到当前顾客。
 3. 在账户页点击 **Sign out**，再次访问 `/auth/me` 应返回 HTTP 401。也可以从 `/auth/register` 和 `/auth/login` 直接测试原生 Jinja 表单。
 
-菜单有 14 道示例菜品。订座、购物袋和模拟付款保存在当前浏览器标签页，前台与厨房暂时收不到这些记录。
+### 堂食联调
+
+1. 顾客在 **Book a table** 选时段和桌位，或在 **Your visit** 取等位号。已有预约时，可把购物袋作为预点单提交。
+2. 前台在 **Reservations** 确认到店，或在 **Walk-in waitlist** 叫号和安排入座。顾客刷新 **Your visit** 后可以提交堂食订单。预点单在签到且到预约时间后进入厨房。未开始制作且未结账的订单可以改单或取消。
+3. 厨房在 **Queue** 开始制作并标记 **Ready**。前台在 **Table service** 标记上菜、记录付款并释放桌位。主管在 **Overview** 或 **Orders** 查看同一笔订单。
+4. 主管在 **Inventory** 新增食材、手动调整库存和保存配方，在 **Accounts** 管理员工及顾客账号。
+
+需要并行登录不同角色时，可用独立浏览器配置或无痕窗口分开保存 Flask 会话。
 
 ## SQLite 初始化
 
@@ -37,12 +44,19 @@ python app.py
 python -m restaurant.db
 ```
 
-这条命令默认是“有库就复用、没库才创建”，不会覆盖现有 `.db`。
+旧表结构的数据库会在启动时停止并显示提示。保留旧库备份，联调时可用 `USURPERS_DB_PATH` 指到一个新文件。PowerShell 示例
 
-如果要强制删除旧库并重新生成一份干净的数据库，执行：
+```powershell
+$env:USURPERS_DB_PATH = Join-Path ([System.IO.Path]::GetTempPath()) ('usurpers-mvp-' + [guid]::NewGuid() + '.db')
+.\.venv\Scripts\python.exe -m flask --app app run --port 18752
+```
+
+只有确认现有开发库可删除、已经备份时，才用以下命令覆盖所选数据库文件：
 
 ```bash
 python -m restaurant.db --reset
 ```
 
-初始化完成后会在终端输出各张表的记录数。默认种子账号的原始密码都是 `123456`，数据库中保存的是 SHA-256 哈希值。
+初始化会输出各表计数。开发种子账号仅用于演示，登录后会把旧格式密码摘要更新为新版密码哈希。历史订单以北京时间按近七天生成，当天只补已过去的样例时间。
+
+公开部署使用 HTTPS，并设置 `USURPERS_HTTPS=1` 和私有的 `USURPERS_SECRET_KEY`。配置后的会话 Cookie 使用 Secure、HttpOnly 和 SameSite=Lax。前端和接口以同源方式运行。

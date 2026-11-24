@@ -24,7 +24,7 @@ def run_scheduled_tasks(now=None):
             result=QueueManager.call_next(table_id)
             if result: called.append(result)
         except ServiceError as error:
-            if error.code != "RESOURCE_CONFLICT": raise
+            if error.code != "TABLE_UNAVAILABLE": raise
     return {"expired_waitlist":expired,"promoted_preorders":promoted,"called_parties":called}
 
 

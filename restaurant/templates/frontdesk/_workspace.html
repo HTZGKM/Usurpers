@@ -4,9 +4,10 @@
     <h1 tabindex="-1">Front desk</h1>
     <div class="desk-heading-meta">
       <time data-desk-date></time>
-      <span class="desk-demo">Demo workspace</span>
+      <button type="button" class="desk-subtle" data-desk-refresh>Refresh</button>
     </div>
   </div>
+  <p class="desk-floor-feedback" data-desk-live-notice role="status"></p>
 
   <div class="desk-grid" data-desk-reception>
     <section class="desk-panel" aria-labelledby="desk-floor-title">
@@ -37,7 +38,7 @@
         <label>Time slot
           <select data-desk-slot>
             <option value="">All times</option>
-            {% for slot in slots %}<option value="{{ slot }}">{{ slot }}</option>{% endfor %}
+            {% for slot_id, slot in slots.items() %}<option value="{{ slot_id }}">{{ slot }}</option>{% endfor %}
           </select>
         </label>
         <label>Phone number
@@ -64,10 +65,21 @@
     </section>
   </div>
 
+  <section class="desk-panel desk-waitlist" data-desk-waitlist aria-labelledby="desk-waitlist-title">
+    <div class="desk-panel-heading"><h2 id="desk-waitlist-title">Walk-in waitlist</h2></div>
+    <form class="desk-check-in" data-desk-call>
+      <label>Available table <select name="table_id" required></select></label>
+      <button type="submit" class="desk-confirm">Call next party</button>
+    </form>
+    <ul class="desk-service-list" data-desk-waiting-list></ul>
+    <p data-desk-waiting-empty>No parties on the waitlist.</p>
+  </section>
+
   <div data-desk-service-view hidden>
   <section class="desk-panel" aria-labelledby="desk-picker-title">
     <div class="desk-panel-heading"><h2 id="desk-picker-title" tabindex="-1">Table service</h2></div>
     <div class="desk-service-picker" data-desk-service-picker></div>
+    <div data-desk-unassigned></div>
   </section>
   <section class="desk-panel desk-service" data-desk-service aria-labelledby="desk-service-title" hidden>
     <div class="desk-panel-heading">
@@ -122,21 +134,28 @@
       <div class="desk-editor-fields">
         <label>Booking date <input type="date" name="booking_date" required></label>
         <label>Arrival time
-          <select name="time_slot" required>
-            {% for slot in slots %}<option value="{{ slot }}">{{ slot }}</option>{% endfor %}
+          <select name="time_slot_id" required>
+            {% for slot_id, slot in slots.items() %}<option value="{{ slot_id }}">{{ slot }}</option>{% endfor %}
           </select>
         </label>
         <label>Party size <input type="number" name="party_size" min="1" required></label>
+        <label>Preferred table <select name="table_id">
+          <option value="">Assign automatically</option>
+          {% for label, id in table_ids.items() %}<option value="{{ id }}">{{ label }}</option>{% endfor %}
+        </select></label>
       </div>
       <p class="desk-form-error" data-desk-editor-error role="alert" hidden></p>
       <button type="submit" class="desk-confirm" data-desk-editor-submit>Save booking</button>
     </form>
     <form class="desk-editor" data-desk-walk-in hidden>
+      <label>Guest name <input name="contact_name" maxlength="60"></label>
+      <label>Phone <input type="tel" name="phone_number" maxlength="24"></label>
       <label>Party size <input type="number" name="party_size" min="1" required></label>
       <p class="desk-form-error" data-desk-walk-error role="alert" hidden></p>
       <button type="submit" class="desk-confirm">Confirm seating</button>
     </form>
     <form class="desk-editor" data-desk-cancellation hidden>
+      <p class="desk-form-error" role="alert" hidden></p>
       <button type="submit" class="desk-confirm desk-destructive">Confirm cancellation</button>
     </form>
   </dialog>

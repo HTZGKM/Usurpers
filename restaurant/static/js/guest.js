@@ -5,41 +5,38 @@ const dishSheet = document.querySelector(".dish-modal");
 const {
   dishes,
   tables,
+  tableIds,
   slots,
   categories: cats,
   account,
   staffLinks,
 } = JSON.parse(document.querySelector("#guest-data").textContent);
 const isStaff = staffLinks.length > 0;
+const guestPageTransition = !isStaff && typeof createGuestPageTransition === "function"
+  ? createGuestPageTransition({ document, reducedMotion: reduce })
+  : null;
 const customer = account?.role === "customer" ? account : null;
 const loginPrompt = document.querySelector("#customer-login-prompt");
 const menu = new Map(dishes.map((d) => [d.key, d]));
+const tableLabels = new Map(Object.entries(tableIds).map(([label, id]) => [id, label]));
 const imageBase = document.body.dataset.images;
 function asset(dish, detail = false) {
+  if (!dish.photo) return imageBase + "editorial/place-setting.webp";
   const folder = detail && dish.category === "pizza" ? "detail" : "catalog";
-  return imageBase + folder + "/" + dish.key + ".webp";
+  return imageBase + folder + "/" + dish.photo + ".webp";
 }
 function mount(name) {
   app.replaceChildren(
     document.getElementById("view-" + name).content.cloneNode(true),
   );
 }
-const today = () => {
-  const d = new Date();
-  return [
-    d.getFullYear(),
-    String(d.getMonth() + 1).padStart(2, "0"),
-    String(d.getDate()).padStart(2, "0"),
-  ].join("-");
-};
+const today = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date());
 const blank = () => ({
   draft: {
     date: today(),
     guests: 2,
-    time: "18:00",
+    time: "2",
     table: "",
-    name: customer?.name || "Alex",
-    phone: customer?.username || "139 0000 0001",
   },
   booking: null,
   checked: false,
@@ -50,23 +47,21 @@ const blank = () => ({
 });
 let state = blank(),
   edit = false;
-const key = customer ? "double-portion-room-preview-v1." + customer.username : null;
+const key = customer ? "double-portion-order-draft." + customer.username : null;
 try {
   const saved = key && JSON.parse(sessionStorage.getItem(key));
   if (saved?.draft) {
-    const { bag, bill, paid, ...rest } = saved;
-    state = {
-      ...state,
-      ...rest,
-      bag: restoreMealBag(bag, menu),
-      bill: restoreMealOrder(bill, menu, saved.booking?.table, paid),
-    };
+    for (const field of ["date", "guests", "time", "table"]) {
+      if (saved.draft[field] != null) state.draft[field] = saved.draft[field];
+    }
+    state.bag = restoreMealBag(saved.bag, menu);
   }
 } catch {}
 function persist() {
   if (!key) return;
   try {
-    sessionStorage.setItem(key, JSON.stringify(state));
+    const { date, guests, time, table } = state.draft;
+    sessionStorage.setItem(key, JSON.stringify({ draft: { date, guests, time, table }, bag: state.bag }));
   } catch {}
 }
 const esc = (s) =>
@@ -161,14 +156,12 @@ function showWorkspace(focus) {
   const hash = section === defaultSection ? "#workspace" : "#workspace/" + section;
   if (location.hash !== hash) history.replaceState(null, "", hash);
   if (!renderStaffSection) {
-    const date = today();
-    const demo = account.role === "admin" ? null : loadStaffDemo(dishes, date, slots);
     app.className = account.role + "-page";
     mount("workspace");
     if (account.role === "kitchen") {
-      renderStaffSection = mountKitchenWorkspace(app.querySelector("[data-kitchen]"), account.username, demo);
+      renderStaffSection = mountKitchenWorkspace(app.querySelector("[data-kitchen]"));
     } else if (account.role === "frontdesk") {
-      renderStaffSection = mountFrontdeskWorkspace(app.querySelector("[data-frontdesk]"), account.username, tables, slots, date, demo, goWorkspace);
+      renderStaffSection = mountFrontdeskWorkspace(app.querySelector("[data-frontdesk]"), goWorkspace);
     } else {
       renderStaffSection = mountAdminWorkspace(app.querySelector("[data-admin]"), tables, dishes, goWorkspace);
     }
@@ -220,9 +213,45 @@ function animate(el, ms) {
     );
 }
 
+let availableTables = null;
+let availabilityKey = "";
+let availabilityLoading = false;
+let availabilityVersion = 0;
+let customerPending = false;
+let customerFeedback = "";
+let customerVisit = null;
+let customerLoaded = false;
+let customerRefreshVersion = 0;
+
 function available(t, d) {
-  const seed = Number(d.date.replaceAll("-", "")) + slots.indexOf(d.time);
-  return t[1] >= d.guests && t[0] !== tables[seed % tables.length]?.[0];
+  if (availableTables?.has(tableIds[t[0]])) return true;
+  const original = state.booking;
+  return Boolean(availableTables && edit && original?.table === t[0] &&
+    original.date === d.date && original.time === d.time && t[1] >= d.guests);
+}
+
+function syncAvailability(force = false) {
+  const d = state.draft;
+  const query = restaurantQuery("/tables/available", {
+    date: d.date, time_slot_id: d.time, party_size: d.guests,
+  });
+  if (query === availabilityKey && !force) return;
+  const version = ++availabilityVersion;
+  availabilityKey = query;
+  availableTables = null;
+  availabilityLoading = true;
+  restaurantRequest(query).then(({ tables: rows }) => {
+    if (version !== availabilityVersion) return;
+    availableTables = new Set(rows.map(table => table.table_id));
+    availabilityLoading = false;
+    if (app.querySelector("#reservation")) syncDraft();
+  }).catch(error => {
+    if (version !== availabilityVersion) return;
+    availabilityKey = "";
+    availabilityLoading = false;
+    app.querySelector("#summary")?.replaceChildren("Could not check availability.");
+    app.querySelector(".statusline")?.replaceChildren(error.message);
+  });
 }
 
 function prettyDate(v) {
@@ -236,7 +265,7 @@ function bookingSummary(d) {
   return (
     prettyDate(d.date) +
     " · " +
-    d.time +
+    (slots[d.time] ?? d.time) +
     " · " +
     d.guests +
     (Number(d.guests) === 1 ? " guest" : " guests") +
@@ -262,11 +291,7 @@ function bookingView() {
       "</p>" +
       pair("Guest", d.name) +
       pair("Reservation", bookingSummary(d)) +
-      btn(
-        state.checked ? "Explore the menu" : "Preview host check-in",
-        state.checked ? "Menu" : "checkin",
-        "primary",
-      ) +
+      btn(state.checked ? "Explore the menu" : "View your visit", state.checked ? "Menu" : "Your table", "primary") +
       (!state.checked
         ? btn("Edit reservation", "edit") +
           btn("Cancel reservation", "ask-cancel")
@@ -284,7 +309,7 @@ function bookingView() {
     return;
   }
   form.querySelector("#date").min = today();
-  for (const field of ["date", "guests", "name", "phone"])
+  for (const field of ["date", "guests"])
     form.querySelector("#" + field).value = d[field];
   const dateField = form.querySelector("#date");
   if (!dateField.validity.valid) dateField.value = d.date = dateField.min;
@@ -301,7 +326,8 @@ function bookingView() {
 }
 function syncDraft() {
   const d = state.draft;
-  if (d.table && !tables.some((t) => t[0] === d.table && available(t, d)))
+  syncAvailability();
+  if (availableTables && d.table && !tables.some((t) => t[0] === d.table && available(t, d)))
     d.table = "";
   let availableCount = 0;
   app.querySelectorAll(".seat").forEach((b) => {
@@ -315,7 +341,7 @@ function syncDraft() {
     .forEach((b) =>
       b.setAttribute("aria-pressed", b.dataset.action.slice(5) === d.time),
     );
-  app.querySelector("#summary").textContent = d.table
+  app.querySelector("#summary").textContent = availabilityLoading ? "Checking table availability…" : d.table
     ? bookingSummary(d)
     : availableCount === 0
       ? "No tables for this party size and arrival time."
@@ -324,7 +350,8 @@ function syncDraft() {
   floorLink.hidden = availableCount === 0;
   floorLink.textContent = d.table ? "Change table" : "Choose a table";
   app.querySelector(".booking-continue").hidden = !d.table;
-  document.querySelector(".statusline").textContent = "";
+  app.querySelector("#reservation button[type=submit]").disabled = customerPending || !customerLoaded || !d.table || availabilityLoading;
+  app.querySelector(".statusline").textContent = customerFeedback;
   persist();
 }
 function bagButton() {
@@ -596,38 +623,202 @@ function mealLineMarkup(line, editable = false) {
       btn("Remove", "remove-line:" + line.id, "bag-line-button") + '</div>' : '') +
     '</article>';
 }
+const bookingLabels = { booked: "Reserved", arrived: "Checked in", cancelled: "Cancelled" };
+const orderLabels = { active: "In service", completed: "Served", cancelled: "Cancelled" };
+const tableLabel = (id) => tableLabels.get(id) ?? (id == null ? "" : "T" + id);
+
+function bookingRecord(row) {
+  return {
+    id: row.booking_id, table: tableLabel(row.table_id), date: row.booking_date,
+    time: Object.keys(slots).find(id => slots[id] === row.time_slot) ?? row.time_slot,
+    guests: row.party_size, name: row.contact_name, status: row.status,
+  };
+}
+
+function orderLines(row) {
+  return row.items.map(item => ({
+    name: item.dish_name, quantity: item.quantity, unitPrice: Number(item.unit_price), note: item.note,
+    labels: item.status === "cancelled" ? ["Cancelled"] : [],
+  }));
+}
+
+function customerPage() {
+  return ["Book a table", "Your table", "My account"].includes(route());
+}
+
+let dismissedReceipt;
+let customerQueue = null;
+let resumeOrderHistory = null;
+async function refreshCustomer() {
+  const version = ++customerRefreshVersion;
+  try {
+    const [reservationData, orderData, visits, waitlist] = await Promise.all([
+      restaurantRequest("/bookings"), restaurantRequest("/orders"), restaurantSeating(),
+      restaurantRequest("/waiting-queue/mine"),
+    ]);
+    const visit = visits[0] ?? null;
+    const orders = orderData.orders;
+    const latest = orders.find(order => order.visit_id === visit?.visit_id && order.status !== "cancelled");
+    const detail = latest && latest.order_id !== dismissedReceipt
+      ? (await restaurantRequest("/orders/" + latest.order_id)).order : null;
+    if (version !== customerRefreshVersion) return;
+    customerVisit = visit;
+    customerQueue = waitlist.queue;
+    const reservations = reservationData.bookings.map(bookingRecord);
+    state.booking = reservations.find(row => row.id === visit?.booking_id) ??
+      reservations.find(row => row.status === "booked" && row.date >= today()) ?? null;
+    state.bookingHistory = reservations;
+    state.orderHistory = orders;
+    state.checked = Boolean(visit);
+    state.bill = detail ? {
+      id: detail.order_id, status: detail.status, paid: detail.payment_status === "paid",
+      lines: orderLines(detail).filter(line => !line.labels.includes("Cancelled")),
+      total: detail.total_amount,
+    } : null;
+    customerLoaded = true;
+  } catch (error) {
+    if (version === customerRefreshVersion) customerFeedback = error.message;
+  }
+  if (version === customerRefreshVersion && customerPage() && !edit) show(false);
+}
+
+async function runCustomer(control, work) {
+  if (customerPending) return;
+  customerPending = true;
+  control.disabled = true;
+  customerFeedback = "";
+  try {
+    await work();
+  } catch (error) {
+    customerFeedback = error.message;
+    if (error.status === 409 && app.querySelector("#reservation")) syncAvailability(true);
+  } finally {
+    customerPending = false;
+    if (control.isConnected) control.disabled = false;
+    if (customerPage()) show(false);
+  }
+}
+
 function renderVisitHistory() {
   const section = app.querySelector("[data-visit-history]");
   if (!section) return;
   const reservations = [...state.bookingHistory];
-  if (state.booking) reservations.unshift({
-    ...state.booking,
-    status: state.bill?.paid ? "Completed" : state.checked ? "Checked in" : "Reserved",
-  });
-  const orders = [state.bill, ...state.orderHistory].filter(Boolean);
-  const bookingRecords = reservations.map((booking, index) =>
+  const orders = state.orderHistory;
+  const bookingRecords = reservations.map(booking =>
     '<article class="history-record">' +
     '<div class="history-record-top"><strong>' + esc(bookingSummary(booking)) +
-    '</strong><span class="history-status">' + esc(booking.status) + '</span></div>' +
-    (state.booking && index === 0 ? btn("View reservation", "Book a table", "bag-line-button") : '') +
+    '</strong><span class="history-status">' + esc(bookingLabels[booking.status] ?? booking.status) + '</span></div>' +
+    (state.booking?.id === booking.id ? btn("View reservation", "Book a table", "bag-line-button") : '') +
     '</article>',
   ).join("");
   const orderRecords = orders.map((order) => {
-    const date = order.placedAt
-      ? new Date(order.placedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })
-      : "Earlier demo order";
-    const table = order.table ? "Table " + order.table + " · " : "";
-    return '<details class="history-record"><summary><strong>' + esc(table) + '¥' + mealTotal(order.lines) +
-      '</strong><span class="history-status">' + (order.paid ? "Paid · demo" : "Awaiting demo payment") +
-      '</span><small>' + esc(date) + '</small></summary>' +
-      order.lines.map((line) => mealLineMarkup(line)).join("") + '</details>';
+    const date = order.created_at
+      ? new Date(order.created_at.replace(" ", "T") + "Z").toLocaleString("en-GB", {
+          timeZone: "Asia/Shanghai", dateStyle: "medium", timeStyle: "short",
+        }) : "";
+    const status = order.order_type === "preorder" && !order.visit_id && order.status === "active"
+      ? "Awaiting check-in" : orderLabels[order.status] ?? order.status;
+    return '<details class="history-record" data-order-record="' + order.order_id + '">' +
+      '<summary><strong>' + (order.order_type === "preorder" ? "Preorder #" : "Order #") + order.order_id + '</strong><span class="history-status">' +
+      esc(status) + ' · ' +
+      (order.payment_status === "paid" ? "Paid" : "Unpaid") +
+      '</span><small>' + esc(date) + '</small></summary><div data-order-lines></div></details>';
   }).join("");
   section.innerHTML =
-    '<p class="history-caption">Demo records are saved in this tab.</p>' +
+    '<p class="history-caption" role="status">' +
+    esc(route() === "My account" ? customerFeedback || (customerLoaded ? "" : "Loading restaurant records…") :
+      customerLoaded ? "" : "Loading restaurant records…") + '</p>' +
     '<section class="history-group"><h3>My reservations</h3>' +
     (bookingRecords || '<p class="history-empty">No reservations yet.</p>') +
     '</section><section class="history-group"><h3>My orders</h3>' +
     (orderRecords || '<p class="history-empty">No orders yet.</p>') + '</section>';
+  for (const record of section.querySelectorAll("[data-order-record]")) {
+    record.addEventListener("toggle", async () => {
+      if (!record.open || record.dataset.loaded) return;
+      const body = record.querySelector("[data-order-lines]");
+      body.textContent = "Loading order…";
+      try {
+        const { order } = await restaurantRequest("/orders/" + record.dataset.orderRecord);
+        renderSubmittedOrder(body, order);
+        record.dataset.loaded = "true";
+      } catch (error) {
+        body.textContent = error.message;
+      }
+    });
+    if (record.dataset.orderRecord === String(resumeOrderHistory)) record.open = true;
+  }
+  resumeOrderHistory = null;
+}
+
+function renderSubmittedOrder(body, order) {
+  const base = "/orders/" + order.order_id;
+  body.innerHTML = orderLines(order).map((line, index) => {
+    const item = order.items[index];
+    return mealLineMarkup(line) + (item.status === "waiting" && order.payment_status === "unpaid"
+      ? btn("Cancel " + esc(line.name), "cancel-item:" + item.order_item_id, "bag-line-button") : "");
+  }).join("") + pair("Total", "¥" + order.total_amount) +
+    (restaurantCanEditOrder(order)
+      ? btn("Edit order", "edit-submitted-order") + btn("Cancel order", "cancel-submitted-order") : "") +
+    (order.status !== "cancelled" && order.payment_status === "unpaid" && order.visit_id &&
+      order.order_id !== state.bill?.id && order.visit_id === customerVisit?.visit_id
+      ? btn("Record ¥" + order.total_amount + " payment", "pay-submitted-order", "primary") : "");
+  body.onclick = event => {
+    const button = event.target.closest("button[data-action]");
+    if (!button) return;
+    const action = button.dataset.action;
+    if (action === "pay-submitted-order") {
+      return runCustomer(button, async () => {
+        await restaurantRequest(base + "/pay", {});
+        customerFeedback = "Payment recorded.";
+        resumeOrderHistory = order.order_id;
+        await refreshCustomer();
+      });
+    }
+    if (action === "edit-submitted-order") {
+      const available = dishes.filter(dish => !dish.sold)
+        .map(dish => ({ dish_id: dish.id, dish_name: dish.name }));
+      return restaurantOrderEditor(order, base + "/edit", available, async () => {
+        customerFeedback = "Order updated.";
+        resumeOrderHistory = order.order_id;
+        await refreshCustomer();
+      });
+    }
+    if (action !== "cancel-submitted-order" && !action.startsWith("cancel-item:")) return;
+    if (!window.confirm(action === "cancel-submitted-order" ? "Cancel this order?" : "Cancel this item?")) return;
+    const suffix = action === "cancel-submitted-order" ? "/cancel" : "/items/" + action.split(":")[1] + "/cancel";
+    runCustomer(button, async () => {
+      await restaurantRequest(base + suffix, {});
+      customerFeedback = action === "cancel-submitted-order" ? "Order cancelled." : "Item cancelled.";
+      resumeOrderHistory = order.order_id;
+      await refreshCustomer();
+    });
+  };
+}
+
+function waitlistMarkup() {
+  if (customerVisit) return "";
+  let content;
+  if (customerQueue) {
+    const status = customerQueue.status === "called"
+      ? "Please check in with the host" + (customerQueue.called_table_id ? " for table " + tableLabel(customerQueue.called_table_id) : "") + "."
+      : customerQueue.parties_ahead + " parties ahead.";
+    content = '<p><strong>Ticket #' + customerQueue.queue_id + '</strong> · ' + esc(status) + '</p>' +
+      btn("Refresh waitlist", "refresh-visit") + btn("Leave waitlist", "leave-waitlist");
+  } else {
+    content = '<form class="restaurant-inline-form" data-join-waitlist><label>Party size ' +
+      '<input type="number" name="party_size" min="1" max="' + Math.max(...tables.map(row => row[1])) +
+      '" value="2" required></label><button type="submit" class="secondary">Join waitlist</button></form>';
+  }
+  return '<section class="visit-access"><h3>Walk-in waitlist</h3>' + content + '</section>';
+}
+
+function preorderMarkup(blocked) {
+  const bookings = state.bookingHistory.filter(row => row.status === "booked" && row.date >= today() && slots[row.time]);
+  if (!bookings.length || !state.bag.length) return "";
+  return '<form class="restaurant-inline-form" data-create-preorder><label>Reservation<select name="booking_id" required>' +
+    bookings.map(row => '<option value="' + row.id + '">' + esc(bookingSummary(row)) + '</option>').join("") +
+    '</select></label><button type="submit" class="primary"' + (blocked ? ' disabled' : '') +
+    '>Preorder from your bag</button></form>';
 }
 function visitView() {
   if (!customer) {
@@ -638,12 +829,14 @@ function visitView() {
   const booked = state.booking;
   const order = state.bill;
   const lines = order?.lines ?? state.bag;
-  const value = mealTotal(lines);
+  const value = order?.total ?? mealTotal(lines);
   const blocked = !order && lines.some((line) => menu.get(line.key)?.sold);
-  let body = booked
+  let body = customerVisit
+    ? pair("Table " + tableLabel(customerVisit.table_id), "Checked in")
+    : booked
     ? pair(
         "Table " + booked.table,
-        state.checked ? "Checked in" : bookingSummary(booked),
+        bookingSummary(booked),
       )
     : "";
   if (lines.length) {
@@ -653,12 +846,12 @@ function visitView() {
   }
   if (order?.paid)
     body +=
-      '<p class="notice" role="status"><span class="tick">✓</span>Demo payment received.</p>' +
-      btn("Book another visit", "new-visit", "primary");
+      '<p class="notice" role="status"><span class="tick">✓</span>Payment recorded.</p>' +
+      btn("Start another order", "new-visit", "primary");
   else if (order)
     body +=
-      "<p>Demo order submitted.</p>" +
-      btn("Pay ¥" + value + " · demo", "pay", "primary");
+      "<p>Order #" + order.id + " · " + esc(orderLabels[order.status]) + "</p>" +
+      btn("Record ¥" + value + " payment", "pay", "primary");
   else if (!state.checked) {
     const nextStep =
       "<p>" +
@@ -667,8 +860,8 @@ function visitView() {
         : "Book a table, then check in with your host to place a dine-in order.") +
       "</p>" +
       btn(
-        booked ? "Preview host check-in" : "Book a table",
-        booked ? "checkin" : "Book a table",
+        booked ? "Refresh check-in status" : "Book a table",
+        booked ? "refresh-visit" : "Book a table",
         "primary",
       );
     const browse = btn("Explore the menu", "Menu");
@@ -677,6 +870,7 @@ function visitView() {
       : '<div class="visit-access visit-next-step"><h3>' +
         (booked ? "Next step: check in" : "Plan your visit") + "</h3>" +
         nextStep + '</div><div class="visit-shortcuts">' + browse + "</div>";
+    body += preorderMarkup(blocked) + waitlistMarkup();
   } else if (state.checked) {
     body += lines.length
       ? (blocked ? '<p class="order-unavailable">Remove sold-out items before placing an order.</p>' : '') +
@@ -684,6 +878,8 @@ function visitView() {
       : "<p>Your bag is empty.</p>" +
         btn("Explore the menu", "Menu", "primary");
   }
+  body += btn("Refresh visit", "refresh-visit");
+  body += '<p class="statusline" role="status">' + esc(customerFeedback) + '</p>';
   mount("table");
   app.querySelector(".panel h2").textContent = order?.paid
     ? "Payment received"
@@ -708,6 +904,51 @@ function show(transition = true) {
     showWorkspace(transition);
     return;
   }
+  const requested = route();
+  const destination = requested.startsWith("Menu/") ? "Menu" : requested;
+  // Business updates and dish/category changes must still finish synchronously.
+  const animatePage = transition && previousPage !== "" && destination !== previousPage;
+  if (guestPageTransition) {
+    guestPageTransition.run(() => renderGuestPage(transition), { animate: animatePage });
+  } else {
+    renderGuestPage(transition);
+  }
+}
+
+function prepareGuestHeading(heading) {
+  if (!heading || heading.dataset.motionHeading !== undefined) return;
+  heading.dataset.motionHeading = "";
+  heading.setAttribute("aria-label", heading.innerText.replace(/\s+/g, " ").trim());
+  const walker = document.createTreeWalker(heading, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  const characterCount = Array.from(heading.textContent.replace(/\s/g, "")).length;
+  heading.style.setProperty("--letter-step", Math.min(60, 400 / Math.max(1, characterCount - 1)) + "ms");
+  let index = 0;
+  for (const node of nodes) {
+    const fragment = document.createDocumentFragment();
+    for (const word of node.textContent.split(/(\s+)/)) {
+      if (!word || /^\s+$/.test(word)) {
+        fragment.append(document.createTextNode(word));
+        continue;
+      }
+      const group = document.createElement("span");
+      group.className = "motion-word";
+      group.setAttribute("aria-hidden", "true");
+      for (const character of word) {
+        const letter = document.createElement("span");
+        letter.className = "motion-letter";
+        letter.style.setProperty("--letter-index", index++);
+        letter.textContent = character;
+        group.append(letter);
+      }
+      fragment.append(group);
+    }
+    node.replaceWith(fragment);
+  }
+}
+
+function renderGuestPage(transition = true) {
   const raw = route();
   const page = raw.startsWith("Menu/") ? "Menu" : raw;
   const category = raw.startsWith("Menu/category/") ? raw.slice(14) : "";
@@ -753,8 +994,8 @@ function show(transition = true) {
   } else {
     mount({ Home: "home", Delivery: "delivery", Journal: "journal", "Journal/archive": "journal-archive" }[page]);
   }
-  const coverHeader = app.querySelector(".cover > header");
-  if (coverHeader) installNavLens(coverHeader);
+  app.toggleAttribute("data-guest-enter", changed && !reduce.matches);
+  prepareGuestHeading(app.querySelector("h1"));
   for (const link of document.querySelectorAll(".guest-navigation [data-action], .guest-directory .nav-link")) {
     const section = page === "Journal/archive" ? "Journal" : page;
     if (link.dataset.action === section) link.setAttribute("aria-current", "page");
@@ -767,7 +1008,6 @@ function show(transition = true) {
     window.scrollTo(0, page === "Menu" ? menuScroll : 0);
     if (transition) {
       heading?.focus({ preventScroll: true });
-      animate(app.querySelector(".delivery-grid,.panel,.cards"), 240);
     }
   } else if (focusAction) {
     [...app.querySelectorAll("[data-action]")]
@@ -850,6 +1090,9 @@ async function submitAccountForm(form) {
     const response = await fetch(form.action, {
       method: "POST",
       body: fields,
+      mode: "same-origin",
+      credentials: "same-origin",
+      cache: "no-store",
     });
     if (!response.ok || !response.redirected) {
       await showAuthResponseError(form, response);
@@ -900,15 +1143,6 @@ dishSheet?.addEventListener("click", (e) => {
       leaveDetail();
   }
 });
-document.addEventListener("input", (e) => {
-  if (
-    customer && e.target.closest("#reservation") &&
-    ["name", "phone"].includes(e.target.id)
-  ) {
-    state.draft[e.target.id] = e.target.value;
-    persist();
-  }
-});
 document.addEventListener("change", (e) => {
   if (!customer) return;
   if (e.target.matches("[data-dish-option]")) {
@@ -927,30 +1161,51 @@ document.addEventListener("submit", (e) => {
     submitAccountForm(e.target);
     return;
   }
+  if (customer && e.target.matches("[data-join-waitlist],[data-create-preorder]")) {
+    e.preventDefault();
+    const form = e.target;
+    const fields = new FormData(form);
+    const control = form.querySelector("[type=submit]");
+    runCustomer(control, async () => {
+      if (form.matches("[data-join-waitlist]")) {
+        await restaurantRequest("/waiting-queue", { party_size: fields.get("party_size"), contact_name: customer.name });
+        customerFeedback = "You joined the waitlist.";
+      } else {
+        const booking = state.bookingHistory.find(row => row.id === Number(fields.get("booking_id")));
+        if (!booking || !state.bag.length) return;
+        const { order } = await restaurantRequest("/bookings/" + booking.id + "/preorders", {
+          ...restaurantOrderFields(state.bag),
+          estimated_ready_at: booking.date + "T" + slots[booking.time].slice(0, 5) + ":00+08:00",
+        });
+        state.bag = [];
+        persist();
+        customerFeedback = "Preorder #" + order.order_id + " saved. The kitchen will receive it after check-in at the scheduled time.";
+      }
+      await refreshCustomer();
+    });
+    return;
+  }
   if (e.target.id !== "reservation") return;
   e.preventDefault();
   if (!customer) return;
   const d = state.draft,
     err = e.target.querySelector(".statusline"),
     f = e.target;
-  d.name = f.querySelector("#name").value.trim();
-  d.phone = f.querySelector("#phone").value.trim();
   d.date = f.querySelector("#date").value;
-  if (!d.name || !d.phone.match(/^[+\d ()-]{6,24}$/)) {
-    err.textContent = "Enter a name and valid phone number.";
-    return;
-  }
   if (!d.table || !tables.some((t) => t[0] === d.table && available(t, d))) {
     err.textContent = "Select an available table on the floor plan.";
     document.querySelector(".seat:enabled")?.focus();
     return;
   }
-  state.booking = { ...d };
-  edit = false;
-  persist();
-  show(false);
-  document.querySelector("h2")?.focus({ preventScroll: true });
-  animate(document.querySelector(".notice"), 200);
+  runCustomer(f.querySelector("[type=submit]"), async () => {
+    const { booking } = await restaurantRequest(edit ? "/bookings/" + state.booking.id + "/edit" : "/bookings", {
+      booking_date: d.date, time_slot_id: d.time, party_size: d.guests, table_id: tableIds[d.table],
+    });
+    state.booking = { ...d, id: booking.booking_id, table: tableLabel(booking.table_id), name: customer.name, status: booking.status };
+    edit = false;
+    await refreshCustomer();
+    app.querySelector(".panel h2")?.focus({ preventScroll: true });
+  });
 });
 document.addEventListener("click", (e) => {
   const modeButton = e.target.closest("[data-account-mode]");
@@ -1046,19 +1301,27 @@ document.addEventListener("click", (e) => {
   }
   if (a === "cancel") {
     if (!state.booking || state.checked) return;
-    state.bookingHistory.unshift({ ...state.booking, status: "Cancelled" });
-    state.booking = null;
-    state.draft.table = "";
-    edit = false;
-    persist();
-    show(false);
+    runCustomer(b, async () => {
+      await restaurantRequest("/bookings/" + state.booking.id + "/cancel", {});
+      state.booking = null;
+      state.draft.table = "";
+      availabilityKey = "";
+      edit = false;
+      persist();
+      await refreshCustomer();
+    });
     return;
   }
-  if (a === "checkin" && state.booking) {
-    state.checked = true;
-    edit = false;
-    persist();
-    go(state.bag.length ? "Your table" : "Menu");
+  if (a === "refresh-visit") {
+    runCustomer(b, refreshCustomer);
+    return;
+  }
+  if (a === "leave-waitlist" && customerQueue) {
+    runCustomer(b, async () => {
+      await restaurantRequest("/waiting-queue/" + customerQueue.queue_id, {}, "DELETE");
+      customerFeedback = "You left the waitlist.";
+      await refreshCustomer();
+    });
     return;
   }
   if (a.startsWith("edit-line:") || a.startsWith("remove-line:")) {
@@ -1099,40 +1362,40 @@ document.addEventListener("click", (e) => {
     saveDetailToBag();
     return;
   }
-  if (a === "order" && state.checked && state.booking && !state.bill && state.bag.length) {
+  if (a === "order" && customerVisit && !state.bill && state.bag.length) {
     if (state.bag.some((line) => menu.get(line.key)?.sold)) return;
-    state.bill = {
-      table: state.booking.table,
-      placedAt: new Date().toISOString(),
-      paid: false,
-      lines: state.bag,
-    };
-    state.bag = [];
-    persist();
-    show(false);
-    animate(document.querySelector("h2"), 200);
+    runCustomer(b, async () => {
+      const { order } = await restaurantRequest("/visits/" + customerVisit.visit_id + "/orders",
+        restaurantOrderFields(state.bag));
+      state.bill = { id: order.order_id, status: order.status, paid: false, lines: state.bag, total: order.total_amount };
+      state.bag = [];
+      persist();
+      await refreshCustomer();
+    });
     return;
   }
   if (a === "pay" && state.bill && !state.bill.paid) {
-    state.bill.paid = true;
-    persist();
-    show(false);
-    animate(document.querySelector(".notice"), 220);
+    runCustomer(b, async () => {
+      await restaurantRequest("/orders/" + state.bill.id + "/pay", {});
+      state.bill.paid = true;
+      await refreshCustomer();
+    });
     return;
   }
   if (a === "new-visit" && state.bill?.paid) {
-    const { booking, bill, bookingHistory, orderHistory } = state;
-    state = { ...blank(), bookingHistory, orderHistory: [bill, ...orderHistory] };
-    if (booking) state.bookingHistory.unshift({ ...booking, status: "Completed" });
-    edit = false;
-    persist();
-    go("Book a table");
+    dismissedReceipt = state.bill.id;
+    state.bill = null;
+    go("Menu");
   }
 });
-window.addEventListener("hashchange", () => show(true));
+window.addEventListener("hashchange", () => {
+  show(true);
+  if (customer && customerPage()) refreshCustomer();
+});
 window.addEventListener("scroll", syncMenuCategory, { passive: true });
 window.addEventListener("resize", syncMenuCategory);
 if (customer && history.state?.returnTo?.startsWith("#")) {
   history.replaceState(null, "", history.state.returnTo);
 }
 show(false);
+if (customer && customerPage()) refreshCustomer();

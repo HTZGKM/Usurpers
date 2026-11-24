@@ -1,0 +1,162 @@
+{
+  "art_direction": "Pure black catalog backgrounds integrated into the black menu, with slightly larger food subjects and complete plates. Retain original dish identity and natural food colors.",
+  "edited_on": "2026-11-23",
+  "method": "built-in image_gen edit, one existing project photo per call",
+  "provenance": "AI edits of the existing project catalog images. Original gray-background versions remain available in Git history at 2ab6dff.",
+  "assets": [
+    {
+      "file": "burger.webp",
+      "source_file": "exec-6867da0c-94af-4715-b458-881f5c77a1f3.png",
+      "prompt": "Use case: precise-object-edit. Asset type: existing restaurant catalog photograph, Image 1 is the edit target. Replace ONLY gray wall/table background with seamless pure #000000 black: no visible horizon, texture, vignette or gray rectangle, all four outer edges true black. Preserve this exact single cheeseburger, sesame bun, single beef patty, cheese and pickles, their count, shapes, arrangement, natural colors, ceramic plate and camera angle. Preserve original light on food and plate. Center dish plus plate and make the subject about 10–15% larger while keeping the entire plate visible and proportional; tightly composed landscape 3:2 image. Softly side-lit food readable on black, delicate contact shadow, refined Qitchen restaurant-menu photographic quality. No added props, garnish, ingredients, text, logos or watermark. Return one single photograph.",
+      "dimensions": [
+        660,
+        440
+      ],
+      "bytes": 19066,
+      "encoding": "cwebp -q 90 -resize 660 440"
+    },
+    {
+      "file": "double.webp",
+      "source_file": "exec-5010aacd-ac6a-45e5-86d9-bf665550ee09.png",
+      "prompt": "Use case: precise-object-edit. Asset type: existing restaurant catalog photograph, Image 1 is the edit target. Replace ONLY gray wall/table background with seamless pure #000000 black: no visible horizon, texture, vignette or gray rectangle, all four outer edges true black. Preserve this exact double cheeseburger with exactly TWO beef patties and TWO layers of melted cheese, sesame bun and pickles, their shapes, arrangement, natural colors, ceramic plate and camera angle. Preserve original light on food and plate. Center dish plus plate and make the subject about 10–15% larger while keeping the entire plate visible and proportional; tightly composed landscape 3:2 image. Softly side-lit food readable on black, delicate contact shadow, refined Qitchen restaurant-menu photographic quality. No added props, garnish, ingredients, text, logos or watermark. Return one single photograph.",
+      "dimensions": [
+        660,
+        440
+      ],
+      "bytes": 21732,
+      "encoding": "cwebp -q 90 -resize 660 440"
+    },
+    {
+      "file": "chicken.webp",
+      "source_file": "exec-2f6d6205-dacd-484d-adca-4c2c426f02e3.png",
+      "prompt": "Use case: precise-object-edit. Asset type: existing restaurant catalog photograph, Image 1 is the edit target. Replace ONLY gray wall/table background with seamless pure #000000 black: no visible horizon, texture, vignette or gray rectangle, all four outer edges true black. Preserve this exact herb-grilled chicken burger: sesame bun, ONE grilled white chicken breast with visible grill stripes, butter lettuce and subtle white sauce, no beef patty, no fried coating, no cheese. Preserve ingredient shapes, arrangement, natural colors, ceramic plate and camera angle. Preserve original light on food and plate. Center dish plus plate and make the subject about 10–15% larger while keeping the entire plate visible and proportional; tightly composed landscape 3:2 image. Softly side-lit food readable on black, delicate contact shadow, refined Qitchen restaurant-menu photographic quality. No added props, garnish, ingredients, text, logos or watermark. Return one single photograph.",
+      "dimensions": [
+        660,
+        440
+      ],
+      "bytes": 19868,
+      "encoding": "cwebp -q 90 -resize 660 440"
+    },
+    {
+      "file": "portobello.webp",
+      "source_file": "exec-a17bdfdc-9c9c-4c18-a87a-e862cba94e7b.png",
+      "prompt": "Use case: precise-object-edit. Asset type: existing restaurant catalog photograph, Image 1 is the edit target. Replace ONLY gray wall/table background with seamless pure #000000 black: no visible horizon, texture, vignette or gray rectangle, all four outer edges true black. Preserve this exact vegetarian portobello burger: sesame bun slightly tilted back, ONE whole grilled brown portobello mushroom cap with visible gills facing camera and baby greens/rocket leaves, no meat, no cheese, no extra toppings. Preserve ingredient shapes, arrangement, natural colors, ceramic plate and camera angle. Preserve original light on food and plate. Center dish plus plate and make the subject about 10–15% larger while keeping the entire plate visible and proportional; tightly composed landscape 3:2 image. Softly side-lit food readable on black, delicate contact shadow, refined Qitchen restaurant-menu photographic quality. No added props, garnish, ingredients, text, logos or watermark. Return one single photograph.",
+      "dimensions": [
+        660,
+        440
+      ],
+      "bytes": 21796,
+      "encoding": "cwebp -q 90 -resize 660 440"
+    },
+    {
+      "file": "fish.webp",
+      "source_file": "exec-b51b1e32-64f9-4f05-997c-f4758b31fb7e.png",
+      "prompt": "Use case: precise-object-edit. Asset type: existing restaurant catalog photograph, Image 1 is the edit target. Replace ONLY gray wall/table background with seamless pure #000000 black: no visible horizon, texture, vignette or gray rectangle, all four outer edges true black. Preserve this exact crisp fish burger: smooth unseeded flour-dusted bun, ONE golden breadcrumb-coated white fish fillet with a small visible white flaky cross section at front right, white tartar sauce and shredded pale lettuce. No beef, no chicken, no cheese, no sesame. Preserve ingredient shapes, arrangement, natural colors, ceramic plate and camera angle. Preserve original light on food and plate. Center dish plus plate and make the subject about 10–15% larger while keeping the entire plate visible and proportional; tightly composed landscape 3:2 image. Softly side-lit food readable on black, delicate contact shadow, refined Qitchen restaurant-menu photographic quality. No added props, garnish, ingredients, text, logos or watermark. Return one single photograph.",
+      "dimensions": [
+        660,
+        440
+      ],
+      "bytes": 18450,
+      "encoding": "cwebp -q 90 -resize 660 440"
+    },
+    {
+      "file": "pizza.webp",
+      "source_file": "exec-c344d052-5804-4f6a-8724-a5834b382762.png",
+      "prompt": "Use case: precise-object-edit. Asset type: existing restaurant catalog photograph, input image is the edit target. Replace ONLY the gray wall and tabletop background with seamless pure #000000 black, with no horizon, texture, vignette, gradient or gray rectangle. All four outer edges must be true black. Preserve this exact Margherita pizza: same basil leaves, tomato and mozzarella patches, crust, shape, silver plate, camera angle and natural colors; do not invent or rearrange toppings. Preserve the original lighting on the food and plate. Center the dish and plate in a landscape 3:2 photograph, enlarge only very slightly if safe, keeping the ENTIRE round pizza and plate visible with narrow breathing room. Food clearly readable against black, subtle contact shadow, refined Qitchen-style editorial menu photography. No new props, garnish, text, logos or watermark. Single photograph.",
+      "dimensions": [
+        660,
+        440
+      ],
+      "bytes": 44986,
+      "encoding": "cwebp -q 90 -resize 660 440"
+    },
+    {
+      "file": "mushroom.webp",
+      "source_file": "exec-408e3e3c-78d0-470c-9daf-2574ca83ce0f.png",
+      "prompt": "Use case: precise-object-edit. Asset type: existing restaurant catalog photograph, input image is the edit target. Replace ONLY the gray wall and tabletop background with seamless pure #000000 black, with no horizon, texture, vignette, gradient or gray rectangle. All four outer edges must be true black. Preserve this exact Mushroom & Pepper pizza: same mushroom slices, red and yellow pepper strips, tomato and mozzarella, crust, shape, silver plate, camera angle and natural colors; do not invent, remove or rearrange toppings. Preserve original lighting on food and plate. Center dish and plate in a landscape 3:2 photograph, enlarge only very slightly if safe, keeping the ENTIRE round pizza and plate visible with narrow breathing room. Food clearly readable against black, subtle contact shadow, refined Qitchen-style editorial menu photography. No new props, garnish, text, logos or watermark. Single photograph.",
+      "dimensions": [
+        660,
+        440
+      ],
+      "bytes": 49102,
+      "encoding": "cwebp -q 90 -resize 660 440"
+    },
+    {
+      "file": "bianca.webp",
+      "source_file": "exec-642e3488-4a59-4d93-b5c0-5a79029d4d68.png",
+      "prompt": "Use case: precise-object-edit. Asset type: existing restaurant catalog photograph, input image is the edit target. Replace ONLY the gray wall and tabletop background with seamless pure #000000 black, with no horizon, texture, vignette, gradient or gray rectangle. All four outer edges must be true black. Preserve this exact Bianca white pizza: same ricotta mounds, melted white mozzarella and tiny herb leaves in their original arrangement, no tomato sauce, same crust, shape, silver plate, camera angle and natural colors; do not invent, remove or rearrange toppings. Preserve original lighting on food and plate. Center dish and plate in a landscape 3:2 photograph, enlarge only very slightly if safe, keeping the ENTIRE round pizza and plate visible with narrow breathing room. Food clearly readable against black, subtle contact shadow, refined Qitchen-style editorial menu photography. No new props, garnish, text, logos or watermark. Single photograph.",
+      "dimensions": [
+        660,
+        440
+      ],
+      "bytes": 43650,
+      "encoding": "cwebp -q 90 -resize 660 440"
+    },
+    {
+      "file": "olive.webp",
+      "source_file": "exec-5cbe2225-2f7d-46d5-8122-88f50261bb10.png",
+      "prompt": "Use case: precise-object-edit. Asset type: existing restaurant catalog photograph, input image is the edit target. Replace ONLY the gray wall and tabletop background with seamless pure #000000 black, with no horizon, texture, vignette, gradient or gray rectangle. All four outer edges must be true black. Preserve this exact Olive & Oregano pizza: same black olive rings in their original arrangement, tomato and cheese, oregano specks, crust, shape, silver plate, camera angle and natural colors; do not invent, remove or rearrange toppings. Preserve original lighting on food and plate. Center dish and plate in a landscape 3:2 photograph, enlarge only very slightly if safe, keeping the ENTIRE round pizza and plate visible with narrow breathing room. Food clearly readable against black, subtle contact shadow, refined Qitchen-style editorial menu photography. No new props, garnish, text, logos or watermark. Single photograph.",
+      "dimensions": [
+        660,
+        440
+      ],
+      "bytes": 51208,
+      "encoding": "cwebp -q 90 -resize 660 440"
+    },
+    {
+      "file": "potato.webp",
+      "source_file": "exec-440a43ad-8ec5-4d61-ac89-0baafd31437a.png",
+      "prompt": "Use case: precise-object-edit. Asset type: existing restaurant catalog photograph, input image is the edit target. Replace ONLY the gray wall and tabletop background with seamless pure #000000 black, with no horizon, texture, vignette, gradient or gray rectangle. All four outer edges must be true black. Preserve this exact Potato & Rosemary pizza: same thin golden potato slices in their original overlapping arrangement, sparse rosemary leaves, white cheese base without tomato sauce, crust, shape, silver plate, camera angle and natural colors; do not invent, remove or rearrange toppings. Preserve original lighting on food and plate. Center dish and plate in a landscape 3:2 photograph, enlarge only very slightly if safe, keeping the ENTIRE round pizza and plate visible with narrow breathing room. Food clearly readable against black, subtle contact shadow, refined Qitchen-style editorial menu photography. No new props, garnish, text, logos or watermark. Single photograph.",
+      "dimensions": [
+        660,
+        440
+      ],
+      "bytes": 45538,
+      "encoding": "cwebp -q 90 -resize 660 440"
+    },
+    {
+      "file": "fries.webp",
+      "source_file": "exec-65f358f4-bb98-4ec5-82c3-969aec2fb507.png",
+      "prompt": "Use case: precise-object-edit. Asset type: existing restaurant menu catalog photograph, edit target Image 1. Replace ONLY gray wall/table background with seamless pure #000 black, no horizon, surface texture, vignette or gray rectangle; all four outer edges true black. Preserve exactly this small serving of golden thin sea-salt fries, same pieces and arrangement on the same gray ceramic oval plate, same low camera angle and natural colors. Preserve original side lighting on food and plate; no added ketchup, props, garnishes or text. Center subject and plate, make it about 10% larger while keeping entire plate and rim visible and proportional, landscape 3:2 framing. Food must remain appetizing and clearly readable on black, with a delicate contact shadow only. Refined Qitchen-style menu photo integration on a black webpage. Single photograph, not a collage.",
+      "dimensions": [
+        660,
+        440
+      ],
+      "bytes": 12488,
+      "encoding": "cwebp -q 90 -resize 660 440"
+    },
+    {
+      "file": "onion.webp",
+      "source_file": "exec-dd1a6ae9-66aa-4816-a858-20b240f948d7.png",
+      "prompt": "Use case: precise-object-edit. Asset type: existing restaurant menu catalog photograph, edit target Image 1. Replace ONLY gray wall/table background with seamless pure #000 black, no horizon, surface texture, vignette or gray rectangle; all four outer edges true black. Preserve exactly these four golden breaded onion rings, same arrangement and shapes on the same gray ceramic oval plate, same low camera angle and natural colors. Preserve original side lighting on food and plate; no added sauce, props, garnishes or text. Center subject and plate, make it about 10% larger while keeping entire plate and rim visible and proportional, landscape 3:2 framing. Food must remain appetizing and clearly readable on black, with a delicate contact shadow only. Refined Qitchen-style menu photo integration on a black webpage. Single photograph, not a collage.",
+      "dimensions": [
+        660,
+        440
+      ],
+      "bytes": 16490,
+      "encoding": "cwebp -q 90 -resize 660 440"
+    },
+    {
+      "file": "lemon.webp",
+      "source_file": "exec-b787645f-ae56-43a2-813b-6d2267226dfe.png",
+      "prompt": "Use case: precise-object-edit. Asset type: existing restaurant menu catalog photograph, edit target Image 1. Replace ONLY gray wall/table background with seamless pure #000 black, no horizon, table texture, vignette or gray rectangle; all four outer edges true black. Preserve exactly this straight clear cylindrical tumbler of pale lemon soda with visible bubbles, same single diagonal lemon slice and same large ice cubes on the same silver-gray oval ceramic saucer, same camera angle, shape, proportions and natural colors. Preserve original soft side lighting on glass and saucer. Clear glass must show black through its transparent empty area, with subtle readable rim and edge highlights; no broad glow or gray backdrop. Center subject and saucer, about 10% larger if feasible, KEEP entire glass rim and whole saucer within frame, leave small breathing room, landscape 3:2. No added lemon wedges, straws, mint, props, garnishes, logos or text. Clean sophisticated menu catalog photograph integrated into pure black webpage.",
+      "dimensions": [
+        660,
+        440
+      ],
+      "bytes": 24224,
+      "encoding": "cwebp -q 90 -resize 660 440"
+    },
+    {
+      "file": "tea.webp",
+      "source_file": "exec-7e3e5b27-e17f-4549-ac63-449396f81b87.png",
+      "prompt": "Use case: precise-object-edit. Asset type: existing restaurant menu catalog photograph, edit target Image 1. Replace ONLY gray wall/table background with seamless pure #000 black, no horizon, table texture, vignette or gray rectangle; all four outer edges true black. Preserve exactly this straight clear cylindrical tumbler of amber iced black tea with the same ice cubes and no garnish on the same silver-gray oval ceramic saucer; same camera angle, shape, proportions and natural tea color. Preserve original soft side lighting on glass and saucer. Clear glass must show black through its transparent empty area, with subtle readable rim and edge highlights, amber tea stays readable; no broad glow or gray backdrop. Center subject and saucer, about 10% larger if feasible, KEEP entire glass rim and whole saucer within frame with small breathing room, landscape 3:2. No added lemon, straws, mint, props, garnishes, logos or text. Clean sophisticated menu catalog photograph integrated into pure black webpage.",
+      "dimensions": [
+        660,
+        440
+      ],
+      "bytes": 14262,
+      "encoding": "cwebp -q 90 -resize 660 440"
+    }
+  ]
+}

@@ -8,6 +8,7 @@ import os
 import re
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from unittest.mock import patch
@@ -125,17 +126,132 @@ class CustomerPresentationTests(unittest.TestCase):
         self.assertNotIn("/static/css/admin.css", public.assets)
         self.assertNotIn("/static/js/admin.js", public.assets)
 
+    def test_customer_seating_fragment_only_exposes_own_active_visit(self):
+        from restaurant.db.database import get_connection
+
+        phone = "13900001989"
+        with get_connection() as db:
+            db.execute(
+                "INSERT INTO customers(customer_phone, name, password_hash) VALUES (?, ?, ?)",
+                (phone, "Seating scope fixture", "unused"),
+            )
+            own = db.execute(
+                """INSERT INTO dining_sessions(customer_phone, contact_name, phone_number,
+                   party_size, table_id, status) VALUES (?, ?, ?, 2, 1, 'seated')""",
+                (phone, "Seating scope fixture", phone),
+            ).lastrowid
+        try:
+            public, _ = self.page()
+            self.assertEqual(public.get("/?fragment=seating").status_code, 401)
+            kitchen, _ = self.page({"staff_id": 3})
+            self.assertEqual(kitchen.get("/?fragment=seating").status_code, 403)
+            customer, _ = self.page({"customer_phone": phone})
+            response = customer.get("/?fragment=seating")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+            match = re.search(r'type="application/json">(.*?)</script>', response.get_data(as_text=True))
+            self.assertEqual(json.loads(match.group(1)), [{"visit_id": own, "table_id": 1, "booking_id": None}])
+            frontdesk, _ = self.page({"staff_id": 2})
+            staff_response = frontdesk.get("/?fragment=seating")
+            self.assertEqual(staff_response.status_code, 200)
+            self.assertIn("Seating scope fixture", staff_response.get_data(as_text=True))
+        finally:
+            with get_connection() as db:
+                db.execute("DELETE FROM dining_sessions WHERE visit_id = ?", (own,))
+                db.execute("DELETE FROM customers WHERE customer_phone = ?", (phone,))
+
+    def test_rendered_pages_have_browser_security_headers(self):
+        client, _ = self.page()
+        for path in ("/", "/auth/login"):
+            with self.subTest(path=path):
+                response = client.get(path)
+                policy = response.headers["Content-Security-Policy"]
+                self.assertIn("script-src 'self';", policy)
+                self.assertIn("font-src 'self' https://fonts.gstatic.com https://cdn.fontshare.com;", policy)
+                self.assertIn("form-action 'self';", policy)
+                self.assertIn("frame-ancestors 'none'", policy)
+                self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+                self.assertEqual(response.headers["Referrer-Policy"], "same-origin")
+                self.assertEqual(response.headers["Cache-Control"], "no-store")
+
+    def test_menu_escapes_description_in_markup_and_json(self):
+        from restaurant.db.database import get_connection
+
+        description = '<span data-security-fixture="plain">Warm & mild</span>'
+        with get_connection() as db:
+            previous = db.execute("SELECT ingredients FROM dishes WHERE dish_id=1").fetchone()[0]
+            db.execute("UPDATE dishes SET ingredients=? WHERE dish_id=1", (description,))
+        try:
+            client, page = self.page()
+            html = client.get("/").get_data(as_text=True)
+            self.assertNotIn(description, html)
+            self.assertIn("&lt;span", html)
+            self.assertEqual(next(dish for dish in page.guest_data["dishes"] if dish["id"] == 1)["description"],
+                             description)
+        finally:
+            with get_connection() as db:
+                db.execute("UPDATE dishes SET ingredients=? WHERE dish_id=1", (previous,))
+
+    def test_live_forms_validate_csrf_and_role_before_mutation(self):
+        from restaurant.db.database import get_connection
+
+        day = (datetime.now(timezone.utc) + timedelta(days=10)).date().isoformat()
+        fields = {"booking_date": day, "time_slot_id": "2", "party_size": "1"}
+        customer, page = self.page({"customer_phone": "13900000001"})
+        frontdesk, desk_page = self.page({"staff_id": 2})
+        kitchen, _ = self.page({"staff_id": 3})
+        admin, _ = self.page({"staff_id": 1})
+
+        def token(markup):
+            return next(attrs["content"] for tag, attrs in markup.elements
+                        if tag == "meta" and attrs.get("name") == "restaurant-csrf")
+
+        with get_connection() as db:
+            counts = {table: db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                      for table in ("bookings", "dishes", "dining_sessions", "kitchen_queue")}
+        examples = (
+            (customer, "/bookings", fields),
+            (frontdesk, "/frontdesk/visits/1/close", {}),
+            (kitchen, "/kitchen/items/9001/start", {}),
+            (admin, "/admin/dishes/1/archive", {}),
+        )
+        for client, path, form in examples:
+            for provided in ({}, {"csrf_token": "invalid-fixture"}):
+                with self.subTest(path=path, token_present=bool(provided)):
+                    response = client.post(path, data={**form, **provided})
+                    self.assertEqual(response.status_code, 400)
+                    self.assertIn("csrf_token", response.json["errors"])
+        self.assertEqual(customer.post("/bookings", data={**fields, "csrf_token": token(desk_page)}).status_code, 400)
+        self.assertEqual(customer.post("/admin/dishes/1/archive", data={"csrf_token": token(page)}).status_code, 403)
+        logout_without_token = customer.post("/auth/logout")
+        self.assertEqual(logout_without_token.status_code, 400)
+        self.assertEqual(customer.get("/auth/me").status_code, 200)
+        with get_connection() as db:
+            for table, count in counts.items():
+                self.assertEqual(db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0], count)
+            self.assertEqual(db.execute("SELECT is_archived FROM dishes WHERE dish_id=1").fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT status FROM dining_sessions WHERE visit_id=1").fetchone()[0], "seated")
+            self.assertEqual(db.execute("SELECT status FROM kitchen_queue WHERE order_item_id=9001").fetchone()[0], "waiting")
+        response = customer.post("/bookings", data={**fields, "csrf_token": token(page)})
+        self.assertEqual(response.status_code, 201)
+        booking_id = response.json["booking"]["booking_id"]
+        with get_connection() as db:
+            db.execute("DELETE FROM bookings WHERE booking_id=?", (booking_id,))
+
     def test_customer_presentation_styles_do_not_leak_into_staff_roles(self):
         stylesheet = "/static/css/guest-ember.css"
+        motion_script = "/static/js/guest-motion.js"
         for identity in (None, {"customer_phone": "13900000001"}):
             with self.subTest(identity=identity):
                 _, page = self.page(identity)
                 self.assertIn(stylesheet, page.assets)
+                self.assertIn(motion_script, page.assets)
         for staff_id, role in ((1, "admin"), (2, "frontdesk"), (3, "kitchen")):
             with self.subTest(role=role):
                 _, page = self.page({"staff_id": staff_id})
                 self.assertEqual(page.guest_data["account"]["role"], role)
                 self.assertNotIn(stylesheet, page.assets)
+                self.assertNotIn(motion_script, page.assets)
                 self.assertIn("/static/css/" + role + ".css", page.assets)
 
     def test_rendered_local_assets_and_css_dependencies_resolve(self):

@@ -13,7 +13,7 @@
     <h2>{{ label }}</h2>
     {% for dish in catalog if dish.category == key %}
     <button type="button" class="row" data-action="dish:{{ dish.key }}">
-      <img src="{{ url_for('static', filename='images/atelier/catalog/' ~ dish.key ~ '.webp') }}" alt="">
+      <img src="{{ url_for('static', filename=('images/atelier/catalog/' ~ dish.photo ~ '.webp') if dish.photo else 'images/atelier/editorial/place-setting.webp') }}" alt="">
       <span class="dish-copy">
         <span class="dish-line">
           <span class="dish-title">{{ dish.name }}</span>

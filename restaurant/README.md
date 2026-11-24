@@ -20,12 +20,12 @@ python app.py
 | `templates/customer/` | 当前顾客端 Jinja 模板、设计简报和交接 |
 | `templates/frontdesk/`、`templates/kitchen/`、`templates/admin/` | 各角色工作台模板和接口交接 |
 | `static/css/guest.css`、`static/css/guest-type.css` | 页面样式和字体 |
-| `static/js/guest.js`、`static/js/guest-lens.js` | 页面交互和导航动效 |
+| `static/js/guest.js`、`static/js/guest-motion.js` | 页面交互和切页动效 |
 | `static/images/atelier/` | 当前页面、菜单和后续编辑内容使用的照片 |
-| `api/customer/catalog.json` | 14 道演示菜品 |
+| `api/customer/catalog.json` | 菜品照片和描述。实际菜名、价格和供应状态来自 SQLite。 |
 
 ## 数据和后续页面
 
-账号登录、注册和退出使用 Flask-WTF 与 SQLite。顾客业务使用当前标签页内的演示数据。员工从相同的登录表单进入 `/#workspace`，按角色显示 [前台](templates/frontdesk/README.md)、[厨房](templates/kitchen/README.md) 或 [主管理员](templates/admin/README.md) 工作台。前台和厨房的页面仍共享本标签页的演示业务状态，主管工作台从 SQLite 读取业务数据。顾客端其余内容见[设计简报](templates/customer/FRONTEND_BRIEF.md)。
+账号登录、注册和退出使用 Flask-WTF 与 SQLite。顾客的预约和已提交订单与 [前台](templates/frontdesk/README.md)、[厨房](templates/kitchen/README.md) 及 [主管](templates/admin/README.md) 工作台共用同一 SQLite 库。未提交的购物袋保存在当前标签页。测试时用新数据库路径启动，参见[仓库启动说明](../README.md#sqlite-初始化)。
 
 旧前端移除的路由和文件见[删除清单](templates/customer/README.md#旧前端删除清单)。

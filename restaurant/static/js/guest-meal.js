@@ -11,6 +11,7 @@ const dishOptionSets = {
 };
 
 function optionsForDish(dish) {
+  if (dish.id != null) return [];
   return (dishOptionSets[dish.category] ?? []).map((group) => ({
     ...group,
     choices: group.choices.filter(([key]) => key !== "extra-patty" || dish.extraPatty),
@@ -26,6 +27,7 @@ function makeMealLine(dish, id, quantity, options = [], note = "") {
   return {
     id,
     key: dish.key,
+    dishId: dish.id,
     name: dish.name,
     quantity,
     options: selected.map(([key]) => key),
@@ -40,7 +42,7 @@ function restoreMealBag(savedBag, menu) {
     ? savedBag
     : Object.entries(savedBag ?? {}).map(([key, quantity]) => ({ key, quantity }));
   return lines.flatMap((line, index) => {
-    const dish = menu.get(line?.key);
+    const dish = line?.dishId == null ? menu.get(line?.key) : [...menu.values()].find(item => item.id === line.dishId);
     if (!dish || !Number.isInteger(line.quantity) || line.quantity < 1) return [];
     return [makeMealLine(
       dish,
@@ -52,13 +54,6 @@ function restoreMealBag(savedBag, menu) {
   });
 }
 
-function restoreMealOrder(savedOrder, menu, table, paid) {
-  if (!savedOrder) return null;
-  if (Array.isArray(savedOrder.lines)) return savedOrder;
-  const lines = restoreMealBag(savedOrder, menu);
-  return lines.length ? { lines, table, paid: Boolean(paid), placedAt: null } : null;
-}
-
 function mealTotal(lines) {
-  return lines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
+  return lines.reduce((sum, line) => sum + Math.round(line.unitPrice * 100) * line.quantity, 0) / 100;
 }

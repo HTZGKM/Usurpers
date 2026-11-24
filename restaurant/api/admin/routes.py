@@ -261,11 +261,13 @@ def admin_adjust_ingredient(ingredient_id):
     )
 
 
-@admin_bp.put("/dishes/<int:dish_id>/recipe")
+@admin_bp.route("/dishes/<int:dish_id>/recipe", methods=["GET", "PUT"])
 def admin_set_recipe(dish_id):
-    data = validated_data(RecipeForm)
-    from restaurant.services.inventory_service import set_recipe
+    from restaurant.services.inventory_service import get_recipe, set_recipe
 
+    if request.method == "GET":
+        return jsonify({"ok": True, "recipe": get_recipe(dish_id)})
+    data = validated_data(RecipeForm)
     return jsonify({"ok": True, "recipe": set_recipe(dish_id, data.get("ingredients"))})
 
 
@@ -354,19 +356,3 @@ def admin_dashboard():
         ),
     }
     return jsonify({"ok": True, "summary": summary})
-
-
-@admin_bp.get("/staff/new")
-def new_staff():
-    raise ServiceError(
-        "The staff account form page is not implemented yet.",
-        501,
-        code="NOT_IMPLEMENTED",
-    )
-
-
-@admin_bp.get("/dishes/new")
-def new_dish():
-    raise ServiceError(
-        "The dish form page is not implemented yet.", 501, code="NOT_IMPLEMENTED"
-    )

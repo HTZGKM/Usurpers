@@ -3,31 +3,41 @@
 {% set staff_links = {
   'frontdesk': [('Reservations', 'reservations'), ('Table service', 'service'), ('Billing records', 'billing')],
   'kitchen': [('Queue', 'queue'), ('Availability', 'availability')],
-  'admin': [('Overview', 'overview'), ('Orders', 'orders'), ('Kitchen queue', 'queue'), ('Tables', 'tables'), ('Accounts', 'accounts'), ('Dishes', 'dishes')]
+  'admin': [('Overview', 'overview'), ('Orders', 'orders'), ('Kitchen queue', 'queue'), ('Tables', 'tables'), ('Accounts', 'accounts'), ('Dishes', 'dishes'), ('Inventory', 'inventory')]
 }.get(role, []) %}
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b0b09">
+  <meta name="theme-color" content="{{ '#0b0b09' if staff_links else '#000000' }}">
   <title>Double Portion · Burgers &amp; Pizza</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/guest.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/guest-type.css') }}">
   {% if not staff_links %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/guest-ember.css') }}">
+  <style>
+    @font-face {
+      font-family: "Satoshi";
+      src: {% if has_local_satoshi %}url("{{ url_for('static', filename='fonts/Satoshi-Light.local.woff2') }}") format("woff2"), {% endif %}url("https://cdn.fontshare.com/wf/D7WD5OXZFWQ5T76HSPWAC7MNKAJXE2YG/LUGNSPO5YC34ABNB2O6K7AFDSOJZT56V/WNDVG7O66ENLOD43GS7FBUCC4KMT5OM2.woff2") format("woff2");
+      font-style: normal;
+      font-weight: 300;
+      font-display: swap;
+    }
+  </style>
+  <script defer src="{{ url_for('static', filename='js/guest-motion.js') }}"></script>
   <meta name="description" content="Double Portion. Stone-baked pizza, burgers from the flame, and a little warmth shared. Explore the menu and find your table.">
   {% endif %}
-  {% if staff_links %}
-  <script defer src="{{ url_for('static', filename='js/staff-demo.js') }}"></script>
+  {% if account %}
+  <meta name="restaurant-csrf" content="{{ logout_form.csrf_token.current_token }}">
+  <script defer src="{{ url_for('static', filename='js/restaurant-api.js') }}"></script>
   {% endif %}
   {% if account and account.role == 'kitchen' %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/kitchen.css') }}">
   <script defer src="{{ url_for('static', filename='js/kitchen.js') }}"></script>
   {% elif account and account.role == 'frontdesk' %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/frontdesk.css') }}">
-  <script defer src="{{ url_for('static', filename='js/frontdesk-service.js') }}"></script>
   <script defer src="{{ url_for('static', filename='js/frontdesk.js') }}"></script>
   {% elif account and account.role == 'admin' %}
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
@@ -44,7 +54,6 @@
     }
   </style>
   {% endif %}
-  <script defer src="{{ url_for('static', filename='js/guest-lens.js') }}"></script>
   <script defer src="{{ url_for('static', filename='js/guest-meal.js') }}"></script>
   {% if role == 'customer' %}<script defer src="{{ url_for('static', filename='js/guest-calendar.js') }}"></script>{% endif %}
   <script defer src="{{ url_for('static', filename='js/guest.js') }}"></script>
@@ -115,7 +124,8 @@
     <template id="view-journal-archive">{% include 'customer/_guest_journal_archive.html' %}</template>
   {% endif %}
   <script id="guest-data" type="application/json">{{ {
-    'dishes':catalog, 'tables':tables, 'slots':slots, 'categories':categories, 'account':account, 'staffLinks':staff_links
+    'dishes':catalog, 'tables':tables, 'tableIds':table_ids, 'slots':slots,
+    'categories':categories, 'account':account, 'staffLinks':staff_links
   }|tojson }}</script>
 </body>
 </html>

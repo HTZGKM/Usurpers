@@ -23,6 +23,9 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
   let orderDays = new Set();
   let accounts = [];
   let dishes = [];
+  let ingredients = [];
+  let recipeDish = '';
+  let recipe = null;
   let loaded = false;
   let loading = null;
   let refreshedAt = 0;
@@ -37,7 +40,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
   const orderMonthLabel = new Intl.DateTimeFormat('en-GB', { month:'long', year:'numeric', timeZone:'UTC' });
   const orderDateLabel = new Intl.DateTimeFormat('en-GB', { day:'numeric', month:'short', year:'numeric', timeZone:'UTC' });
   const titles = { overview:'Overview', orders:'Orders', queue:'Kitchen queue', floor:'Tables',
-    timeline:'Tables', calendar:'Tables', accounts:'Accounts', dishes:'Dishes' };
+    timeline:'Tables', calendar:'Tables', accounts:'Accounts', dishes:'Dishes', inventory:'Inventory' };
   const tones = { 'In queue':'amber', Queued:'amber', Cooking:'amber', Unpaid:'amber', Reserved:'amber',
     Ready:'sage', Paid:'sage', Seated:'sage', Active:'sage', Cancelled:'rose', Unavailable:'rose' };
   const state = { view:'overview', date:'', calendarMonth:'', table:'', booking:'', order:'', orderDate:'',
@@ -90,7 +93,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
   const minutesFromNow = (day, time) => serviceMinute(day, time) - serviceMinute(serviceDate, serviceTime);
   const elapsedMinutes = (day, time) => Math.max(0, -minutesFromNow(day, time));
 
-  const tableName = id => id == null ? '—' : layout[id - 1]?.[0] || 'T' + id;
+  const tableName = id => id == null ? '—' : tableLabel(id);
 
   function normalizeOrders(rows) {
     return rows.flatMap(row => {
@@ -152,17 +155,21 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
     feedback.hidden = !message;
   }
 
-  async function request(url, fields) {
-    const options = { headers:{ Accept:'application/json' }, cache:'no-store' };
+  async function request(url, fields, method = 'POST') {
+    const options = {
+      headers:{ Accept:'application/json' }, cache:'no-store',
+      mode:'same-origin', credentials:'same-origin', redirect:'error',
+    };
     if (fields) {
       fields.set('csrf_token', csrf);
-      options.method = 'POST';
+      options.method = method;
       options.body = fields;
     }
     const response = await fetch(url, options);
     const data = await response.json();
     if (!response.ok || !data.ok) {
       if (response.status === 401) throw new Error('Your session has ended. Sign in again to continue.');
+      if (data.errors?.csrf_token) throw new Error('Your form has expired. Refresh the page and try again.');
       throw new Error(Object.values(data.errors || {}).flat().join(' ') ||
         data.message || 'The request could not be completed.');
     }
@@ -184,12 +191,13 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
     accounts = [
       ...data.customers.map(row => ({
         id:'customer-' + row.customer_phone, name:row.name, role:roles.customer, phone:row.customer_phone,
-        status:row.is_active ? 'Active' : 'Inactive', editable:false,
+        status:row.is_active ? 'Active' : 'Inactive', editable:false, canChangeStatus:true,
       })),
       ...data.staff.map(row => ({
         id:String(row.staff_id), name:row.name, role:roles[row.role] || row.role,
         roleKey:row.role, phone:row.phone, email:row.email, status:row.is_active ? 'Active' : 'Inactive',
         editable: row.role === 'frontdesk' || row.role === 'kitchen',
+        canChangeStatus: row.role === 'frontdesk' || row.role === 'kitchen',
       })),
     ];
   }
@@ -207,7 +215,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
     kitchenOrders = all.filter(order => order.active);
     orderDays = new Set(data.order_days);
     floor = data.tables.map(row => {
-      const position = layout[row.table_id - 1];
+      const position = layout.find(table => table[0] === tableName(row.table_id));
       return { id:tableName(row.table_id), seats:row.capacity, x:position?.[2], y:position?.[3] };
     });
     reservations = readReservations(data.bookings, data.visits);
@@ -841,9 +849,15 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
       '<aside class="dp-panel dp-detail">' + (state.account === 'new' || (state.accountEditing && current?.editable) ? accountForm(current) : current ?
         head(es(current.name)) + tag(current.status) + '<dl><div><dt>Role</dt><dd>' + es(current.role) +
         '</dd></div></dl><div class="dp-detail-block"><h3>Contact</h3><p>' + es(current.email || current.phone || '—') + '</p></div>' +
-        (!current.editable ? '<p class="dp-caption">Read-only account</p>' :
-          '<div class="dp-account-actions"><button class="dp-button" type="button" data-edit-account>Edit account</button>' +
-          (current.status === 'Active' ? '<button class="dp-button dp-danger" type="button" data-deactivate-account>Deactivate</button>' : '') + '</div>')
+        '<div class="dp-account-actions">' +
+        (current.editable ? '<button class="dp-button" type="button" data-edit-account>Edit account</button>' : '') +
+        (current.canChangeStatus ? (current.status === 'Active'
+          ? '<button class="dp-button dp-danger" type="button" data-account-status="deactivate">Deactivate</button>'
+          : '<button class="dp-button" type="button" data-account-status="activate">Activate</button>') : '') +
+        '</div>' + (current.editable ?
+          '<details class="dp-detail-block"><summary>Reset staff password</summary>' +
+          '<form class="dp-form" data-reset-password><label>New password<input type="password" name="password" minlength="6" autocomplete="new-password" required></label>' +
+          '<button type="submit" class="dp-button dp-primary">Reset password</button><p role="alert" data-action-feedback hidden></p></form></details>' : '')
         : head('Account details') + '<p class="dp-caption">Select an account to see its details.</p>') +
       '</aside></div>';
   }
@@ -915,8 +929,58 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
       '</div></section><aside class="dp-panel dp-detail" data-dish-detail="' + detail.id + '">' +
       detail.markup + '</aside></div>';
   }
+  const inventoryUrl = '/admin/inventory/ingredients';
+  const recipeUrl = id => root.dataset.dishesUrl + '/' + id + '/recipe';
+  const ingredientOptions = id => ingredients.map(row => '<option value="' + row.ingredient_id + '"' +
+    (row.ingredient_id === id ? ' selected' : '') + '>' + es(row.name + ' · ' + row.unit) + '</option>').join('');
+
+  async function refreshInventory() {
+    ingredients = (await request(inventoryUrl)).ingredients;
+  }
+
+  function recipeRow(row = {}) {
+    return '<div class="dp-recipe-row"><label>Ingredient<select data-recipe-ingredient required>' +
+      ingredientOptions(row.ingredient_id) + '</select></label><label>Quantity per dish' +
+      '<input type="number" step="any" min="0.000001" value="' + (row.quantity_per_dish ?? '') + '" data-recipe-quantity required></label>' +
+      '<button type="button" class="dp-button" data-remove-recipe>Remove</button></div>';
+  }
+
+  function inventoryPage() {
+    const heading = title(titles.inventory, '<p class="dp-caption">Stock changes are recorded manually.</p>');
+    return heading + '<div class="dp-split"><section class="dp-panel dp-detail">' + head('Stock on hand') +
+      '<div class="dp-table-wrap"><table>' + tableHead(['Ingredient','Stock','Expiry']) +
+      '<tbody>' + ingredients.map(row => '<tr><td>' + es(row.name) + '</td><td>' + es(row.on_hand + ' ' + row.unit) +
+        '</td><td>' + es(row.expires_at || '—') + '</td></tr>').join('') + '</tbody></table></div>' +
+      '<form class="dp-form" data-add-ingredient><h3>New ingredient</h3>' +
+      '<label>Ingredient name<input name="name" maxlength="100" required></label>' +
+      '<label>Unit<input name="unit" maxlength="20" required></label>' +
+      '<label>Opening quantity<input name="on_hand" type="number" step="any" min="0" required></label>' +
+      '<label>Expiry date (optional)<input name="expires_at" type="date"></label>' +
+      '<button type="submit" class="dp-button dp-primary">Add ingredient</button><p role="alert" data-action-feedback hidden></p></form>' +
+      (ingredients.length ? '<form class="dp-form" data-adjust-ingredient><h3>Adjust stock</h3>' +
+        '<label>Ingredient<select name="ingredient_id" required>' + ingredientOptions() + '</select></label>' +
+        '<label>Quantity change<input type="number" step="any" name="quantity" required></label>' +
+        '<label>Reason<select name="movement_type"><option value="adjustment">Adjustment</option><option value="delivery">Delivery</option>' +
+        '<option value="spoilage">Spoilage</option><option value="correction">Correction</option></select></label>' +
+        '<button type="submit" class="dp-button dp-primary">Save adjustment</button><p role="alert" data-action-feedback hidden></p></form>' : '') +
+      '</section><section class="dp-panel dp-detail">' + head('Dish recipes') +
+      '<label class="dp-form">Dish<select data-recipe-dish><option value="">Choose a dish</option>' +
+      dishes.filter(dish => dish.status !== 'Archived').map(dish => '<option value="' + dish.id + '"' +
+        (dish.id === recipeDish ? ' selected' : '') + '>' + es(dish.name) + '</option>').join('') +
+      '</select></label><div data-recipe-panel aria-live="polite"></div></section></div>';
+  }
+
+  function renderRecipe() {
+    const panel = main.querySelector('[data-recipe-panel]');
+    if (!panel) return;
+    panel.innerHTML = recipe === null ? (recipeDish ? '<p>Loading recipe…</p>' : '') :
+      '<form class="dp-form" data-save-recipe><div data-recipe-rows>' + recipe.map(recipeRow).join('') + '</div>' +
+      '<div class="dp-account-actions"><button type="button" class="dp-button" data-add-recipe' +
+      (ingredients.length ? '' : ' disabled') + '>Add recipe ingredient</button>' +
+      '<button type="submit" class="dp-button dp-primary">Save recipe</button></div><p role="alert" data-action-feedback hidden></p></form>';
+  }
   const views = { overview, orders:ordersPage, queue:queuePage, floor:floorPage, timeline:timelinePage,
-    calendar:calendarPage, accounts:accountsPage, dishes:dishesPage };
+    calendar:calendarPage, accounts:accountsPage, dishes:dishesPage, inventory:inventoryPage };
   const tableViews = { tables:'floor', 'tables/timeline':'timeline', 'tables/calendar':'calendar' };
   const sections = { floor:'tables', timeline:'tables/timeline', calendar:'tables/calendar' };
 
@@ -929,6 +993,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
     main.innerHTML = loaded ? views[view]() :
       title(titles[view]) + '<p class="dp-empty" role="status">' +
       (loading ? 'Loading restaurant data…' : '<button type="button" class="dp-link" data-retry-workspace>Retry loading</button>') + '</p>';
+    if (view === 'inventory') renderRecipe();
     const section = view === 'timeline' || view === 'calendar' ? 'floor' : view;
     root.querySelectorAll('.dp-sidebar [data-view]').forEach(button => {
       if (button.dataset.view === section) button.setAttribute('aria-current','page');
@@ -951,7 +1016,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
 
   function loadWorkspace() {
     if (loading) return loading;
-    loading = Promise.all([refreshWorkspace(), refreshAccounts(), refreshDishes()]).then(() => {
+    loading = Promise.all([refreshWorkspace(), refreshAccounts(), refreshDishes(), refreshInventory()]).then(() => {
       loaded = true;
       refreshedAt = Date.now();
       setFeedback(invalidWorkspaceDates ? 'Orders with invalid placement dates are omitted.' : '');
@@ -1011,13 +1076,13 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
     deactivation.showModal();
   }
 
-  async function adminAction(container, button, url, fields, complete) {
+  async function adminAction(container, button, url, fields, complete, method = 'POST') {
     const errorOutput = container.querySelector('[data-action-feedback]');
     errorOutput.hidden = true;
     button.disabled = true;
     try {
-      const data = await request(url,fields);
-      complete(data);
+      const data = await request(url,fields,method);
+      await complete(data);
     } catch (error) {
       errorOutput.textContent = error.message;
       errorOutput.hidden = false;
@@ -1170,12 +1235,28 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
       return;
     }
     if ('closeDialog' in button.dataset) { button.closest('dialog').close(); return; }
-    if ('deactivateAccount' in button.dataset) {
-      const row = accounts.find(entry => entry.id === state.account && entry.editable);
-      if (row) openConfirmation('Deactivate staff account?',row.name,'Deactivate', {
-        url:root.dataset.staffUrl + '/' + row.id + '/deactivate',
-        complete:() => { row.status = 'Inactive'; show('accounts'); },
+    if (button.dataset.accountStatus) {
+      const row = accounts.find(entry => entry.id === state.account && entry.canChangeStatus);
+      const action = button.dataset.accountStatus;
+      const activate = action === 'activate';
+      const label = activate ? 'Activate' : 'Deactivate';
+      const url = row?.role === roles.customer ? '/admin/customers/' + encodeURIComponent(row.phone) :
+        root.dataset.staffUrl + '/' + row?.id;
+      if (row) openConfirmation(label + ' account?',row.name,label, {
+        url:url + '/' + action,
+        complete:() => { row.status = activate ? 'Active' : 'Inactive'; show('accounts'); },
       });
+      return;
+    }
+    if ('addRecipe' in button.dataset) {
+      const rows = main.querySelector('[data-recipe-rows]');
+      rows.insertAdjacentHTML('beforeend', recipeRow());
+      rows.lastElementChild.querySelector('select').focus();
+      return;
+    }
+    if ('removeRecipe' in button.dataset) {
+      button.closest('.dp-recipe-row').remove();
+      main.querySelector('[data-add-recipe]').focus();
       return;
     }
     if ('archiveDish' in button.dataset) {
@@ -1257,6 +1338,21 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
     }
   });
   root.addEventListener('change', (event) => {
+    if (event.target.matches('[data-recipe-dish]')) {
+      const id = event.target.value;
+      recipeDish = id;
+      recipe = null;
+      renderRecipe();
+      if (id) request(recipeUrl(id)).then(data => {
+        if (recipeDish !== id) return;
+        recipe = data.recipe;
+        renderRecipe();
+      }).catch(error => {
+        const panel = main.querySelector('[data-recipe-panel]');
+        if (panel && recipeDish === id) panel.textContent = error.message;
+      });
+      return;
+    }
     const filter = event.target.dataset.filter;
     if (!filter) return;
     state[filter] = event.target.value;
@@ -1280,6 +1376,41 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
   });
   root.addEventListener('submit', (event) => {
     const form = event.target;
+    if (form.matches('[data-add-ingredient],[data-adjust-ingredient],[data-save-recipe],[data-reset-password]')) {
+      event.preventDefault();
+      const submit = form.querySelector('[type="submit"]');
+      if (submit.disabled) return;
+      const fields = new FormData(form);
+      if (form.matches('[data-reset-password]')) {
+        const id = state.account;
+        return adminAction(form, submit, root.dataset.staffUrl + '/' + id + '/reset-password', fields, () => {
+          form.reset();
+          form.closest('details').open = false;
+          setFeedback('Staff password reset.');
+        });
+      }
+      if (form.matches('[data-save-recipe]')) {
+        const id = recipeDish;
+        Array.from(form.querySelectorAll('.dp-recipe-row')).forEach((row,index) => {
+          fields.set('ingredients-' + index + '-ingredient_id',row.querySelector('[data-recipe-ingredient]').value);
+          fields.set('ingredients-' + index + '-quantity_per_dish',row.querySelector('[data-recipe-quantity]').value);
+        });
+        return adminAction(form, submit, recipeUrl(id), fields, data => {
+          if (recipeDish === id) {
+            recipe = data.recipe;
+            renderRecipe();
+          }
+          setFeedback('Recipe saved.');
+        }, 'PUT');
+      }
+      const adjust = form.matches('[data-adjust-ingredient]');
+      const url = adjust ? inventoryUrl + '/' + fields.get('ingredient_id') + '/adjust' : inventoryUrl;
+      return adminAction(form, submit, url, fields, async () => {
+        await refreshInventory();
+        if (state.view === 'inventory') show('inventory');
+        setFeedback(adjust ? 'Stock adjusted.' : 'Ingredient added.');
+      });
+    }
     const accountForm = form.matches('[data-admin-account-form]');
     if (!accountForm && !form.matches('[data-admin-dish-form]')) return;
     event.preventDefault();

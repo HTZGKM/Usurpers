@@ -183,7 +183,3 @@ class RecipeIngredientForm(Form):
 
 class RecipeForm(FlaskForm):
     ingredients = FieldList(FormField(RecipeIngredientForm))
-
-    def validate_ingredients(self, field):
-        if not field.entries:
-            raise ValidationError("Add at least one ingredient.")
