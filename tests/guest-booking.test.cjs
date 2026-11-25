@@ -14,6 +14,7 @@ function guestBooking(request) {
     idempotency_key: 'original-attempt' };
   const persisted = [];
   const context = vm.createContext({
+    reservationFlow: false, reservationBase: '/bookings',
     restaurantRequest: request, state: { draft }, pendingCreation: pending,
     editingBooking: null, editConflict: null, customerFeedback: '', customerRefreshVersion: 4,
     customerLoaded: false, focusedBookingId: null, app: { querySelector: () => null },

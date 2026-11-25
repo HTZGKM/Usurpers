@@ -11,7 +11,7 @@ from .forms import (
 from restaurant.api.frontdesk.forms import StaffBookingForm
 from flask import Blueprint, jsonify, request, session
 from restaurant.route_utils import validated_data, require_api_role
-from restaurant.services import booking_service, order_service, menu_service
+from restaurant.services import allocation, booking_service, order_service, menu_service
 from restaurant.services.common import ServiceError
 
 customer_bp = Blueprint("customer", __name__)
@@ -39,6 +39,8 @@ def create_booking():
         BookingForm if session["user"]["role"] == "customer" else StaffBookingForm
     )
     user = session.get("user", {})
+    if allocation.enabled():
+        return jsonify(ok=True, booking=allocation.create_booking(data, user)), 201
     customer_phone = user.get("username") if user.get("role") == "customer" else None
     contact_name = (
         user.get("name")
@@ -252,6 +254,8 @@ def cancel_item(order_id, item_id):
 
 @customer_bp.post("/waiting-queue")
 def join_waitlist():
+    if allocation.enabled():
+        raise ServiceError("Ask the front desk to issue a waitlist ticket.", 403, code="WAITLIST_STAFF_ONLY")
     data = validated_data(WaitlistForm)
     from restaurant.services.queue_manager import QueueManager
 
@@ -280,6 +284,8 @@ def join_waitlist():
 
 @customer_bp.delete("/waiting-queue/<int:queue_id>")
 def leave_waitlist(queue_id):
+    if allocation.enabled():
+        raise ServiceError("Ask the front desk to change a waitlist ticket.", 403, code="WAITLIST_STAFF_ONLY")
     data = validated_data(ActionForm)
     from restaurant.services.queue_manager import QueueManager
 
@@ -290,6 +296,8 @@ def leave_waitlist(queue_id):
 
 @customer_bp.get("/waiting-queue/mine")
 def my_waitlist():
+    if allocation.enabled():
+        return jsonify(ok=True, queue=None)
     from restaurant.services.queue_manager import QueueManager
 
     return jsonify(

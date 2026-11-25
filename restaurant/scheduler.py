@@ -14,6 +14,11 @@ from restaurant.services.common import ServiceError
 
 
 def run_scheduled_tasks(now=None):
+    from restaurant.services import allocation
+
+    if allocation.enabled():
+        allocation.desk_snapshot()
+        return {"promoted_preorders": QueueManager.enqueue_due_preorders(now)}
     expired=QueueManager.expire_called()
     promoted=QueueManager.enqueue_due_preorders(now)
     called=[]

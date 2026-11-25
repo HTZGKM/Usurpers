@@ -50,6 +50,7 @@ def _service_day_sql(column):
 
 
 def get_workspace():
+    from restaurant.services import allocation
     from restaurant.services.queue_manager import QueueManager
 
     QueueManager.enqueue_due_preorders()
@@ -71,7 +72,7 @@ def get_workspace():
                 "WHERE created_at IS NOT NULL ORDER BY service_day DESC"
             )
         ]
-        tables = [
+        tables = allocation.table_projection(db, allocation.database_now(db)) if allocation.enabled(db) else [
             dict(row)
             for row in db.execute("SELECT table_id, capacity FROM dining_tables ORDER BY table_id")
         ]

@@ -1,4 +1,4 @@
-function mountAdminWorkspace(root, layout, catalog, navigate) {
+function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
   const main = root.querySelector('[data-workspace-view]');
   const userMenu = root.querySelector('.dp-user');
   const userButton = userMenu.querySelector('.dp-user-button');
@@ -94,6 +94,12 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
   const elapsedMinutes = (day, time) => Math.max(0, -minutesFromNow(day, time));
 
   const tableName = id => id == null ? '—' : tableLabel(id);
+  let historyKey = '';
+  let historyRequest = 0;
+  let historyData;
+  let historyError = '';
+  let historyLoadedAt = 0;
+  let historySelection;
 
   function normalizeOrders(rows) {
     return rows.flatMap(row => {
@@ -216,7 +222,8 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
     orderDays = new Set(data.order_days);
     floor = data.tables.map(row => {
       const position = layout.find(table => table[0] === tableName(row.table_id));
-      return { id:tableName(row.table_id), seats:row.capacity, x:position?.[2], y:position?.[3] };
+      return { id:tableName(row.table_id), seats:row.capacity, x:position?.[2], y:position?.[3],
+        status:row.status, reason:row.reason_text, next:row.next_booking };
     });
     reservations = readReservations(data.bookings, data.visits);
     if (!loaded || (previousDate !== serviceDate && state.date === previousDate)) {
@@ -742,8 +749,10 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
   }
   function floorSeat(table) {
     const entry = liveTable(table.id);
-    const label = entry?.status || 'Available';
-    const short = label === 'Seated' ? entry.guests + ' guests' : label === 'Reserved' ? entry.start : table.seats + ' seats';
+    const label = reservationFlow ? ({ occupied:'Seated', disabled:'Disabled', reserved:'Protected',
+      available:'Available' }[table.status] || 'Available') : entry?.status || 'Available';
+    const short = label === 'Seated' && entry ? entry.guests + ' guests' :
+      reservationFlow && table.next ? table.next.label : label === 'Reserved' && entry ? entry.start : table.seats + ' seats';
     const chairs = Array.from({length:table.seats}, (_,index) => {
       const columns = Math.ceil(table.seats / 2);
       return '<i class="dp-chair" aria-hidden="true" data-side="' + (index < columns ? 'top' : 'bottom') +
@@ -752,7 +761,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
     return '<button type="button" class="dp-seat" data-table="' + table.id + '" data-capacity="' + table.seats +
       '"' + (table.x == null ? '' : ' style="--x:' + table.x + '%;--y:' + table.y + '%"') + selected(state.table === table.id) +
       ' aria-label="Table ' + table.id + ', ' + label + ', ' + short + '">' + chairs + '<strong>' + table.id +
-      '</strong>' + tag(label) + '<small>' + short + '</small></button>';
+      '</strong>' + tag(label) + '<small>' + es(short) + '</small></button>';
   }
   function floorPage() {
     const hasLayout = floor.length && floor.every(table => table.x != null);
@@ -834,6 +843,145 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
       dateCells + '</div></section><aside class="dp-panel dp-detail">' +
       head(dateText(state.date), '<span class="dp-caption">' + bookings.length + ' bookings</span>') +
       description + more('Open day timeline', 'timeline', 'data-scheduled-day') + '</aside></div>';
+  }
+
+  function historyRange(view) {
+    if (view === 'timeline') return [state.date, state.date];
+    const first = state.calendarMonth;
+    const next = new Date(first + 'T00:00:00Z');
+    next.setUTCMonth(next.getUTCMonth() + 1);
+    return [first, shiftedDay(next.toISOString().slice(0,10), -1)];
+  }
+
+  async function loadTableHistory(view, force = false) {
+    const [start, end] = historyRange(view);
+    if (!start || !end) return;
+    const key = start + ':' + end;
+    if (!force && historyKey === key &&
+        (historyError || historyData?.key !== key || Date.now() - historyLoadedAt < 30000)) return;
+    historyKey = key;
+    historyError = '';
+    const serial = ++historyRequest;
+    try {
+      const data = await request('/admin/reservation-api/timeline?' + new URLSearchParams({ start, end }));
+      if (serial !== historyRequest) return;
+      historyData = { ...data, key };
+      historyLoadedAt = Date.now();
+    } catch (error) {
+      if (serial !== historyRequest) return;
+      historyError = error.message;
+    }
+    if (state.view === view && historyRange(view).join(':') === key) show(view);
+  }
+
+  function tableHistory(view) {
+    const data = historyData?.key === historyRange(view).join(':') ? historyData : null;
+    return data ?? (title(titles[view]) + tableTabs() + '<p class="dp-empty" role="status">' +
+      (historyError ? es(historyError) + ' <button type="button" class="dp-link" data-history-retry>Try again</button>' :
+        'Loading table history…') + '</p>');
+  }
+
+  function serviceTimeline() {
+    const data = tableHistory('timeline');
+    if (typeof data === 'string') return data;
+    const day = state.date;
+    const midnight = Date.parse(day + 'T00:00:00+08:00');
+    const now = (Date.parse(data.server_now) - midnight) / 60000;
+    const relative = value => value ? (Date.parse(value) - midnight) / 60000 : null;
+    const bookingRows = data.bookings.filter(row => row.status === 'booked' && row.protected_start);
+    const points = [...bookingRows.map(row => relative(row.protected_start)), ...data.visits.map(row => relative(row.seated_at ?? row.recorded_at))];
+    const ends = [...bookingRows.map(row => relative(row.protected_end)), ...data.visits.map(row => relative(row.closed_at) ?? now)];
+    const left = Math.max(0, Math.min(11 * 60, ...points.map(value => Math.floor(value / 60) * 60)));
+    const right = Math.min(1440, Math.max(21 * 60, ...ends.map(value => Math.ceil(value / 60) * 60)));
+    const percentage = minute => Math.min(100, Math.max(0, (minute - left) * 100 / (right - left)));
+    const format = value => value ? localTimestamp(value).slice(11,16) : '';
+    const labels = [];
+    const entries = data.tables.map(table => {
+      const bookings = bookingRows.filter(row => row.table_id === table.table_id).map(row => ({
+        id: 'b' + row.booking_id, label: row.contact_name, table: tableName(row.table_id),
+        start: relative(row.protected_start), end: relative(row.protected_end),
+        point: relative(row.arrival_at), mode: 'plan', arrival: format(row.arrival_at) || row.time_slot,
+        party: row.party_size,
+      }));
+      const visits = data.visits.filter(row => row.table_id === table.table_id).map(row => ({
+        id: 'v' + row.visit_id, label: row.contact_name || 'Walk-in', table: tableName(row.table_id),
+        mode: row.seated_at ? (row.status === 'closed' ? 'closed' : 'live') : 'unknown',
+        start: relative(row.seated_at), recorded: relative(row.recorded_at),
+        end: relative(row.closed_at) ?? now, party: row.party_size,
+        seated: format(row.seated_at), closed: format(row.closed_at), ongoing: row.status !== 'closed',
+        linkedBooking: row.booking_id ? 'b' + row.booking_id : null,
+        recordedLabel: format(row.recorded_at),
+        arrival: row.booking_id ? (format(row.arrival_at) || row.legacy_reservation_window) : null,
+      }));
+      const records = [...bookings, ...visits];
+      labels.push(...records);
+      return '<div class="dp-timeline-row"><span class="dp-row-label">' + es(tableName(table.table_id)) +
+        '</span><div class="dp-time-track">' + (now >= left && now < right ?
+          '<span class="dp-now" aria-hidden="true"></span>' : '') + records.map(row => {
+          const begin = percentage(row.start ?? (row.ongoing ? row.recorded : row.end));
+          const end = percentage(row.end);
+          const shownEnd = row.mode === 'unknown' ? begin + 1.2 : end;
+          const band = '<button type="button" class="dp-booking-band dp-service-band" data-history-record="' + row.id +
+            '" data-period="' + row.mode + '" style="--begin:' + Math.min(begin, 99) + '%;--span:' + Math.max(.7, shownEnd-begin) +
+            '%"' + selected(historySelection === row.id) + ' aria-label="' + es(row.table + ' • ' + row.label +
+            (row.mode === 'unknown' ? ' • Seating time unknown' : row.ongoing ? ' • Still dining' : '')) + '">' +
+            es(row.label) + '</button>';
+          const marker = row.point == null ? '' : '<span class="dp-arrival-point" style="--point:' +
+            percentage(row.point) + '%" aria-hidden="true"></span>';
+          const continuation = row.mode === 'live' && end < 100 ? '<span class="dp-service-continuation" style="--begin:' +
+            end + '%" aria-hidden="true"></span>' : '';
+          return band + marker + continuation;
+        }).join('') + '</div></div>';
+    });
+    const current = labels.find(row => row.id === historySelection || row.linkedBooking === historySelection);
+    const info = current ? '<p>' + es(current.table + ' · ' + current.label + ' · ' + current.party + ' guests') + '</p>' +
+      (current.arrival ? '<p>Reservation arrival: ' + es(current.arrival) + '</p>' : '') +
+      (current.mode === 'plan' ? '' : '<p>' + (current.seated ? 'Seated: ' + es(current.seated) :
+        'Seating time unknown' + (current.recordedLabel ? ' · Visit recorded: ' + es(current.recordedLabel) : '')) + '</p>') +
+      (current.closed ? '<p>Table closed: ' + es(current.closed) + '</p>' :
+        current.ongoing ? '<p>Still dining</p>' : '') : '<p class="dp-empty">Select a reservation or visit.</p>';
+    const hours = Array.from({length:6}, (_, index) => '<time>' +
+      (left + (right-left)*index/6 >= 1440 ? '24:00' : timeAt(Math.floor(left + (right-left)*index/6))) + '</time>').join('');
+    return title(titles.timeline) + tableTabs() + '<div class="dp-split"><section class="dp-panel dp-schedule" style="--now:' +
+      percentage(now) + '%;--hour-gap:16.666%">' + head(dateText(day), more('Choose a date', 'calendar')) +
+      (now >= left && now < right ? '<div class="dp-now-label"><span>Now ' + es(format(data.server_now)) + '</span></div>' : '') +
+      '<div class="dp-hours"><span></span><div class="dp-hour-track">' + hours + '</div></div>' + entries.join('') +
+      '<div class="dp-key"><span>Upcoming reservation</span><span>Actual dining</span><span>Still dining</span><span>Time unknown</span></div>' +
+      '</section><aside class="dp-panel dp-detail">' + head('Table record') + info + '</aside></div>';
+  }
+
+  function serviceCalendar() {
+    const data = tableHistory('calendar');
+    if (typeof data === 'string') return data;
+    const [first, last] = historyRange('calendar');
+    const month = new Date(first + 'T00:00:00Z');
+    const lead = (month.getUTCDay() + 6) % 7;
+    const days = Number(last.slice(-2));
+    const counts = {};
+    const count = (day, kind) => {
+      if (!counts[day]) counts[day] = { reservations:0, visits:0, unknown:0 };
+      counts[day][kind]++;
+    };
+    for (const row of data.bookings) if (!['cancelled','no_show'].includes(row.status)) count(row.booking_date, 'reservations');
+    for (const row of data.visits) {
+      const day = localTimestamp(row.seated_at ?? row.recorded_at ?? row.closed_at).slice(0,10);
+      if (day) count(day, row.seated_at ? 'visits' : 'unknown');
+    }
+    const cells = Array.from({length: Math.ceil((lead + days) / 7) * 7}, (_, index) => {
+      const day = index - lead + 1;
+      if (day < 1 || day > days) return '<span aria-hidden="true"></span>';
+      const date = first.slice(0,8) + String(day).padStart(2,'0');
+      const row = counts[date];
+      return '<button type="button" class="dp-day" data-open-history-day="' + date + '"' + selected(date === state.date) +
+        '><span>' + day + '</span>' + (row ? '<small>' + row.reservations + ' reserved · ' + row.visits + ' seated' +
+          (row.unknown ? ' · ' + row.unknown + ' time unknown' : '') + '</small>' : '') + '</button>';
+    }).join('');
+    return title(titles.calendar) + tableTabs() + '<section class="dp-panel">' + head(orderMonthLabel.format(month),
+      '<div class="dp-order-month"><button type="button" data-calendar-step="-1" aria-label="Previous month">‹</button>' +
+      '<button type="button" data-calendar-step="1" aria-label="Next month">›</button></div>') +
+      '<div class="dp-calendar" aria-label="Table calendar">' +
+      ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(name => '<span class="dp-calendar-label">' + name + '</span>').join('') +
+      cells + '</div></section>';
   }
   function accountsPage() {
     const rows = accounts.filter(entry => !state.role || entry.role === state.role);
@@ -979,8 +1127,9 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
       (ingredients.length ? '' : ' disabled') + '>Add recipe ingredient</button>' +
       '<button type="submit" class="dp-button dp-primary">Save recipe</button></div><p role="alert" data-action-feedback hidden></p></form>';
   }
-  const views = { overview, orders:ordersPage, queue:queuePage, floor:floorPage, timeline:timelinePage,
-    calendar:calendarPage, accounts:accountsPage, dishes:dishesPage, inventory:inventoryPage };
+  const views = { overview, orders:ordersPage, queue:queuePage, floor:floorPage,
+    timeline:reservationFlow ? serviceTimeline : timelinePage, calendar:reservationFlow ? serviceCalendar : calendarPage,
+    accounts:accountsPage, dishes:dishesPage, inventory:inventoryPage };
   const tableViews = { tables:'floor', 'tables/timeline':'timeline', 'tables/calendar':'calendar' };
   const sections = { floor:'tables', timeline:'tables/timeline', calendar:'tables/calendar' };
 
@@ -994,6 +1143,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
       title(titles[view]) + '<p class="dp-empty" role="status">' +
       (loading ? 'Loading restaurant data…' : '<button type="button" class="dp-link" data-retry-workspace>Retry loading</button>') + '</p>';
     if (view === 'inventory') renderRecipe();
+    if (reservationFlow && loaded && (view === 'timeline' || view === 'calendar')) loadTableHistory(view);
     const section = view === 'timeline' || view === 'calendar' ? 'floor' : view;
     root.querySelectorAll('.dp-sidebar [data-view]').forEach(button => {
       if (button.dataset.view === section) button.setAttribute('aria-current','page');
@@ -1222,6 +1372,22 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
       return;
     }
     const { view, order, table, booking, date, account, dish } = button.dataset;
+    if ('historyRetry' in button.dataset) {
+      loadTableHistory(state.view, true);
+      return;
+    }
+    if (button.dataset.openHistoryDay) {
+      state.date = button.dataset.openHistoryDay;
+      historySelection = null;
+      go('timeline');
+      return;
+    }
+    if (button.dataset.historyRecord) {
+      historySelection = button.dataset.historyRecord;
+      show('timeline');
+      main.querySelector('[data-history-record="' + historySelection + '"]')?.focus({preventScroll:true});
+      return;
+    }
     if ('calendarStep' in button.dataset) {
       const month = new Date(state.calendarMonth + 'T00:00:00Z');
       const step = button.dataset.calendarStep;
@@ -1296,6 +1462,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate) {
       if (!entry) return;
       state.table = entry.table;
       state.booking = booking;
+      historySelection = booking;
       state.date = entry.day;
       state.calendarMonth = state.date.slice(0,7) + '-01';
       go(view || 'timeline');

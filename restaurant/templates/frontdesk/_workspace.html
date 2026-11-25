@@ -32,6 +32,7 @@
         <p class="desk-floor-feedback" data-desk-floor-feedback role="status"></p>
         <button type="button" class="desk-subtle" data-desk-open="walk-in" hidden>Seat walk-in</button>
         <button type="button" class="desk-subtle" data-desk-open="service" hidden>Open table service</button>
+        {% if reservation_flow %}<button type="button" class="desk-subtle" data-desk-disable-table hidden>Disable table</button>{% endif %}
       </div>
     </section>
 
@@ -42,7 +43,7 @@
       </div>
       <div class="desk-filters">
         <label>Date <input type="date" data-desk-view-date required></label>
-        <label>Time slot
+        <label{% if reservation_flow %} class="desk-legacy-hidden"{% endif %}>Time slot
           <select data-desk-slot>
             <option value="">All times</option>
             {% for slot_id, slot in slots.items() %}<option value="{{ slot_id }}">{{ slot }}</option>{% endfor %}
@@ -64,6 +65,15 @@
           <button type="submit" class="desk-confirm">Confirm arrival</button>
           <button type="button" class="desk-subtle" data-desk-change-table aria-expanded="false">Change table for check-in</button>
         </form>
+        {% if reservation_flow %}
+        <div class="desk-arrival-actions" data-desk-flow-actions hidden>
+          <button type="button" class="desk-confirm" data-booking-phase="arrive">Record arrival</button>
+          <button type="button" class="desk-subtle" data-booking-phase="ready">Confirm table ready</button>
+          <button type="button" class="desk-confirm" data-booking-phase="seat">Seat guest</button>
+          <button type="button" class="desk-subtle" data-booking-phase="offer">Prepare selected table instead</button>
+          <button type="button" class="desk-confirm" data-booking-phase="accept_offer">Confirm guest agrees</button>
+        </div>
+        {% endif %}
         <div class="desk-arrival-actions" data-desk-booking-actions hidden>
           <button type="button" class="desk-subtle" data-desk-open="edit">Edit booking</button>
           <button type="button" class="desk-subtle desk-danger" data-desk-open="cancel">Cancel booking</button>
@@ -75,12 +85,21 @@
 
   <section class="desk-panel desk-waitlist" data-desk-waitlist aria-labelledby="desk-waitlist-title">
     <div class="desk-panel-heading"><h2 id="desk-waitlist-title" tabindex="-1">Walk-in waitlist</h2></div>
+    {% if reservation_flow %}
+    <form class="desk-check-in desk-ticket-entry" data-desk-ticket>
+      <label>Guests <input type="number" name="party_size" required min="1" value="2"></label>
+      <label>Guest name <input name="contact_name" maxlength="100"></label>
+      <label>Phone <input type="tel" name="phone_number" maxlength="20"></label>
+      <button type="submit" class="desk-confirm">Issue ticket</button>
+    </form>
+    {% endif %}
     <form class="desk-check-in" data-desk-call>
       <label>Available table <select name="table_id" required></select></label>
       <button type="submit" class="desk-confirm">Call next party</button>
     </form>
     <ul class="desk-service-list" data-desk-waiting-list></ul>
     <p data-desk-waiting-empty>No parties on the waitlist.</p>
+    {% if reservation_flow %}<p class="desk-floor-feedback" data-desk-recent-tickets></p>{% endif %}
   </section>
 
   <div data-desk-service-view hidden>
@@ -104,7 +123,7 @@
         <div class="desk-arrival-actions" data-confirm-desk-close hidden>
           <span>Release this table?</span>
           <button type="button" class="desk-subtle" data-keep-desk-visit>Keep open</button>
-          <button type="button" class="desk-confirm" data-release-desk-table disabled>Release table</button>
+          <button type="button" class="desk-confirm" data-release-desk-table disabled>{{ 'Confirm table closed' if reservation_flow else 'Release table' }}</button>
         </div>
       </div>
       <div class="desk-service-section">
@@ -143,9 +162,13 @@
       <div class="desk-editor-fields">
         <label>Booking date <input type="date" name="booking_date" required></label>
         <label>Arrival time
+          {% if reservation_flow %}
+          <select name="arrival_time" required><option value="">Choose an arrival time</option></select>
+          {% else %}
           <select name="time_slot_id" required>
             {% for slot_id, slot in slots.items() %}<option value="{{ slot_id }}">{{ slot }}</option>{% endfor %}
           </select>
+          {% endif %}
         </label>
         <label>Party size <input type="number" name="party_size" min="1" required></label>
         <label>Preferred table <select name="table_id">

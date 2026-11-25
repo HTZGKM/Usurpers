@@ -403,6 +403,13 @@ main.admin-page {
 #dp-workspace .dp-booking-band {position:absolute;top:6px;bottom:6px;left:var(--begin);width:var(--span);min-width:40px;max-width:100%;border:1px solid #534830;border-radius:4px;background:#34291d;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;padding:2px 6px;font-size:11px}
 #dp-workspace .dp-booking-band[data-tone="sage"] {background:#26322a;border-color:#415348}
 #dp-workspace .dp-booking-band[aria-pressed="true"] {border-color:var(--gold);color:var(--gold);z-index:2}
+#dp-workspace .dp-service-band {min-width:0}
+#dp-workspace .dp-service-band[data-period="plan"] {background:#493b24;border-color:#796442}
+#dp-workspace .dp-service-band[data-period="closed"],
+#dp-workspace .dp-service-band[data-period="live"] {background:#344b3d;border-color:#6b8874}
+#dp-workspace .dp-service-band[data-period="unknown"] {background:#514f49;border-color:#a29c8c}
+#dp-workspace .dp-arrival-point {position:absolute;left:var(--point);top:4px;bottom:4px;width:2px;background:var(--gold);pointer-events:none}
+#dp-workspace .dp-service-continuation {position:absolute;left:var(--begin);right:0;top:6px;bottom:6px;border:1px dashed #627364;background:repeating-linear-gradient(135deg,transparent 0 6px,#82928324 6px 8px);pointer-events:none}
 #dp-workspace .dp-calendar {display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
 #dp-workspace .dp-calendar-label {text-align:center;color:var(--muted);font-size:11px;padding:3px 0 5px}
 #dp-workspace .dp-day {min-height:46px;min-width:0;display:grid;align-content:space-between;justify-items:start;background:#151611;border:1px solid #343329;border-radius:4px;padding:4px;white-space:nowrap;font-size:12px}

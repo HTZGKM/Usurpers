@@ -160,6 +160,7 @@ main.frontdesk-page {
 .desk-filters select,
 .desk-filters input,
 .desk-check-in select,
+.desk-check-in input,
 .desk-editor input,
 .desk-editor select {
   width: 100%;
@@ -171,6 +172,18 @@ main.frontdesk-page {
   background: #1d1e17;
   color: #f0ecdf;
   font: inherit;
+}
+
+.desk-filters .desk-legacy-hidden,
+.desk-arrival-actions [hidden],
+.desk-floor-tools [hidden] {
+  display: none;
+}
+
+.desk-check-in.desk-ticket-entry {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  padding-bottom: 12px;
+  border-bottom: 1px solid #39372d;
 }
 
 .desk-booking-count {

@@ -15,6 +15,8 @@ class ResultRow(dict):
 
 def _api_value(value):
     if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            return value.isoformat()
         return value.isoformat(sep=" ", timespec="seconds")
     if isinstance(value, date):
         return value.isoformat()

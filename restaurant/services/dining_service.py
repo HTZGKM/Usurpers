@@ -28,7 +28,7 @@ def register_arrival(booking_id, table_id=None, *, change_table=False, expected_
     if change_table and expected_version is None:
         raise booking_conflict()
     with get_connection() as db:
-        begin_write(db)
+        begin_write(db, legacy_allocation=True)
         booking=db.execute("SELECT * FROM bookings WHERE booking_id=?",(bid,)).fetchone()
         if not booking: raise ServiceError("预订不存在。",404,"booking_id","NOT_FOUND")
         if booking["status"]!="booked": raise ServiceError("该预订已签到或已取消。",409,"status","STATE_CONFLICT")
@@ -61,7 +61,7 @@ def register_walk_in(party_size, table_id, contact_name=None, phone=None):
     name=required_text(contact_name,"contact_name",limit=100) if contact_name is not None else None
     phone=phone_number(phone) if phone else None
     with get_connection() as db:
-        begin_write(db)
+        begin_write(db, legacy_allocation=True)
         require_seatable_table(db, tid, size)
         visit_id = insert_id(db, "INSERT INTO dining_sessions(contact_name,phone_number,party_size,table_id,status) VALUES(?,?,?,?,'seated')",
                              (name,phone,size,tid), "visit_id")
@@ -73,7 +73,7 @@ def close_dining_session(visit_id):
 
     vid=positive_int(visit_id,"visit_id")
     with get_connection() as db:
-        begin_write(db)
+        begin_write(db, legacy_allocation=True)
         row=db.execute("SELECT status,table_id FROM dining_sessions WHERE visit_id=?",(vid,)).fetchone()
         if not row: raise ServiceError("到店记录不存在。",404)
         if row["status"]!="seated": raise ServiceError("该到店记录已结束。",409)
@@ -118,7 +118,7 @@ def get_active_customer_visit(customer_phone):
 def assign_table(visit_id, table_id):
     vid=positive_int(visit_id,"visit_id"); tid=positive_int(table_id,"table_id")
     with get_connection() as db:
-        begin_write(db)
+        begin_write(db, legacy_allocation=True)
         visit=db.execute("SELECT party_size FROM dining_sessions WHERE visit_id=? AND status='waiting'",(vid,)).fetchone()
         if not visit: raise ServiceError("等待中的到店记录不存在。",404)
         require_seatable_table(db, tid, visit["party_size"])

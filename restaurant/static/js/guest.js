@@ -10,7 +10,9 @@ const {
   categories: cats,
   account,
   staffLinks,
+  reservationFlow,
 } = JSON.parse(document.querySelector("#guest-data").textContent);
+const reservationBase = reservationFlow ? "/reservation-api/bookings" : "/bookings";
 const isStaff = staffLinks.length > 0;
 const guestPageTransition = !isStaff && typeof createGuestPageTransition === "function"
   ? createGuestPageTransition({ document, reducedMotion: reduce })
@@ -60,7 +62,7 @@ const blank = () => ({
   draft: {
     date: today(),
     guests: 2,
-    time: "2",
+    time: reservationFlow ? "" : "2",
     table: "",
   },
   booking: null,
@@ -189,9 +191,9 @@ function showWorkspace(focus) {
     if (account.role === "kitchen") {
       renderStaffSection = mountKitchenWorkspace(app.querySelector("[data-kitchen]"));
     } else if (account.role === "frontdesk") {
-      renderStaffSection = mountFrontdeskWorkspace(app.querySelector("[data-frontdesk]"), goWorkspace);
+      renderStaffSection = mountFrontdeskWorkspace(app.querySelector("[data-frontdesk]"), goWorkspace, reservationFlow);
     } else {
-      renderStaffSection = mountAdminWorkspace(app.querySelector("[data-admin]"), tables, dishes, goWorkspace);
+      renderStaffSection = mountAdminWorkspace(app.querySelector("[data-admin]"), tables, dishes, goWorkspace, reservationFlow);
     }
     document.title = { frontdesk: "Front desk", kitchen: "Kitchen", admin: "Administrator" }[account.role] + " · Double Portion";
   }
@@ -254,6 +256,7 @@ let customerRefreshVersion = 0;
 
 function available(t, d) {
   if (lastAvailability?.tables.has(tableIds[t[0]])) return true;
+  if (reservationFlow) return false;
   const original = editingBooking;
   return Boolean(lastAvailability && original?.table === t[0] &&
     original.date === d.date && original.time === d.time && t[1] >= d.guests);
@@ -261,17 +264,18 @@ function available(t, d) {
 
 function syncAvailability(force = false) {
   const d = { ...state.draft };
-  const query = restaurantQuery("/tables/available", {
-    date: d.date, time_slot_id: d.time, party_size: d.guests,
-  });
+  const query = reservationFlow ? restaurantQuery("/reservation-api/available", {
+    date: d.date, arrival_time: d.time, party_size: d.guests,
+    ...(editingBooking ? { booking_id: editingBooking.id } : {}),
+  }) : restaurantQuery("/tables/available", { date: d.date, time_slot_id: d.time, party_size: d.guests });
   if (query === availabilityKey && !force) return;
   const version = ++availabilityVersion;
   availabilityKey = query;
   availabilityLoading = true;
   availabilityError = false;
-  restaurantRequest(query).then(({ tables: rows }) => {
+  restaurantRequest(query).then(({ tables: rows, times }) => {
     if (version !== availabilityVersion) return;
-    lastAvailability = { tables: new Set(rows.map(table => table.table_id)), draft: d };
+    lastAvailability = { tables: new Set(rows.map(table => table.table_id)), draft: d, times };
     availabilityLoading = false;
     if (app.querySelector("#reservation")) syncDraft();
   }).catch(() => {
@@ -317,10 +321,10 @@ function bookingView() {
     const confirmation = document.createElement("div");
     confirmation.innerHTML =
       '<div class="booking-reservation-card">' +
-      (checkedIn ? guestStatus("arrived", "Checked in") : guestStatus("booked", "Reserved")) +
+      (checkedIn ? guestStatus("arrived", reservationFlow ? "Seated" : "Checked in") : reservationStatus(d)) +
       reservationFacts({ ...d, table }) + '<div class="booking-contact">' + guestFacts([["Guest name", d.name]]) + '</div></div>' +
       btn(checkedIn ? "Explore the menu" : "View your visit", checkedIn ? "Menu" : "Your table", "primary") +
-      (checkedIn ? '' : '<div class="booking-actions">' + btn("Edit reservation", "edit") +
+      (checkedIn || (reservationFlow && !d.canEdit) ? '' : '<div class="booking-actions">' + btn("Edit reservation", "edit") +
         btn("Cancel reservation", "ask-cancel", "secondary booking-cancel", 'aria-controls="inline-confirm" aria-expanded="false"') +
         '</div><section id="inline-confirm" class="booking-cancel-confirmation" aria-labelledby="booking-cancel-title" hidden></section>') +
       (customerFeedback ? '<p class="statusline" role="status">' + esc(customerFeedback) + '</p>' : '');
@@ -354,6 +358,14 @@ function syncDraft() {
   const d = state.draft;
   syncAvailability();
   const ready = availabilityReady();
+  const timeSelect = app.querySelector("#arrival-time");
+  if (timeSelect && ready) {
+    const times = lastAvailability.times ?? [];
+    const options = '<option value="">Choose an arrival time</option>' +
+      times.map(time => '<option>' + esc(time) + '</option>').join("");
+    if (timeSelect.innerHTML !== options) timeSelect.innerHTML = options;
+    timeSelect.value = d.time;
+  }
   const tableAvailable = ready && d.table && tables.some(t => t[0] === d.table && available(t, d));
   const invalidated = ready && d.table && !tableAvailable;
   if (invalidated && !editConflict && !pendingCreation) d.table = "";
@@ -375,7 +387,10 @@ function syncDraft() {
     );
   const selected = Boolean(tableAvailable);
   const summary = app.querySelector("#summary");
+  const noTimes = reservationFlow && ready && !lastAvailability.times?.length;
   const hint = availabilityLoading ? "Checking table availability…" : availabilityError ? "Could not check availability." :
+    noTimes ? "No arrival times fit this date and party size." :
+    reservationFlow && !timeSelect.value ? "Choose an available arrival time first." :
     selected ? "Table " + d.table + " selected." : !availableCount ? "No tables available. Try another dining time or date." :
     invalidated ? "Your previous table is unavailable. Choose another table." :
     "Choose from " + availableCount + (availableCount === 1 ? " available table." : " available tables.");
@@ -404,7 +419,8 @@ function syncDraft() {
   if (editConflict) {
     conflict.querySelector("[data-booking-conflict-copy]").textContent = editConflict.message;
     const reviewConflict = conflict.querySelector("button");
-    reviewConflict.hidden = editConflict.latest && editConflict.latest.status !== "booked";
+    reviewConflict.hidden = Boolean(editConflict.latest && (editConflict.latest.status !== "booked" ||
+      (reservationFlow && !editConflict.latest.canEdit)));
     reviewConflict.textContent = editConflict.latest ? "Keep my entries and review" : "Fetch latest reservation";
   }
   app.querySelector("[data-booking-feedback]").textContent = customerFeedback;
@@ -673,14 +689,20 @@ function mealLineMarkup(line, editable = false) {
     '</article>';
 }
 const bookingLabels = { booked: "Reserved", arrived: "Checked in", cancelled: "Cancelled" };
+const phaseLabels = { reserved: "Reserved", ready: "Table ready", waiting_to_seat: "Arrived · waiting to be seated",
+  seated: "Seated", closed: "Visit ended", no_show: "Missed reservation", cancelled: "Cancelled",
+  arrival_unresolved: "Arrived · seating not recorded", past: "Past reservation" };
+const activeReservation = booking => booking.status === "booked" &&
+  (reservationFlow ? ["reserved", "ready", "waiting_to_seat"].includes(booking.phase) : booking.date >= today());
 const orderLabels = { active: "In service", completed: "Served", cancelled: "Cancelled" };
 const tableLabel = (id) => tableLabels.get(id) ?? (id == null ? "" : "T" + id);
 
 function bookingRecord(row) {
   return {
     id: row.booking_id, table: tableLabel(row.table_id), date: row.booking_date,
-    time: Object.keys(slots).find(id => slots[id] === row.time_slot) ?? row.time_slot,
+    time: row.arrival_label ?? Object.keys(slots).find(id => slots[id] === row.time_slot) ?? row.time_slot,
     guests: row.party_size, name: row.contact_name, status: row.status, version: row.version,
+    phase: row.phase, deadline: row.deadline_label, estimate: row.estimate, canEdit: row.can_customer_edit,
   };
 }
 
@@ -710,10 +732,10 @@ async function refreshCustomer({ background = false } = {}) {
   const version = ++customerRefreshVersion;
   try {
     const [reservationData, orderData, visits, waitlist] = await Promise.all([
-      restaurantRequest("/bookings"), restaurantRequest("/orders"), restaurantSeating(),
-      restaurantRequest("/waiting-queue/mine"),
+      restaurantRequest(reservationBase), restaurantRequest("/orders"), reservationFlow ? [] : restaurantSeating(),
+      reservationFlow ? { queue: null } : restaurantRequest("/waiting-queue/mine"),
     ]);
-    const visit = visits[0] ?? null;
+    const visit = (reservationFlow ? reservationData.visit : visits[0]) ?? null;
     const orders = orderData.orders;
     const latest = orders.find(order => order.visit_id === visit?.visit_id && order.status !== "cancelled");
     const detail = latest && latest.order_id !== dismissedReceipt
@@ -724,8 +746,8 @@ async function refreshCustomer({ background = false } = {}) {
     customerQueue = waitlist.queue;
     const reservations = reservationData.bookings.map(bookingRecord);
     state.booking = reservations.find(row => row.id === visit?.booking_id) ??
-      reservations.find(row => row.id === focusedBookingId && row.status === "booked" && row.date >= today()) ??
-      reservations.find(row => row.status === "booked" && row.date >= today()) ?? null;
+      reservations.find(row => row.id === focusedBookingId && activeReservation(row)) ??
+      reservations.find(row => row.phase === "waiting_to_seat") ?? reservations.find(activeReservation) ?? null;
     state.bookingHistory = reservations;
     state.orderHistory = orders;
     state.bill = detail ? {
@@ -762,17 +784,22 @@ async function runCustomer(control, work) {
 }
 
 function reservationFields(draft) {
-  return { booking_date: draft.date, time_slot_id: draft.time, party_size: draft.guests, table_id: tableIds[draft.table] };
+  return { booking_date: draft.date, [reservationFlow ? "arrival_time" : "time_slot_id"]: draft.time,
+    party_size: draft.guests, table_id: tableIds[draft.table] };
+}
+
+function bookingDetailsPath(id) {
+  return reservationBase + "/" + id + (reservationFlow ? "" : "/edit");
 }
 
 async function loadCustomerEditConflict() {
   const message = "This reservation changed. Your entries have been kept.";
   editConflict = { message };
   try {
-    const { booking } = await restaurantRequest("/bookings/" + editingBooking.id + "/edit");
+    const { booking } = await restaurantRequest(bookingDetailsPath(editingBooking.id));
     const latest = bookingRecord(booking);
     editConflict.latest = latest;
-    if (latest.status !== "booked") {
+    if (latest.status !== "booked" || (reservationFlow && !latest.canEdit)) {
       editConflict.message += " The reservation is now " + (bookingLabels[latest.status] ?? latest.status) + ".";
       return;
     }
@@ -787,9 +814,10 @@ async function resolveReservationCreation() {
   const request = pendingCreation;
   let booking;
   try {
-    ({ booking } = await restaurantRequest("/bookings", request));
+    ({ booking } = await restaurantRequest(reservationBase, request));
   } catch (error) {
-    if (["TABLE_UNAVAILABLE", "CAPACITY_INSUFFICIENT", "BOOKING_DATE_IN_PAST"].includes(error.code)) {
+    if (["TABLE_UNAVAILABLE", "CAPACITY_INSUFFICIENT", "BOOKING_DATE_IN_PAST", "ARRIVAL_TOO_SOON",
+      "OUTSIDE_SERVICE", "RESERVATION_REFRESH"].includes(error.code)) {
       pendingCreation = null;
       persist();
       throw error;
@@ -797,16 +825,17 @@ async function resolveReservationCreation() {
     throw new Error("We could not confirm your reservation. Use Recover reservation to check the original request.");
   }
   try {
-    const { booking: latest } = await restaurantRequest("/bookings/" + booking.booking_id + "/edit");
+    const { booking: latest } = await restaurantRequest(bookingDetailsPath(booking.booking_id));
     const recovered = bookingRecord(latest);
     const desired = reservationFields(state.draft);
-    const changed = Object.keys(desired).some(field => request[field] !== desired[field]);
+    const changed = request.booking_date !== desired.booking_date || request.party_size !== desired.party_size ||
+      request.table_id !== desired.table_id || (request.arrival_time ?? request.time_slot_id) !== state.draft.time;
     ++customerRefreshVersion;
     pendingCreation = null;
     focusedBookingId = recovered.id;
     state.booking = recovered.status === "booked" || recovered.status === "arrived" ? recovered : null;
     customerLoaded = true;
-    if (changed && recovered.status === "booked") {
+    if (changed && recovered.status === "booked" && (!reservationFlow || recovered.canEdit)) {
       editingBooking = recovered;
       customerFeedback = "Reservation recovered. Review and save any changes you still want.";
     } else {
@@ -825,6 +854,25 @@ function guestStatus(status, label) {
   return '<span class="history-status guest-status" data-status="' + esc(status) + '">' + esc(label) + '</span>';
 }
 
+function reservationStatus(booking) {
+  if (!reservationFlow) return guestStatus(booking.status, bookingLabels[booking.status] ?? booking.status);
+  const phase = booking.phase ?? booking.status;
+  const tone = { ready: "called", waiting_to_seat: "awaiting", seated: "arrived", closed: "arrived",
+    no_show: "cancelled", reserved: "booked" }[phase] ?? phase;
+  return guestStatus(tone, phaseLabels[phase] ?? bookingLabels[phase] ?? phase);
+}
+
+function visitEstimate(estimate) {
+  if (!estimate) return "No reliable seating estimate yet.";
+  const start = new Date(estimate.earliest_at);
+  const end = new Date(estimate.latest_at);
+  const range = (a, b) => a === b ? a : a + "–" + b;
+  const local = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit" });
+  const minutes = value => Math.max(0, Math.ceil((value - Date.now()) / 60000));
+  return "Estimated seating around " + range(local.format(start), local.format(end)) +
+    " · " + range(minutes(start), minutes(end)) + " min remaining.";
+}
+
 function guestFacts(facts) {
   return '<dl class="guest-facts">' + facts.map(([label, value]) =>
     '<div><dt>' + esc(label) + '</dt><dd>' + esc(value) + '</dd></div>'
@@ -836,10 +884,11 @@ function guestCount(guests) {
 }
 
 function reservationFacts(booking) {
-  return guestFacts([
-    ["Date", prettyDate(booking.date, { year: "numeric" })], ["Dining time", slots[booking.time] ?? booking.time],
-    ["Table", booking.table || "Unassigned"], ["Guests", guestCount(booking.guests)],
-  ]);
+  const facts = [["Date", prettyDate(booking.date, { year: "numeric" })],
+    [reservationFlow ? "Arrival time" : "Dining time", slots[booking.time] ?? (booking.time || "Choose a time")]];
+  if (reservationFlow && booking.deadline) facts.push(["Check in by", booking.deadline]);
+  facts.push(["Table", booking.table || "Unassigned"], ["Guests", guestCount(booking.guests)]);
+  return guestFacts(facts);
 }
 
 function renderAccountReservation() {
@@ -854,7 +903,7 @@ function renderAccountReservation() {
   panel.innerHTML = (message ? '<p class="history-caption" role="status">' + esc(message) + '</p>' : '') +
     (customerLoaded && booking ? '<section class="account-visit" aria-labelledby="account-reservation-title">' +
       '<div class="account-visit-heading"><h3 id="account-reservation-title">' + title + '</h3>' +
-      guestStatus(booking.status, bookingLabels[booking.status] ?? booking.status) + '</div>' + facts +
+      reservationStatus(booking) + '</div>' + facts +
       '<div class="account-visit-actions">' + action + '</div></section>' : '');
 }
 
@@ -868,8 +917,7 @@ function renderVisitHistory() {
   const section = app.querySelector("[data-visit-history]");
   if (!section || !customerLoaded) return;
   const currentBookingId = state.booking?.id;
-  const date = today();
-  const upcoming = state.bookingHistory.filter(booking => booking.status === "booked" && booking.date >= date);
+  const upcoming = state.bookingHistory.filter(activeReservation);
   const upcomingIds = new Set(upcoming.map(booking => booking.id));
   const currentOrders = [];
   const pastOrders = [];
@@ -881,7 +929,7 @@ function renderVisitHistory() {
   }
   function bookingRecordMarkup(booking) {
     return '<article class="reservation-history-record">' + reservationFacts(booking) +
-      '<div class="reservation-record-actions">' + guestStatus(booking.status, bookingLabels[booking.status] ?? booking.status) +
+      '<div class="reservation-record-actions">' + reservationStatus(booking) +
       '</div></article>';
   }
   function orderRecord(order) {
@@ -980,6 +1028,9 @@ function renderSubmittedOrder(body, order) {
 }
 
 function waitlistMarkup() {
+  if (reservationFlow) return state.booking ? "" :
+    '<section class="visit-access visit-summary"><h3>Visiting without a reservation?</h3>' +
+    '<p>Ask the front desk for a table or a waitlist ticket when you arrive.</p></section>';
   if (customerQueue) {
     const called = customerQueue.status === "called";
     const table = tableLabel(customerQueue.called_table_id);
@@ -1014,19 +1065,26 @@ function visitSummary() {
   const seated = Boolean(customerVisit);
   const actualTable = seated ? tableLabel(customerVisit.table_id) : "";
   const heading = seated ? "Your table" : "Your reservation";
-  const status = seated ? guestStatus("arrived", "Checked in") : guestStatus("awaiting", "Awaiting check-in");
+  const status = seated ? guestStatus("arrived", reservationFlow ? "Seated" : "Checked in") :
+    reservationFlow ? reservationStatus(booked) : guestStatus("awaiting", "Awaiting check-in");
   const hasSeatedReservation = seated && booked && booked.id === customerVisit.booking_id;
   const facts = seated && !hasSeatedReservation ? guestFacts([["Table", actualTable]]) :
     reservationFacts(seated ? { ...booked, table: actualTable } : booked);
+  const instructions = reservationFlow ? {
+    waiting_to_seat: ["You’re checked in", visitEstimate(booked?.estimate)],
+    ready: ["Your table is ready", "See the front desk when you’re ready to be seated."],
+    reserved: ["Check in at the front desk", "Give staff the name on your reservation. You can order once seated."],
+  }[booked?.phase] : ["Check in at the front desk",
+    "When you arrive, give staff the name on your reservation. Once they check you in, you can place a dine-in order."];
   return '<section class="visit-access visit-summary" aria-labelledby="visit-summary-title">' +
     '<div class="visit-summary-heading"><h3 id="visit-summary-title">' + heading + '</h3>' + status + '</div>' + facts +
-    (seated ? '' : '<div class="visit-check-in"><h4>Check in at the front desk</h4>' +
-      '<p>When you arrive, give staff the name on your reservation. Once they check you in, you can place a dine-in order.</p>' +
+    (seated || !instructions ? '' : '<div class="visit-check-in"><h4>' + esc(instructions[0]) + '</h4>' +
+      '<p>' + esc(instructions[1]) + '</p>' +
       '<p class="visit-update-note">This page updates automatically while you’re here.</p></div>') + '</section>';
 }
 
 function preorderMarkup(blocked) {
-  const bookings = state.bookingHistory.filter(row => row.status === "booked" && row.date >= today() && slots[row.time]);
+  const bookings = state.bookingHistory.filter(row => activeReservation(row) && (reservationFlow || slots[row.time]));
   if (!bookings.length || !state.bag.length) return "";
   return '<form class="restaurant-inline-form" data-create-preorder><label>Reservation<select name="booking_id" required>' +
     bookings.map(row => '<option value="' + row.id + '">' + esc(bookingSummary(row)) + '</option>').join("") +
@@ -1350,6 +1408,10 @@ document.addEventListener("change", (e) => {
       e.target.id === "guests" ? +e.target.value : e.target.value;
     syncDraft();
   }
+  if (e.target.id === "arrival-time") {
+    state.draft.time = e.target.value;
+    syncDraft();
+  }
 });
 document.addEventListener("submit", (e) => {
   if (e.target.matches("[data-account-form]")) {
@@ -1371,11 +1433,11 @@ document.addEventListener("submit", (e) => {
         if (!booking || !state.bag.length) return;
         const { order } = await restaurantRequest("/bookings/" + booking.id + "/preorders", {
           ...restaurantOrderFields(state.bag),
-          estimated_ready_at: booking.date + "T" + slots[booking.time].slice(0, 5) + ":00+08:00",
+          estimated_ready_at: booking.date + "T" + (slots[booking.time] ?? booking.time).slice(0, 5) + ":00+08:00",
         });
         state.bag = [];
         persist();
-        customerFeedback = "Preorder #" + order.order_id + " saved. The kitchen will receive it after check-in at the scheduled time.";
+        customerFeedback = "Preorder #" + order.order_id + " saved. It reaches the kitchen once you are seated and it is time to prepare it.";
       }
       await refreshCustomer();
     });
@@ -1407,7 +1469,7 @@ document.addEventListener("submit", (e) => {
     }
     let booking;
     try {
-      ({ booking } = await restaurantRequest("/bookings/" + editingBooking.id + "/edit", {
+      ({ booking } = await restaurantRequest(reservationBase + "/" + editingBooking.id + "/edit", {
         ...fields, expected_version: editingBooking.version,
       }));
     } catch (error) {
@@ -1417,7 +1479,7 @@ document.addEventListener("submit", (e) => {
     }
     focusedBookingId = booking.booking_id;
     ++customerRefreshVersion;
-    state.booking = { ...editingBooking, ...d, id: booking.booking_id, table: tableLabel(booking.table_id),
+    state.booking = reservationFlow ? bookingRecord(booking) : { ...editingBooking, ...d, id: booking.booking_id, table: tableLabel(booking.table_id),
       status: booking.status, version: booking.version };
     editingBooking = null;
     saved = true;
@@ -1559,7 +1621,7 @@ document.addEventListener("click", (e) => {
   if (a === "cancel") {
     if (!state.booking || customerVisit?.booking_id === state.booking.id) return;
     runCustomer(b, async () => {
-      await restaurantRequest("/bookings/" + state.booking.id + "/cancel", {});
+      await restaurantRequest(reservationBase + "/" + state.booking.id + "/cancel", {});
       state.booking = null;
       focusedBookingId = null;
       state.draft.table = "";

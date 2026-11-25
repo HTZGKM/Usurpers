@@ -80,3 +80,13 @@ Vercel 从根目录导入 `app.py` 中的 Flask 应用。项目的 Production �
 在已连接 Vercel 项目的目录中发布组员要测试的版本时，运行 `vercel deploy --prod`。部署成功后继续分享该项目的公开网址。更新前后端代码用日常 Git 分支和 PR 流程。修改表结构时单独执行对应的数据库迁移。
 
 已有 PostgreSQL 库升级到预约版本号和提交恢复功能前，先执行 `restaurant/db/migrations/001_booking_consistency.sql`，再发布应用。迁移可重复执行，保留已有预约。
+
+## PostgreSQL 到店预约和桌位分配
+
+时间点预约使用北京时间和 15 分钟粒度。线上至少提前 30 分钟。后端按人数计入用餐保护，并加上 10 分钟预约宽限和 10 分钟清台。现场叫号保留 1 分钟。前台分别登记到店、确认备桌和安排入座。
+
+正式切换先发布支持两种结构的代码，再在目标 Neon 执行 `restaurant/db/migrations/002_reservation_allocation.sql`。迁移在数据库事务中写入版本 2，启用时间点预约，并保留旧时段预约、旧等位票及订单关联。全新 PostgreSQL 可先执行 `restaurant/db/postgres.sql` 再执行 002。SQLite 仍走旧预约流程。
+
+发布前检查同桌的有效旧时段、重复活动占桌、重复关联预约的堂食记录及有效叫号。GiST 排他约束与活动堂食唯一索引必须成功创建。切换后核对 `reservation_schema_versions` 的版本 2、Vercel 提交，以及顾客、前台、主管的实际页面。若已接受新时间点预约后需要回退，先将版本 2 的 `writes_enabled` 设为 false，保留现有数据并使用能读新结构的兼容版本，再修复后恢复写入。
+
+隔离验收使用一个名为 `usurpers_test` 的本机 PostgreSQL。把 `USURPERS_TEST_POSTGRES_URL` 指向它，运行 `python -m unittest discover -s tests`。每个集成用例使用独立临时 schema。

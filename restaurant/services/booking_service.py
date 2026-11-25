@@ -121,6 +121,9 @@ def create_booking(contact_name, phone, booking_date, time_slot, party_size, cus
                                        409, "idempotency_key", "IDEMPOTENCY_KEY_REUSED")
                 return {"booking_id": previous["booking_id"], "table_id": previous["initial_table_id"],
                         "status": "booked", "version": 1}
+        from .allocation import legacy_write_guard
+
+        legacy_write_guard(db)
         window = current_table_window()
         _check_booking_date(date, window[0])
         table_id_final = _resolve_table(db, date, slot, size, tid, window=window)
@@ -143,7 +146,7 @@ def update_booking(booking_id, booking_date, time_slot, party_size, customer_pho
     tid = positive_int(table_id, "table_id") if table_id is not None else None
     version = positive_int(expected_version, "expected_version")
     with get_connection() as db:
-        begin_write(db)
+        begin_write(db, legacy_allocation=True)
         current = db.execute("SELECT status,customer_phone,booking_date,time_slot,version FROM bookings WHERE booking_id=?", (bid,)).fetchone()
         if not current: raise ServiceError("预订不存在。", 404)
         if customer_phone and current["customer_phone"] != customer_phone: raise ServiceError("无权修改此预订。",403,code="FORBIDDEN")
@@ -185,7 +188,7 @@ def update_booking(booking_id, booking_date, time_slot, party_size, customer_pho
 def cancel_booking(booking_id, customer_phone=None):
     bid = positive_int(booking_id, "booking_id")
     with get_connection() as db:
-        begin_write(db)
+        begin_write(db, legacy_allocation=True)
         query="UPDATE bookings SET status='cancelled',table_id=NULL,version=version+1 WHERE booking_id=? AND status='booked'"
         args=[bid]
         if customer_phone: query += " AND customer_phone=?"; args.append(customer_phone)

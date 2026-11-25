@@ -14,7 +14,9 @@ from restaurant.api.admin.routes import admin_bp
 from restaurant.api.customer.routes import customer_bp
 from restaurant.api.frontdesk.routes import frontdesk_bp
 from restaurant.api.kitchen.routes import kitchen_bp
+from restaurant.api.reservation_routes import reservation_bp
 from restaurant.presentation import restaurant_view, seating_view
+from restaurant.services import allocation
 
 def create_app() -> Flask:
     app = Flask(
@@ -45,7 +47,8 @@ def create_app() -> Flask:
     app.register_blueprint(frontdesk_bp)
     app.register_blueprint(kitchen_bp)
     app.register_blueprint(admin_bp)
-    api_blueprints = {bp.name for bp in (customer_bp, frontdesk_bp, kitchen_bp, admin_bp)}
+    app.register_blueprint(reservation_bp)
+    api_blueprints = {bp.name for bp in (customer_bp, frontdesk_bp, kitchen_bp, admin_bp, reservation_bp)}
 
     @app.after_request
     def protect_rendered_pages(response):
@@ -134,6 +137,7 @@ def create_app() -> Flask:
             logout_form=LogoutForm() if account else None,
             has_cheltenham=(fonts / "CheltenhamBT-Roman.woff2").is_file(),
             has_local_satoshi=(fonts / "Satoshi-Light.local.woff2").is_file(),
+            reservation_flow=allocation.enabled(),
             **restaurant_view(app.root_path),
         ), {"Cache-Control": "no-store"}
 

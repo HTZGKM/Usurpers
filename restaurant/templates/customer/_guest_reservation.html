@@ -34,9 +34,15 @@
         {% for n in range(1,7) %}<option value="{{ n }}">{{ n }} {{ 'guest' if n == 1 else 'guests' }}</option>{% endfor %}
       </select></label>
     </div>
+    {% if reservation_flow %}
+    <label class="field">Arrival time
+      <select id="arrival-time" required><option value="">Choose an arrival time</option></select>
+    </label>
+    {% else %}
     <fieldset><legend>Dining time</legend>
       {% for slot_id, slot in slots.items() %}<button type="button" class="choice" data-action="time:{{ slot_id }}" aria-pressed="false">{{ slot }}</button>{% endfor %}
     </fieldset>
+    {% endif %}
     <div class="booking-table-choice">
       <div>
         <strong>Table selection</strong>
