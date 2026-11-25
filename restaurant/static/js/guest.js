@@ -25,6 +25,31 @@ function asset(dish, detail = false) {
   const folder = detail && dish.category === "pizza" ? "detail" : "catalog";
   return imageBase + folder + "/" + dish.photo + ".webp";
 }
+function showDishImage(dish) {
+  const frame = dishSheet.querySelector(".dish-image");
+  const thumbnailUrl = asset(dish);
+  const detailUrl = asset(dish, true);
+  const current = frame.firstElementChild;
+  if (current?.complete && current.naturalWidth && current.getAttribute("src") === detailUrl) {
+    current.alt = dish.name;
+    return;
+  }
+
+  const thumbnail = new Image();
+  thumbnail.alt = dish.name;
+  thumbnail.fetchPriority = "high";
+  thumbnail.src = thumbnailUrl;
+  frame.replaceChildren(thumbnail);
+  if (thumbnailUrl === detailUrl) return;
+
+  const fullImage = new Image();
+  fullImage.alt = dish.name;
+  fullImage.fetchPriority = "low";
+  fullImage.src = detailUrl;
+  fullImage.decode().then(() => {
+    if (frame.firstElementChild === thumbnail) frame.replaceChildren(fullImage);
+  }, () => {});
+}
 function mount(name) {
   app.replaceChildren(
     document.getElementById("view-" + name).content.cloneNode(true),
@@ -553,9 +578,7 @@ function showDetail(k, lineId = null) {
   detailKey = k;
   detailLineId = lineId;
   detailQty = editingLine?.quantity ?? 1;
-  const image = dishSheet.querySelector(".dish-image img");
-  image.src = asset(dish, true);
-  image.alt = dish.name;
+  showDishImage(dish);
   dishSheet.querySelector(".context").textContent = editingLine ? "Edit bag item" : cats[dish.category];
   dishSheet.querySelector("#dish-name").textContent = dish.name;
   dishSheet.querySelector(".dish-description").textContent = dish.description;
