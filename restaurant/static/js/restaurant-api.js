@@ -22,6 +22,10 @@ async function restaurantRequest(path, fields, method = fields === undefined ? "
     CAPACITY_INSUFFICIENT: "That table is too small for this party.",
     STATE_CONFLICT: "This record has changed. Refresh and try again.",
   };
+  if (path.startsWith("/frontdesk/reservation-api/")) delete messages.TABLE_UNAVAILABLE;
+  if (path.startsWith("/reservation-api/")) {
+    messages.TABLE_UNAVAILABLE = "That table is unavailable at the selected arrival time. Choose another table.";
+  }
   const fallback = {
     400: "Check the form fields and try again.",
     401: "Your session expired. Sign in again.",

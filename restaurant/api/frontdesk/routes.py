@@ -18,6 +18,7 @@ from restaurant.api.customer.forms import OrderForm
 from flask import Blueprint, jsonify, request, session
 from restaurant.route_utils import validated_data, require_api_role
 from restaurant.services import (
+    allocation,
     booking_service,
     dining_service,
     order_service,
@@ -80,6 +81,8 @@ def bookings():
 
 @frontdesk_bp.post("/bookings/<int:booking_id>/check-in")
 def register_arrival(booking_id):
+    if allocation.enabled():
+        raise ServiceError("Refresh this page to use the new reservation workflow.", 409, code="RESERVATION_REFRESH")
     data = validated_data(CheckInForm)
     return (
         jsonify(
@@ -129,12 +132,16 @@ def register_walk_in():
 @frontdesk_bp.post("/visits/<int:visit_id>/close")
 def close_dining_session(visit_id):
     data = validated_data(CloseVisitForm)
+    if allocation.enabled():
+        return jsonify(ok=True, visit=allocation.close_visit(visit_id))
     return jsonify({"ok": True, "visit": dining_service.close_dining_session(visit_id)})
 
 
 @frontdesk_bp.post("/visits/<int:visit_id>/assign")
 def assign_visit(visit_id):
     data = validated_data(AssignTableForm)
+    if allocation.enabled():
+        return jsonify(ok=True, visit=allocation.walk_in(data["table_id"], None, visit_id=visit_id))
     return jsonify(
         {
             "ok": True,

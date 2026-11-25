@@ -49,6 +49,10 @@ def create_preorder(booking_id, customer_phone, items, estimated_ready_at):
         begin_write(db)
         booking=db.execute("SELECT * FROM bookings WHERE booking_id=? AND customer_phone=? AND status='booked'",(bid,customer_phone)).fetchone()
         if not booking: raise ServiceError("预订不存在、已取消或不属于当前顾客。",404)
+        from . import allocation
+
+        if allocation.enabled(db):
+            ready = allocation.preorder_time(db, booking, ready)
         oid = insert_id(db, "INSERT INTO orders(booking_id,customer_phone,contact_name,phone_number,table_id,order_type) VALUES(?,?,?,?,?,'preorder')",
                         (bid,customer_phone,booking["contact_name"],booking["phone_number"],booking["table_id"]), "order_id")
         total = 0

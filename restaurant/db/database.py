@@ -142,12 +142,16 @@ def get_connection():
     return sqlite_connection(configured_db_path())
 
 
-def begin_write(connection):
+def begin_write(connection, *, legacy_allocation=False):
     if isinstance(connection, sqlite3.Connection):
         connection.execute("BEGIN IMMEDIATE")
     else:
         # Preserve SQLite's serial writer semantics for workflows that read before writing.
         connection.execute("SELECT pg_advisory_xact_lock(731593001)")
+        if legacy_allocation:
+            from restaurant.services.allocation import legacy_write_guard
+
+            legacy_write_guard(connection)
 
 
 def begin_read(connection):

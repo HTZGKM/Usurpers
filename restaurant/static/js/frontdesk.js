@@ -1,5 +1,7 @@
-function mountFrontdeskWorkspace(workspace, navigate) {
+function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
   const find = (selector) => workspace.querySelector(selector);
+  const flowBase = "/frontdesk/reservation-api";
+  const bookingBase = reservationFlow ? flowBase + "/bookings" : "/frontdesk/bookings";
   const dateFilter = find("[data-desk-view-date]");
   const slotFilter = find("[data-desk-slot]");
   const phoneFilter = find("[data-desk-search]");
@@ -15,6 +17,8 @@ function mountFrontdeskWorkspace(workspace, navigate) {
   const editorSubmit = find("[data-desk-editor-submit]");
   const rebase = find("[data-desk-rebase]");
   const callForm = find("[data-desk-call]");
+  const ticketForm = find("[data-desk-ticket]");
+  const flowActions = find("[data-desk-flow-actions]");
   const feedback = find("[data-desk-floor-feedback]");
   const workspaceNotice = find("[data-desk-live-notice]");
   const syncNotice = find("[data-desk-sync]");
@@ -38,6 +42,10 @@ function mountFrontdeskWorkspace(workspace, navigate) {
   let filtersTimer;
   let todaysArrivals = 0;
   let focusReadyOrder = false;
+  let offerDraft;
+  let deskClockOffset = 0;
+  let editorTimeRequest = 0;
+  let recentTickets = [];
 
   dateFilter.value = today();
   find("[data-desk-date]").textContent = today();
@@ -96,9 +104,10 @@ function mountFrontdeskWorkspace(workspace, navigate) {
       '<li><button type="button" class="desk-booking" data-desk-booking="' + row.booking_id +
       '" aria-pressed="' + (row.booking_id === bookingId) + '"><span class="desk-booking-guest"><strong>' + esc(row.contact_name) +
       '</strong><small>' + esc(row.phone_number) + '</small></span><span class="desk-booking-time">' +
-      esc(row.time_slot) + ' · ' + esc(tableLabel(row.table_id) || "Unassigned") + '</span><span class="desk-chip" data-tone="' +
+      esc(row.arrival_label ?? row.time_slot) + (row.deadline_label ? ' · by ' + esc(row.deadline_label) : '') +
+      ' · ' + esc(tableLabel(row.table_id) || "Unassigned") + '</span><span class="desk-chip" data-tone="' +
       (row.status === "booked" ? "reserved" : row.status === "arrived" ? "available" : "cancelled") + '">' +
-      esc(bookingLabels[row.status] ?? row.status) + '</span></button></li>'
+      esc(reservationFlow ? phaseLabels[row.phase] ?? row.phase : bookingLabels[row.status] ?? row.status) + '</span></button></li>'
     ).join(""), background);
     find("[data-desk-empty]").hidden = visible.length > 0;
     find("[data-desk-booking-count]").textContent = visible.length + " reservations";
@@ -119,6 +128,34 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     find('[data-desk-open="walk-in"]').hidden = selectedTable?.status !== "available";
     find('[data-desk-open="service"]').hidden = !visits.some(row => row.table_id === tableId && row.status === "seated");
     const row = chosenBooking();
+    if (reservationFlow) {
+      checkIn.hidden = true;
+      const disable = find("[data-desk-disable-table]");
+      disable.hidden = !selectedTable;
+      disable.textContent = selectedTable?.is_disabled ? "Enable table" : "Disable table";
+      feedback.textContent = selectedTable ? "Table " + tableLabel(selectedTable.table_id) +
+        (selectedTable.reason_text ? " · " + selectedTable.reason_text : " · Available for seating") +
+        (selectedTable.next_booking ? " Next reservation: " + selectedTable.next_booking.booking_date + " · " +
+          selectedTable.next_booking.label + "." : "") : "";
+      const active = row?.status === "booked";
+      find("[data-desk-booking-actions]").hidden = !active;
+      find('[data-desk-open="edit"]').hidden = Boolean(row?.checked_in_at);
+      flowActions.hidden = !active || (!row.can_check_in && !row.checked_in_at);
+      const visibility = { arrive: !row?.can_check_in, ready: !row?.can_prepare || Boolean(row?.ready_at),
+        seat: !row?.checked_in_at || !row?.ready_at || !row?.can_prepare,
+        offer: offerDraft?.booking !== row?.booking_id || offerDraft?.table === row?.table_id || !selectedTable ||
+          selectedTable.is_disabled || selectedTable.status === "occupied" || selectedTable.capacity < (row?.party_size ?? 0),
+        accept_offer: !row?.offered_table_id };
+      for (const button of flowActions.querySelectorAll("[data-booking-phase]")) button.hidden = Boolean(visibility[button.dataset.bookingPhase]);
+      find("[data-desk-arrival-copy]").textContent = row ? row.contact_name + " · " +
+        (phaseLabels[row.phase] ?? row.phase) + " · " + (tableLabel(row.table_id) || "Unassigned") +
+        (row.arrival_label ? " · " + row.arrival_label : "") + (row.deadline_label ? " · Check in by " + row.deadline_label : "") +
+        (row.table_note ? " · " + row.table_note : "") +
+        (row.offered_table_id ? " · Replacement offered: " + tableLabel(row.offered_table_id) : "") +
+        (row.phase === "waiting_to_seat" ? " · " + visitEstimate(row.estimate) : "") :
+        "Select a reservation to record arrival or prepare a table.";
+      return;
+    }
     find("[data-desk-arrival-copy]").textContent = row
       ? row.contact_name + " · " + (bookingLabels[row.status] ?? row.status) + " · " + (tableLabel(row.table_id) || "Unassigned")
       : "Select a reservation to check in the guest.";
@@ -158,6 +195,18 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     find("[data-desk-waiting-empty]").hidden = queue.length > 0;
     replaceList(find("[data-desk-waiting-list]"), queue.map(row => {
       const called = row.status === "called";
+      if (reservationFlow) {
+        const ticket = row.queue_id;
+        const label = "Ticket #" + ticket + " · " + esc(row.contact_name || "Walk-in") + " · " + row.party_size + " guests";
+        const status = called ? "Called for " + esc(tableLabel(row.called_table_id)) +
+          ' · <strong data-call-deadline="' + esc(row.call_expires_at) + '"></strong>' :
+          "Waiting · Position " + row.position + " · " + esc(visitEstimate(row.estimate));
+        const attributes = ' data-flow-ticket="' + ticket + '" data-called-table="' + (row.called_table_id ?? "") + '"';
+        return '<li><span><strong>' + label + '</strong><small>' + status + '</small></span><div class="desk-arrival-actions">' +
+          (called ? deskButton("Seat party", attributes + ' data-ticket-action="seat"') +
+            deskButton("Pass &amp; call next", attributes + ' data-ticket-action="pass"') : '') +
+          deskButton("Cancel ticket", attributes + ' data-ticket-action="cancel"') + '</div></li>';
+      }
       const chairs = Math.max(row.party_size, row.table_type || 0);
       const choices = row.called_table_id
         ? option(row.called_table_id, tableLabel(row.called_table_id))
@@ -168,6 +217,21 @@ function mountFrontdeskWorkspace(workspace, navigate) {
           '"><label>Table <select name="table_id" required>' + (row.called_table_id ? "" : option("", "Choose a table")) + choices +
           '</select></label><button type="submit" class="desk-confirm">Seat party</button></form>' : '') + '</li>';
     }).join(""), background);
+    if (reservationFlow) {
+      find("[data-desk-recent-tickets]").textContent = recentTickets.map(row =>
+        "#" + row.queue_id + " " + row.status).join(" · ");
+      updateCountdowns();
+    }
+  }
+
+  function updateCountdowns() {
+    for (const clock of workspace.querySelectorAll("[data-call-deadline]")) {
+      const remaining = Date.parse(clock.dataset.callDeadline) - (Date.now() + deskClockOffset);
+      const left = Math.ceil(remaining / 1000);
+      clock.textContent = remaining >= 0 ? left + "s left" : "Call ended";
+      const seat = clock.closest("li").querySelector('[data-ticket-action="seat"]');
+      if (seat) seat.disabled = remaining < 0;
+    }
   }
 
   function orderCard(order) {
@@ -229,7 +293,25 @@ function mountFrontdeskWorkspace(workspace, navigate) {
 
   async function refresh(background = false) {
     const current = ++revision;
-    if (view === "reservations") {
+    if (view === "reservations" && reservationFlow) {
+      const requestedDate = dateFilter.value;
+      const [snapshot, seating] = await Promise.all([
+        restaurantRequest(restaurantQuery(flowBase + "/snapshot", { date: requestedDate })), restaurantSeating(),
+      ]);
+      if (current !== revision || (background && !canPoll())) return;
+      bookings = snapshot.bookings;
+      todaysArrivals = snapshot.arrivals;
+      occupancy = snapshot.tables;
+      visits = seating;
+      queue = snapshot.queue;
+      recentTickets = snapshot.recent_tickets;
+      freeTables = occupancy.filter(table => table.status === "available");
+      deskClockOffset = Date.parse(snapshot.server_now) - Date.now();
+      find("[data-desk-date]").textContent = snapshot.service_date;
+      renderTasks();
+      renderReception(background);
+      renderWaitlist(background);
+    } else if (view === "reservations") {
       const filters = { date: dateFilter.value };
       if (slotFilter.value) filters.time_slot_id = slotFilter.value;
       const occupancySlot = chosenBooking()?.time_slot;
@@ -256,14 +338,16 @@ function mountFrontdeskWorkspace(workspace, navigate) {
       renderWaitlist(background);
     } else if (view === "service") {
       if (!background) renderCloseControls(null);
-      const [seating, waiting] = await Promise.all([restaurantSeating(), restaurantRequest("/frontdesk/waiting-queue")]);
+      const [seating, waiting] = await Promise.all([restaurantSeating(),
+        restaurantRequest(reservationFlow ? flowBase + "/snapshot" : "/frontdesk/waiting-queue")]);
       if (current !== revision || (background && !canPoll())) return;
       visits = seating;
       const unassigned = visits.filter(row => row.status === "waiting");
       replaceList(find("[data-desk-unassigned]"), unassigned.map(row =>
         '<form class="desk-check-in" data-assign-visit="' + row.visit_id + '"><span>' + esc(row.contact_name || "Walk-in") +
         '</span><label>Table <select name="table_id" required>' +
-        waiting.tables.filter(table => table.capacity >= row.party_size).map(table => option(table.table_id, tableLabel(table.table_id))).join("") +
+        waiting.tables.filter(table => table.capacity >= row.party_size && (!reservationFlow || table.status === "available"))
+          .map(table => option(table.table_id, tableLabel(table.table_id))).join("") +
         '</select></label><button type="submit" class="desk-confirm">Assign table</button></form>'
       ).join(""), background);
       const seated = visits.filter(row => row.status === "seated").sort((a, b) =>
@@ -320,6 +404,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
   async function update(work) {
     if (pending) return;
     pending = true;
+    workspace.setAttribute("aria-busy", "true");
     ++revision;
     workspaceNotice.textContent = "";
     try {
@@ -333,7 +418,8 @@ function mountFrontdeskWorkspace(workspace, navigate) {
       }
     } catch (error) {
       workspaceNotice.textContent = error.message;
-      if (["BOOKING_CHANGED", "CHECK_IN_REFRESH_REQUIRED", "WAITLIST_CHANGED", "TABLE_UNAVAILABLE"].includes(error.code)) {
+      if (["BOOKING_CHANGED", "CHECK_IN_REFRESH_REQUIRED", "WAITLIST_CHANGED", "TABLE_UNAVAILABLE",
+        "WAITLIST_PRIORITY", "ARRIVAL_WINDOW", "TABLE_NOT_READY"].includes(error.code)) {
         try { await refresh(); } catch {}
       }
       if (dialog.open) {
@@ -345,6 +431,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
       }
     } finally {
       pending = false;
+      workspace.setAttribute("aria-busy", "false");
     }
   }
 
@@ -370,7 +457,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
       editor.reset();
       editor.elements.booking_date.min = today();
       editor.elements.booking_date.value = mode === "edit" ? booking.booking_date : dateFilter.value;
-      editor.elements.time_slot_id.value = mode === "edit"
+      if (!reservationFlow) editor.elements.time_slot_id.value = mode === "edit"
         ? Object.keys(slots).find(key => slots[key] === booking.time_slot) : slotFilter.value || "2";
       editor.elements.party_size.value = mode === "edit" ? booking.party_size : 2;
       editor.elements.table_id.value = mode === "edit" ? booking.table_id ?? "" : "";
@@ -381,6 +468,30 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     }
     if (mode === "walk-in") walkIn.reset();
     dialog.showModal();
+    if (reservationFlow && !editor.hidden) syncEditorTimes(booking?.arrival_time);
+  }
+
+  async function syncEditorTimes(preferred) {
+    const serial = ++editorTimeRequest;
+    const fields = fieldValues(editor);
+    const select = editor.elements.arrival_time;
+    const selectedTime = preferred ?? select.value;
+    editorSubmit.disabled = true;
+    try {
+      const { times } = await restaurantRequest(restaurantQuery(flowBase + "/available", {
+        date: fields.booking_date, party_size: fields.party_size,
+      }));
+      if (serial !== editorTimeRequest) return;
+      select.innerHTML = option("", times.length ? "Choose an arrival time" : "No times for this party");
+      select.insertAdjacentHTML("beforeend", times.map(time => option(time, time)).join(""));
+      select.value = times.includes(selectedTime) ? selectedTime : "";
+      editorSubmit.disabled = !times.length || !rebase.hidden;
+    } catch (error) {
+      if (serial !== editorTimeRequest) return;
+      const errorField = find("[data-desk-editor-error]");
+      errorField.hidden = false;
+      errorField.textContent = error.message;
+    }
   }
 
   async function loadEditConflict() {
@@ -391,14 +502,14 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     errorField.hidden = false;
     errorField.textContent = "This booking changed. Your entries have been kept.";
     try {
-      const { booking } = await restaurantRequest("/frontdesk/bookings/" + editBooking.id + "/edit");
-      if (booking.status !== "booked") {
+      const { booking } = await restaurantRequest(bookingBase + "/" + editBooking.id + (reservationFlow ? "" : "/edit"));
+      if (booking.status !== "booked" || booking.checked_in_at) {
         errorField.textContent += " The booking is now " + (bookingLabels[booking.status] ?? booking.status) + ".";
         rebase.hidden = true;
         return;
       }
       editBooking.latest = booking.version;
-      errorField.textContent += " Latest: " + booking.booking_date + " · " + booking.time_slot + " · " +
+      errorField.textContent += " Latest: " + booking.booking_date + " · " + (booking.arrival_label ?? booking.time_slot) + " · " +
         booking.party_size + " guests · " + (tableLabel(booking.table_id) || "Unassigned") + ".";
       rebase.textContent = "Keep my entries and review";
     } catch {
@@ -408,13 +519,20 @@ function mountFrontdeskWorkspace(workspace, navigate) {
 
   workspace.addEventListener("submit", (event) => {
     const form = event.target;
-    if (![editor, checkIn, walkIn, cancellation, serviceForm, callForm].includes(form) &&
+    if (![editor, checkIn, walkIn, cancellation, serviceForm, callForm, ticketForm].includes(form) &&
       !form.matches("[data-seat-ticket],[data-assign-visit]")) return;
     event.preventDefault();
     if (pending) return;
     const fields = fieldValues(form);
+    if (form === ticketForm) return update(async () => {
+      const { queue: ticket } = await restaurantRequest(flowBase + "/tickets", fields);
+      ticketForm.reset();
+      return "Ticket #" + ticket.queue_id + " issued.";
+    });
     if (form === callForm) return update(async () => {
-      const { queue } = await restaurantRequest("/frontdesk/tables/" + fields.table_id + "/call-next", {});
+      const path = reservationFlow ? flowBase + "/tables/" + fields.table_id + "/call" :
+        "/frontdesk/tables/" + fields.table_id + "/call-next";
+      const { queue } = await restaurantRequest(path, {});
       return queue ? "Ticket #" + queue.queue_id + " called for table " + tableLabel(queue.table_id) + "." :
         "No waiting party fits this table.";
     });
@@ -437,7 +555,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     }
     if (form === editor) return update(async () => {
       if (editorSubmit.disabled) return;
-      const path = editBooking ? "/frontdesk/bookings/" + editBooking.id + "/edit" : "/frontdesk/bookings";
+      const path = editBooking ? bookingBase + "/" + editBooking.id + "/edit" : bookingBase;
       if (editBooking) fields.expected_version = editBooking.version;
       let booking;
       try {
@@ -453,12 +571,13 @@ function mountFrontdeskWorkspace(workspace, navigate) {
       return "Reservation saved.";
     });
     if (form === cancellation) update(async () => {
-      await restaurantRequest("/frontdesk/bookings/" + bookingId + "/cancel", {});
+      await restaurantRequest(bookingBase + "/" + bookingId + "/cancel", {});
       dialog.close();
       return "Reservation cancelled.";
     });
     if (form === checkIn || form === walkIn) update(async () => {
-      const path = form === checkIn ? "/frontdesk/bookings/" + bookingId + "/check-in" : "/frontdesk/walk-ins";
+      const path = form === checkIn ? "/frontdesk/bookings/" + bookingId + "/check-in" :
+        reservationFlow ? flowBase + "/walk-ins" : "/frontdesk/walk-ins";
       if (form === walkIn) fields.table_id = tableId;
       if (form === checkIn && arrivalOverride) {
         if (!fields.table_id) return "Choose a replacement table.";
@@ -482,12 +601,49 @@ function mountFrontdeskWorkspace(workspace, navigate) {
   workspace.addEventListener("change", (event) => {
     if (event.target === checkIn.elements.table_id) arrivalSubmit.disabled = !event.target.value;
     if (event.target === callForm.elements.table_id) renderWaitlist(true);
+    if (reservationFlow && event.target.form === editor && ["booking_date", "party_size"].includes(event.target.name)) syncEditorTimes();
   });
 
   workspace.addEventListener("click", (event) => {
     const button = event.target.closest("button");
     if (!button || button.disabled || pending) return;
     const data = button.dataset;
+    if (data.bookingPhase) {
+      const row = chosenBooking();
+      if (!row) return;
+      const action = data.bookingPhase;
+      if (action === "accept_offer" && !window.confirm("Has the guest agreed to use table " + tableLabel(row.offered_table_id) + "?")) return;
+      const fields = action === "offer" ? { table_id: offerDraft?.table, expected_version: offerDraft?.version } :
+        action === "accept_offer" ? { customer_agreed: "true", expected_version: row.version } :
+        action === "ready" || action === "seat" ? { table_id: row.table_id, expected_version: row.version } : {};
+      return update(async () => {
+        const result = await restaurantRequest(bookingBase + "/" + row.booking_id + "/" + action, fields);
+        if (result.visit) {
+          tableId = result.visit.table_id;
+          selectServiceVisit(result.visit.visit_id);
+        }
+        if (action === "offer") offerDraft = null;
+        return { arrive: "Arrival recorded.", ready: "Table ready. The guest can now see this update.",
+          seat: "Guest seated.", offer: "Replacement held. Ask the guest before changing the reservation.",
+          accept_offer: "Replacement confirmed. Confirm when the table is ready." }[action];
+      });
+    }
+    if (data.flowTicket) return update(async () => {
+      const result = await restaurantRequest(flowBase + "/tickets/" + data.flowTicket + "/" + data.ticketAction,
+        data.ticketAction === "seat" ? { table_id: data.calledTable } : {});
+      if (result.visit) {
+        tableId = result.visit.table_id;
+        selectServiceVisit(result.visit.visit_id);
+      }
+      return "Ticket #" + data.flowTicket + (result.visit ? " seated." :
+        data.ticketAction === "pass" ? " passed." : " cancelled.");
+    });
+    if (button.matches("[data-desk-disable-table]")) return update(async () => {
+      const row = occupancy.find(table => table.table_id === tableId);
+      if (!row) return;
+      await restaurantRequest(flowBase + "/tables/" + row.table_id + "/disabled", { disabled: String(!row.is_disabled) });
+      return row.is_disabled ? "Table enabled." : "Table disabled.";
+    });
     if (button === changeTable) {
       if (arrivalOverride) resetArrivalOverride();
       else {
@@ -529,12 +685,15 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     }
     if (data.deskBooking) {
       bookingId = Number(data.deskBooking);
+      offerDraft = null;
       tableId = chosenBooking()?.table_id;
       renderReception();
       return update(async () => "");
     }
     if (data.deskTable) {
       tableId = tableIds[data.deskTable];
+      const booking = chosenBooking();
+      offerDraft = reservationFlow && booking ? { booking: booking.booking_id, table: tableId, version: booking.version } : null;
       feedback.textContent = "Table " + data.deskTable;
       return renderReception();
     }
@@ -577,6 +736,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     if (button.matches("[data-release-desk-table]")) return update(async () => {
       const { visit } = await restaurantRequest("/frontdesk/visits/" + visitId + "/close", {});
       selectServiceVisit(undefined);
+      if (reservationFlow) return "Table closed. The cleaning buffer has started.";
       return visit.next_queue ? "Table released. Ticket #" + visit.next_queue.queue_id + " was called." : "Table released.";
     });
   });
@@ -617,6 +777,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     }
   }
   setInterval(poll, 3000);
+  if (reservationFlow) setInterval(updateCountdowns, 250);
   document.addEventListener("visibilitychange", poll);
 
   return (section, focus) => {

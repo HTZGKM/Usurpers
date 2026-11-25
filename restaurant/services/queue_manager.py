@@ -27,7 +27,7 @@ class QueueManager:
         contact_name=required_text(contact_name,"contact_name",limit=100) if contact_name is not None else None
         table_type=positive_int(table_type,"table_type") if table_type is not None else None
         with get_connection() as db:
-            begin_write(db)
+            begin_write(db, legacy_allocation=True)
             QueueManager.expire_calls(db)
             if db.execute("SELECT 1 FROM waiting_queue WHERE (phone_number=? OR customer_phone=?) AND status IN ('waiting','called')",(phone,customer_phone)).fetchone():
                 raise ServiceError("该顾客已在等位队列中。",409,"phone_number","DUPLICATE")
@@ -58,6 +58,12 @@ class QueueManager:
     @staticmethod
     def expire_called(timeout_minutes=10):
         with get_connection() as db:
+            if using_postgres():
+                from .allocation import enabled
+
+                begin_write(db)
+                if enabled(db):
+                    return 0
             return QueueManager.expire_calls(db, timeout_minutes)
 
     @staticmethod
@@ -86,7 +92,7 @@ class QueueManager:
     def call_next(table_id):
         tid=positive_int(table_id,"table_id")
         with get_connection() as db:
-            begin_write(db)
+            begin_write(db, legacy_allocation=True)
             return QueueManager.call_for_available_table(db, tid)
 
     @staticmethod
@@ -113,7 +119,7 @@ class QueueManager:
     def seat(queue_id, table_id):
         qid=positive_int(queue_id,"queue_id"); tid=positive_int(table_id,"table_id")
         with get_connection() as db:
-            begin_write(db)
+            begin_write(db, legacy_allocation=True)
             lock = " FOR UPDATE" if using_postgres() else ""
             item=db.execute("SELECT * FROM waiting_queue WHERE queue_id=? AND status='called'" + lock,(qid,)).fetchone()
             if not item:
@@ -135,6 +141,11 @@ class QueueManager:
     def cancel(queue_id, customer_phone=None):
         qid=positive_int(queue_id,"queue_id")
         with get_connection() as db:
+            if using_postgres():
+                from .allocation import legacy_write_guard
+
+                db.execute("LOCK TABLE waiting_queue IN ROW EXCLUSIVE MODE")
+                legacy_write_guard(db)
             sql="UPDATE waiting_queue SET status='cancelled' WHERE queue_id=? AND status IN ('waiting','called')"; args=[qid]
             if customer_phone: sql += " AND customer_phone=?"; args.append(customer_phone)
             cur=db.execute(sql,args)
