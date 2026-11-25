@@ -7,7 +7,7 @@
     {{ floor_map(tables, preview=not account, show_capacity=true) }}
     {% if account %}
     <div class="legend"><span>Available</span><span class="chosen">Selected</span><span class="unavailable">Unavailable</span></div>
-    <button type="button" class="secondary booking-continue" data-action="focus-guest-details" hidden>Continue to guest details</button>
+    <button type="button" class="secondary booking-continue" data-action="review-reservation" hidden>Review reservation</button>
     {% endif %}
   </div>
 </div>
@@ -30,16 +30,23 @@
       {% for slot_id, slot in slots.items() %}<button type="button" class="choice" data-action="time:{{ slot_id }}" aria-pressed="false">{{ slot }}</button>{% endfor %}
     </fieldset>
     <div class="booking-table-choice">
-      <p class="summary" id="summary" aria-live="polite"></p>
+      <div>
+        <strong>Table selection</strong>
+        <p class="summary" id="summary" role="status"></p>
+      </div>
       {{ button('Choose a table', 'focus-floor', 'secondary') }}
+      <button type="button" class="secondary" data-action="retry-availability" hidden>Try again</button>
     </div>
-    <div class="twocol">
-      <label class="field">Guest name<input id="name" value="{{ account.name }}" readonly></label>
-      <label class="field">Phone<input type="tel" id="phone" value="{{ account.username }}" readonly></label>
-    </div>
-    <p id="booking-table-help" class="booking-table-help" hidden>Choose an available table on the dining room map to continue.</p>
-    <button class="primary" type="submit" aria-describedby="booking-table-help">Confirm reservation</button>
-    <p class="statusline" role="status"></p>
+    <section class="booking-review" aria-labelledby="booking-review-title" data-booking-review hidden>
+      <h3 id="booking-review-title" tabindex="-1">Review reservation</h3>
+      <dl class="account-details">
+        <div><dt>When and where</dt><dd data-booking-selection></dd></div>
+        <div><dt>Guest</dt><dd>{{ account.name }}</dd></div>
+        <div><dt>Phone number</dt><dd>{{ account.username }}</dd></div>
+      </dl>
+      <button class="primary" type="submit" aria-describedby="booking-review-title" disabled>Confirm reservation</button>
+    </section>
+    <p class="statusline" data-booking-feedback role="status"></p>
   </form>
   <dialog id="booking-calendar" class="booking-calendar" aria-labelledby="booking-calendar-title">
     <div class="booking-calendar-top">

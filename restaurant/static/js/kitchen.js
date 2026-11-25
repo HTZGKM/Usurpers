@@ -1,20 +1,25 @@
 function mountKitchenWorkspace(workspace) {
   const find = (selector) => workspace.querySelector(selector);
   const tickets = find("[data-kitchen-tickets]");
+  const handoff = find("[data-kitchen-handoff]");
   const feedback = find("[data-kitchen-feedback]");
   const syncNotice = find("[data-kitchen-sync]");
   const stages = {
     waiting: ["Waiting", "Start preparation", "start"],
     cooking: ["Cooking", "Mark ready", "complete"],
-    ready: ["Ready for front desk", "", ""],
+    ready: ["Ready to serve", "", ""],
   };
   let view = "queue";
   let revision = 0;
   let pending = false;
   let polling = false;
+  let refreshError = false;
 
   function queueAge(lines) {
-    const enqueued = lines.map(line => Date.parse(line.created_at.replace(" ", "T") + "Z")).filter(Number.isFinite);
+    const enqueued = lines.map(line => {
+      const stamp = line.created_at?.replace(" ", "T");
+      return Date.parse(stamp && (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(stamp) ? stamp : stamp + "Z"));
+    }).filter(Number.isFinite);
     if (!enqueued.length) return "";
     const minutes = Math.max(0, Math.floor((Date.now() - Math.min(...enqueued)) / 60000));
     return minutes ? "Queued " + minutes + " min ago" : "Just queued";
@@ -27,7 +32,9 @@ function mountKitchenWorkspace(workspace) {
       if (!orders.has(row.order_id)) orders.set(row.order_id, []);
       orders.get(row.order_id).push(row);
     }
-    const markup = [...orders].map(([order, lines]) => {
+    const activeTickets = [];
+    const handoffTickets = [];
+    for (const [order, lines] of orders) {
       const items = lines.map(line => {
         const [status, label, action] = stages[line.status];
         return '<li class="kitchen-item" data-stage="' + line.status + '"><div class="kitchen-item-copy"><strong>' +
@@ -38,24 +45,38 @@ function mountKitchenWorkspace(workspace) {
             '" data-kitchen-step="' + action + '">' + label + '</button>' : '') + '</li>';
       }).join("");
       const table = tableLabel(lines[0].table_id);
-      return '<article class="kitchen-ticket" data-kitchen-ticket="' + order + '" data-stage="' + lines[0].status +
+      const markup = '<article class="kitchen-ticket" data-kitchen-ticket="' + order + '" data-stage="' + lines[0].status +
         '"><div class="kitchen-ticket-heading"><div>' +
-        '<h3>Order #' + order + '</h3><p>' + esc(queueAge(lines)) + '</p></div>' +
-        (table ? '<strong class="kitchen-table-label">Table ' + esc(table) + '</strong>' : '') +
+        '<h3 tabindex="-1">' + (table ? 'Table ' + esc(table) : 'Order #' + order) + '</h3><p>' +
+        (table ? 'Order #' + order + ' · ' : '') + esc(queueAge(lines)) + '</p></div>' +
         '</div><ul class="kitchen-item-list">' + items + '</ul></article>';
-    }).join("") || '<p class="kitchen-empty">No orders in the preparation queue.</p>';
-
-    if (tickets.innerHTML !== markup) {
-      const active = tickets.contains(document.activeElement) && document.activeElement.dataset.kitchenItem;
-      tickets.innerHTML = markup;
-      if (active) (find('[data-kitchen-item="' + active + '"]') ?? find("[data-kitchen-refresh]")).focus({ preventScroll: true });
+      const destination = lines.every(line => line.status === "ready") ? handoffTickets : activeTickets;
+      destination.push(markup);
     }
-    const count = orders.size + (orders.size === 1 ? " order" : " orders");
+
+    const markup = activeTickets.join("") || '<p class="kitchen-empty">No dishes to prepare.</p>';
+    const handoffMarkup = handoffTickets.join("");
+    const focused = document.activeElement;
+    const itemId = tickets.contains(focused) && focused.dataset.kitchenItem;
+    const orderId = focused.closest("[data-kitchen-ticket]")?.dataset.kitchenTicket;
+    const handoffHadFocus = handoff.contains(focused);
+    const activeHadFocus = tickets.contains(focused);
+    const activeChanged = tickets.innerHTML !== markup;
+    const handoffChanged = handoff.innerHTML !== handoffMarkup;
+    if (activeChanged) tickets.innerHTML = markup;
+    if (handoffChanged) handoff.innerHTML = handoffMarkup;
+    handoff.closest("section").hidden = !handoffTickets.length;
+    if ((activeHadFocus && activeChanged) || (handoffHadFocus && handoffChanged)) {
+      const target = itemId && find('[data-kitchen-item="' + itemId + '"]');
+      (target || find('[data-kitchen-ticket="' + orderId + '"] h3') || find("#kitchen-queue-title")).focus({ preventScroll: true });
+    }
+    const count = activeTickets.length + (activeTickets.length === 1 ? " active order" : " active orders");
     const total = find("[data-kitchen-count]");
     if (total.textContent !== count) total.textContent = count;
     for (const stage of Object.keys(stages)) {
       const quantity = rows.filter(row => row.status === stage).reduce((sum, row) => sum + row.quantity, 0);
-      find('[data-kitchen-stage="' + stage + '"]').textContent = quantity;
+      const stageCount = find('[data-kitchen-stage="' + stage + '"]');
+      if (stageCount.textContent !== String(quantity)) stageCount.textContent = quantity;
     }
   }
 
@@ -83,17 +104,26 @@ function mountKitchenWorkspace(workspace) {
     const current = ++revision;
     try {
       const { items: menuRows } = await restaurantRequest("/kitchen/menu");
+      if (current !== revision) return;
       const rows = view === "queue" ? (await Promise.all(Object.keys(stages).map(status =>
         restaurantRequest(restaurantQuery("/kitchen/queue", { status }))
       ))).flatMap(result => result.items) : [];
       if (current !== revision) return;
       if (view === "queue") renderQueue(rows, menuRows);
       else renderMenu(menuRows);
+      if (refreshError) feedback.textContent = "";
+      refreshError = false;
       syncNotice.textContent = view === "queue" ? "Auto-updates on" : "";
+      delete syncNotice.dataset.error;
+      return true;
     } catch (error) {
       if (current === revision) {
         feedback.textContent = error.message;
-        if (view === "queue") syncNotice.textContent = "Updates paused · Refresh";
+        refreshError = true;
+        if (view === "queue") {
+          syncNotice.textContent = "Updates paused · Refresh";
+          syncNotice.dataset.error = "true";
+        }
       }
     }
   }
@@ -110,21 +140,26 @@ function mountKitchenWorkspace(workspace) {
     if (!kitchenItem && !kitchenDish) return;
     pending = true;
     ++revision;
-    button.disabled = true;
+    const orderId = button.closest("[data-kitchen-ticket]")?.dataset.kitchenTicket;
+    const requestedView = view;
+    button.setAttribute("aria-disabled", "true");
+    refreshError = false;
     feedback.textContent = "";
     try {
       if (kitchenItem) await restaurantRequest("/kitchen/items/" + kitchenItem + "/" + kitchenStep, {});
       else await restaurantRequest("/kitchen/menu/" + kitchenDish + "/availability", { is_available: kitchenNext });
-      await refresh();
+      const refreshed = await refresh();
+      if (!refreshed || requestedView !== view) return;
+      if (kitchenStep === "complete") feedback.textContent = "Dish ready. Front desk can now mark it served.";
       const replacement = kitchenItem
         ? find('[data-kitchen-item="' + kitchenItem + '"]')
         : find('[data-kitchen-dish="' + kitchenDish + '"]');
-      (replacement ?? find("[data-kitchen-refresh]")).focus();
+      (replacement ?? find('[data-kitchen-ticket="' + orderId + '"] h3') ?? find("[data-kitchen-refresh]")).focus();
     } catch (error) {
       feedback.textContent = error.message;
       if (error.status === 409) await refresh();
     } finally {
-      button.disabled = false;
+      button.removeAttribute("aria-disabled");
       pending = false;
     }
   });
