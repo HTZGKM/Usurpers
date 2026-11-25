@@ -553,14 +553,9 @@ function showDetail(k, lineId = null) {
   detailKey = k;
   detailLineId = lineId;
   detailQty = editingLine?.quantity ?? 1;
-  const im = dishSheet.querySelector("img");
-  im.onload = () =>
-    im.style.setProperty(
-      "--img-limit",
-      im.naturalWidth / Math.max(1, devicePixelRatio) + "px",
-    );
-  im.src = asset(dish, true);
-  im.alt = dish.name;
+  const image = dishSheet.querySelector(".dish-image img");
+  image.src = asset(dish, true);
+  image.alt = dish.name;
   dishSheet.querySelector(".context").textContent = editingLine ? "Edit bag item" : cats[dish.category];
   dishSheet.querySelector("#dish-name").textContent = dish.name;
   dishSheet.querySelector(".dish-description").textContent = dish.description;
