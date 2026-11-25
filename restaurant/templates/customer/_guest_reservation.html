@@ -39,9 +39,9 @@
     </div>
     <section class="booking-review" aria-labelledby="booking-review-title" data-booking-review hidden>
       <h3 id="booking-review-title" tabindex="-1">Review reservation</h3>
-      <dl class="account-details">
-        <div><dt>When and where</dt><dd data-booking-selection></dd></div>
-        <div><dt>Guest</dt><dd>{{ account.name }}</dd></div>
+      <div data-booking-selection></div>
+      <dl class="guest-facts booking-contact">
+        <div><dt>Guest name</dt><dd>{{ account.name }}</dd></div>
         <div><dt>Phone number</dt><dd>{{ account.username }}</dd></div>
       </dl>
       <button class="primary" type="submit" aria-describedby="booking-review-title" disabled>Confirm reservation</button>

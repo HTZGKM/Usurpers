@@ -1390,6 +1390,7 @@ main.booking {
 }
 .account-visit,
 .account-profile-card,
+.booking-reservation-card,
 .reservation-history-record,
 .history-record {
   padding: clamp(14px, 2vw, 22px);
@@ -1435,7 +1436,7 @@ main.booking {
 }
 .guest-facts dd { margin: 2px 0 0; font-weight: 600; overflow-wrap: anywhere; }
 .guest-facts > div:nth-child(-n+2) dd { font-size: 1.08rem; }
-.guest-public :is(.account-page, .visit) .guest-status {
+.guest-public :is(.account-page, .booking, .visit) .guest-status {
   display: inline-flex;
   width: fit-content;
   margin: 0;
@@ -1470,6 +1471,7 @@ main.booking {
 .account-profile-actions p { margin: 0; color: var(--ember-muted, #b9b6a8); font-size: 0.875rem; }
 .account-profile-actions form { margin: 0; }
 .visit .panel :is(.secondary, .bag-line-button),
+.booking .booking-actions .secondary,
 .account-content [data-account-form="logout"] button,
 .history-record .order-disclosure-action {
   display: inline-flex;
@@ -1486,6 +1488,7 @@ main.booking {
   text-decoration: none;
 }
 .visit .panel :is(.secondary, .bag-line-button):hover:enabled,
+.booking .booking-actions .secondary:hover:enabled,
 .account-content [data-account-form="logout"] button:hover:enabled,
 .history-record summary:hover .order-disclosure-action {
   background: #30281b;
@@ -2091,8 +2094,38 @@ main.menu-page {
   border-radius: 7px;
 }
 .booking-review h3 { margin: 0 0 10px; font-size: 1.35rem; }
-.booking-review .account-details { margin: 0 0 12px; }
-.booking-review .account-details > div { padding-block: 8px; }
+.booking-reservation-card > .guest-facts { margin-top: 14px; }
+.booking-contact {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ember-rule, #38362f);
+}
+.booking-review .primary { margin-top: 16px; }
+.booking-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+.booking .booking-actions .booking-cancel {
+  background: #30201d;
+  border-color: #c78c82;
+  color: #f4c4bd;
+}
+.booking .booking-actions .booking-cancel:hover:enabled {
+  background: #402521;
+  border-color: #f4c4bd;
+  color: #f4c4bd;
+}
+.booking-cancel-confirmation {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #c78c82;
+  border-radius: 8px;
+  background: var(--ember-surface, #141410);
+}
+.booking-cancel-confirmation h3 { margin: 0; font-size: 1.25rem; }
+.booking-cancel-confirmation p { margin: 4px 0 0; color: var(--ember-muted, #b9b6a8); }
 .booking-table-choice .secondary,
 .booking .booking-continue {
   margin: 0;
