@@ -34,8 +34,10 @@
         <strong>Table selection</strong>
         <p class="summary" id="summary" role="status"></p>
       </div>
-      {{ button('Choose a table', 'focus-floor', 'secondary') }}
-      <button type="button" class="secondary" data-action="retry-availability" hidden>Try again</button>
+      <div class="booking-table-actions">
+        {{ button('Choose a table', 'focus-floor', 'secondary') }}
+        <button type="button" class="secondary" data-action="retry-availability" hidden>Try again</button>
+      </div>
     </div>
     <section class="booking-review" aria-labelledby="booking-review-title" data-booking-review hidden>
       <h3 id="booking-review-title" tabindex="-1">Review reservation</h3>

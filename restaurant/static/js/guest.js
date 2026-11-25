@@ -212,7 +212,7 @@ function animate(el, ms) {
     );
 }
 
-let availableTables = null;
+let lastAvailability = null;
 let availabilityKey = "";
 let availabilityLoading = false;
 let availabilityError = false;
@@ -224,26 +224,25 @@ let customerLoaded = false;
 let customerRefreshVersion = 0;
 
 function available(t, d) {
-  if (availableTables?.has(tableIds[t[0]])) return true;
+  if (lastAvailability?.tables.has(tableIds[t[0]])) return true;
   const original = state.booking;
-  return Boolean(availableTables && edit && original?.table === t[0] &&
+  return Boolean(lastAvailability && edit && original?.table === t[0] &&
     original.date === d.date && original.time === d.time && t[1] >= d.guests);
 }
 
 function syncAvailability(force = false) {
-  const d = state.draft;
+  const d = { ...state.draft };
   const query = restaurantQuery("/tables/available", {
     date: d.date, time_slot_id: d.time, party_size: d.guests,
   });
   if (query === availabilityKey && !force) return;
   const version = ++availabilityVersion;
   availabilityKey = query;
-  availableTables = null;
   availabilityLoading = true;
   availabilityError = false;
   restaurantRequest(query).then(({ tables: rows }) => {
     if (version !== availabilityVersion) return;
-    availableTables = new Set(rows.map(table => table.table_id));
+    lastAvailability = { tables: new Set(rows.map(table => table.table_id)), draft: d };
     availabilityLoading = false;
     if (app.querySelector("#reservation")) syncDraft();
   }).catch(() => {
@@ -253,6 +252,8 @@ function syncAvailability(force = false) {
     if (app.querySelector("#reservation")) syncDraft();
   });
 }
+
+const availabilityReady = () => Boolean(lastAvailability && !availabilityLoading && !availabilityError);
 
 function prettyDate(v, options = {}) {
   return new Date(v + "T12:00:00").toLocaleDateString("en-US", {
@@ -323,12 +324,17 @@ function bookingView() {
 function syncDraft() {
   const d = state.draft;
   syncAvailability();
-  if (availableTables && d.table && !tables.some((t) => t[0] === d.table && available(t, d)))
-    d.table = "";
+  const ready = availabilityReady();
+  const invalidated = ready && d.table && !tables.some(t => t[0] === d.table && available(t, d));
+  if (invalidated) d.table = "";
+  const floor = app.querySelector(".floor-cover .floor");
+  floor.setAttribute("aria-busy", String(availabilityLoading));
   let availableCount = 0;
-  app.querySelectorAll(".seat").forEach((b) => {
+  floor.querySelectorAll(".seat").forEach((b) => {
     const t = tables.find((t) => t[0] === b.dataset.action.slice(5));
-    b.disabled = !available(t, d);
+    b.disabled = !available(t, lastAvailability?.draft ?? d);
+    if (!ready && !b.disabled) b.setAttribute("aria-disabled", "true");
+    else b.removeAttribute("aria-disabled");
     if (!b.disabled) availableCount++;
     b.setAttribute("aria-pressed", !b.disabled && t[0] === d.table);
   });
@@ -337,18 +343,28 @@ function syncDraft() {
     .forEach((b) =>
       b.setAttribute("aria-pressed", b.dataset.action.slice(5) === d.time),
     );
-  const selected = Boolean(d.table && availableTables);
-  app.querySelector("#summary").textContent = availabilityLoading ? "Checking table availability…" :
-    availabilityError ? "Could not check availability." : selected ? "Table " + d.table + " selected." :
-    availableCount ? "Choose from " + availableCount + (availableCount === 1 ? " available table." : " available tables.") :
-    "No tables available. Try another dining time or date.";
+  const selected = Boolean(ready && d.table);
+  const summary = app.querySelector("#summary");
+  const hint = availabilityLoading ? "Checking table availability…" : availabilityError ? "Could not check availability." :
+    selected ? "Table " + d.table + " selected." : !availableCount ? "No tables available. Try another dining time or date." :
+    invalidated ? "Your previous table is unavailable. Choose another table." :
+    "Choose from " + availableCount + (availableCount === 1 ? " available table." : " available tables.");
+  if (summary.textContent !== hint) summary.textContent = hint;
   const floorLink = app.querySelector('[data-action="focus-floor"]');
-  floorLink.hidden = availableCount === 0;
-  floorLink.textContent = selected ? "Change table" : "Choose a table";
+  floorLink.hidden = availabilityError;
+  floorLink.disabled = !ready || !availableCount;
+  floorLink.textContent = d.table ? "Change table" : "Choose a table";
   app.querySelector('[data-action="retry-availability"]').hidden = !availabilityError;
-  app.querySelector(".booking-continue").hidden = !selected;
-  app.querySelector("[data-booking-review]").hidden = !selected;
-  app.querySelector("[data-booking-selection]").innerHTML = selected ? reservationFacts(d) : "";
+  const review = app.querySelector("[data-booking-review]");
+  if (d.table) review.hidden = false;
+  const continueButton = app.querySelector(".booking-continue");
+  continueButton.hidden = review.hidden;
+  continueButton.disabled = !selected;
+  if (!review.hidden) {
+    const details = app.querySelector("[data-booking-selection]");
+    const markup = reservationFacts({ ...d, table: d.table || "Not selected" });
+    if (details.innerHTML !== markup) details.innerHTML = markup;
+  }
   const submit = app.querySelector("#reservation button[type=submit]");
   submit.disabled = customerPending || !customerLoaded || !selected;
   submit.textContent = customerPending ? "Saving…" : edit ? "Save reservation" : "Confirm reservation";
@@ -1277,6 +1293,7 @@ document.addEventListener("submit", (e) => {
     err = e.target.querySelector("[data-booking-feedback]"),
     f = e.target;
   d.date = f.querySelector("#date").value;
+  if (!availabilityReady()) return;
   if (!d.table || !tables.some((t) => t[0] === d.table && available(t, d))) {
     err.textContent = "Select an available table on the floor plan.";
     document.querySelector(".seat:enabled")?.focus();
@@ -1366,8 +1383,12 @@ document.addEventListener("click", (e) => {
   }
   if (a.startsWith("seat:") || a.startsWith("time:")) {
     if (state.booking && !edit) return;
-    if (a.startsWith("seat:")) state.draft.table = a.slice(5);
-    else state.draft.time = a.slice(5);
+    if (a.startsWith("seat:")) {
+      if (!availabilityReady()) return;
+      state.draft.table = a.slice(5);
+    } else {
+      state.draft.time = a.slice(5);
+    }
     syncDraft();
     return;
   }

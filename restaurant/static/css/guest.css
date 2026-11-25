@@ -2060,6 +2060,7 @@ main.menu-page {
   place-content: center;
   gap: 2px;
   padding: 0;
+  transition: background-color 180ms ease-out, border-color 180ms ease-out, color 180ms ease-out;
 }
 .booking .seat small {
   font: 400 clamp(9px, 0.85vw, 13px)/1.15 var(--guest-control);
@@ -2070,12 +2071,15 @@ main.menu-page {
   background: var(--guest-gold);
   border-color: #ffedbc;
 }
+.guest-public .booking .seat[aria-disabled="true"]:not([aria-pressed="true"]):hover {
+  background-color: var(--ember-hover);
+}
+.booking .floor[aria-busy="true"] .seat[aria-disabled="true"] { cursor: progress; }
 .booking-table-choice {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0 12px;
+  gap: 4px 12px;
   padding: 10px 14px;
   border: 1px solid var(--guest-rule);
   border-radius: 7px;
@@ -2086,8 +2090,19 @@ main.menu-page {
   padding: 4px 0;
   margin: 0;
   font-size: 13px;
+  line-height: 1.4;
+  min-block-size: calc(2lh + 8px);
 }
 .booking-table-choice strong { font: 600 0.875rem/1.4 var(--guest-control); }
+.booking-table-actions {
+  display: flex;
+  justify-content: flex-end;
+  min-inline-size: 7.5rem;
+}
+@media (max-width: 480px) {
+  .booking-table-choice { grid-template-columns: minmax(0, 1fr); }
+  .booking-table-actions { justify-content: flex-start; }
+}
 .booking-review {
   padding: 14px;
   border: 1px solid var(--guest-rule);
@@ -2100,7 +2115,10 @@ main.menu-page {
   padding-top: 12px;
   border-top: 1px solid var(--ember-rule, #38362f);
 }
-.booking-review .primary { margin-top: 16px; }
+.booking-review .primary {
+  margin-top: 16px;
+  transition: background-color 180ms ease-out, opacity 180ms ease-out;
+}
 .booking-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2135,6 +2153,10 @@ main.menu-page {
   text-underline-offset: 0.2em;
 }
 .booking .booking-continue { margin-bottom: 12px; }
+.booking :is(.booking-table-actions .secondary, .booking-continue):disabled {
+  opacity: 0.65;
+  cursor: default;
+}
 @media (max-width: 760px) {
   .menu-list .choice,
   .menu-list .menu-bag {
@@ -2150,9 +2172,13 @@ main.menu-page {
 .booking-table-choice .secondary {
   font-family: var(--guest-control);
 }
-.booking .choice[aria-pressed="true"] {
-  background: var(--guest-gold);
-  border-color: var(--guest-gold);
+.booking [data-action^="time:"] {
+  transition: background-color 180ms ease-out, border-color 180ms ease-out, color 180ms ease-out;
+}
+.guest-public .booking [data-action^="time:"][aria-pressed="true"] {
+  background-color: var(--ember-ink);
+  border-color: var(--ember-ink);
+  color: var(--ember-base);
 }
 .booking-date-toggle {
   display: flex;
