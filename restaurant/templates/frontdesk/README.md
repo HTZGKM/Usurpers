@@ -24,9 +24,9 @@
 | --- | --- |
 | `GET /frontdesk/bookings` | 后端接收可选 `date`、`time_slot_id`、`phone_number`，返回预约、桌号与桌位状态。前端接入当日列表和桌位图。 |
 | `POST /frontdesk/bookings` | 工作台内代订表单提交 `contact_name`、`phone_number`、`booking_date`、`time_slot_id`、`party_size` 和可选 `table_id`。 |
-| `GET /frontdesk/bookings/<booking_id>/edit`、`POST /frontdesk/bookings/<booking_id>/edit` | 返回原预约，按 `booking_date`、`time_slot_id` 和 `party_size` 校验并更新。失败保留原预约。 |
+| `GET /frontdesk/bookings/<booking_id>/edit`、`POST /frontdesk/bookings/<booking_id>/edit` | 读取预约及 `version`。保存时提交 `expected_version` 与修改后的日期、时段、人数和可选桌号。版本不符返回 409，页面保留草稿供核对。 |
 | `POST /frontdesk/bookings/<booking_id>/cancel` | 带 `csrf_token`。后端校验可取消状态和时限，释放预订桌位。 |
-| `POST /frontdesk/bookings/<booking_id>/check-in` | 表单带 `csrf_token`，现场分桌时可传 `table_id`。后端校验预约状态、桌位和容量，保存到店记录，返回实际桌号及更新后的状态。前端同步列表和桌位图。 |
+| `POST /frontdesk/bookings/<booking_id>/check-in` | 普通签到仅提交 `csrf_token`，使用预约的最新桌号。选择换桌时额外提交 `change_table=true`、替代的 `table_id` 和 `expected_version`。后端只接受餐厅当天的预约。 |
 | `POST /frontdesk/walk-ins` | 提交 `party_size`、`table_id` 与 `csrf_token`，由后端校验并建立到店记录。当前表单按路由说明只收人数和桌位。 |
 | `GET /frontdesk/menu` | 返回 `dish_id`、菜名、实际价格和供应状态，供代客点单选择。 |
 | `GET /frontdesk/orders`、`GET /frontdesk/orders/<order_id>` | 按桌或联系人查询订单。详情包含菜品明细、数量、备注、制作状态、金额和付款状态。 |

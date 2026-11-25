@@ -1,4 +1,8 @@
 from datetime import datetime, timezone
+import json
+from sqlite3 import IntegrityError as SQLiteIntegrityError
+
+from psycopg.errors import UniqueViolation
 
 from restaurant.business_time import MEAL_SLOTS, current_table_window, utc_clock
 from restaurant.db.database import begin_write, get_connection, insert_id
@@ -34,8 +38,8 @@ def table_has_call(db, table_id):
         (table_id, utc_clock(10))).fetchone() is not None
 
 
-def _available_tables(db, date, slot, size, exclude_booking_id=None):
-    live = (date, slot) == current_table_window()
+def _available_tables(db, date, slot, size, exclude_booking_id=None, *, window=None):
+    live = (date, slot) == (window or current_table_window())
     rows = db.execute("""SELECT t.table_id,t.capacity FROM dining_tables t
         WHERE t.capacity>=? AND NOT EXISTS (
             SELECT 1 FROM bookings b WHERE b.table_id=t.table_id AND b.booking_date=?
@@ -56,9 +60,9 @@ def find_available_tables(booking_date, time_slot, party_size, exclude_booking_i
         return _available_tables(db, booking_date, slot, size, exclude_booking_id)
 
 
-def _resolve_table(db, date, slot, size, table_id, exclude_booking_id=None):
+def _resolve_table(db, date, slot, size, table_id, exclude_booking_id=None, *, window=None):
     """校验并返回最终分配的桌号。指定了 table_id 则校验容量和可用性，否则自动分配。"""
-    available = _available_tables(db, date, slot, size, exclude_booking_id)
+    available = _available_tables(db, date, slot, size, exclude_booking_id, window=window)
     if table_id is not None:
         table = db.execute("SELECT capacity FROM dining_tables WHERE table_id=?", (table_id,)).fetchone()
         if not table:
@@ -73,36 +77,87 @@ def _resolve_table(db, date, slot, size, table_id, exclude_booking_id=None):
     return available[0]["table_id"]
 
 
-def create_booking(contact_name, phone, booking_date, time_slot, party_size, customer_phone=None, table_id=None):
+def _check_booking_date(date, today):
+    if date < today:
+        raise ServiceError("Select today or a future dining date.", field="booking_date", code="BOOKING_DATE_IN_PAST")
+
+
+def booking_conflict():
+    return ServiceError("This reservation has changed. Review the latest details before trying again.",
+                        409, code="BOOKING_CHANGED")
+
+
+def _booking_write(work):
+    try:
+        return work()
+    except (SQLiteIntegrityError, UniqueViolation) as error:
+        sqlite_slot_conflict = isinstance(error, SQLiteIntegrityError) and str(error) == (
+            "UNIQUE constraint failed: bookings.table_id, bookings.booking_date, bookings.time_slot"
+        )
+        postgres_slot_conflict = isinstance(error, UniqueViolation) and error.diag.constraint_name == "uq_bookings_table_slot"
+        if sqlite_slot_conflict or postgres_slot_conflict:
+            raise ServiceError("That table is no longer available.", 409, "table_id", "TABLE_UNAVAILABLE") from error
+        raise
+
+
+def create_booking(contact_name, phone, booking_date, time_slot, party_size, customer_phone=None, table_id=None,
+                   *, idempotency_key=None):
     name = required_text(contact_name, "contact_name", limit=100)
     phone = phone_number(phone)
     date = valid_date(booking_date)
     slot = _normalize_time_slot(time_slot)
     size = positive_int(party_size, "party_size")
     tid = positive_int(table_id, "table_id") if table_id is not None else None
+    request_key = required_text(idempotency_key, "idempotency_key", limit=80) if idempotency_key is not None else None
+    request_fields = json.dumps([date, slot, size, tid], separators=(",", ":"))
     with get_connection() as db:
         begin_write(db)
-        table_id_final = _resolve_table(db, date, slot, size, tid)
-        booking_id = insert_id(db, """INSERT INTO bookings
+        if request_key and customer_phone:
+            previous = db.execute("""SELECT request_fields,booking_id,initial_table_id FROM booking_create_requests
+                WHERE customer_phone=? AND request_key=?""", (customer_phone, request_key)).fetchone()
+            if previous:
+                if previous["request_fields"] != request_fields:
+                    raise ServiceError("This submission key was used with different reservation details.",
+                                       409, "idempotency_key", "IDEMPOTENCY_KEY_REUSED")
+                return {"booking_id": previous["booking_id"], "table_id": previous["initial_table_id"],
+                        "status": "booked", "version": 1}
+        window = current_table_window()
+        _check_booking_date(date, window[0])
+        table_id_final = _resolve_table(db, date, slot, size, tid, window=window)
+        booking_id = _booking_write(lambda: insert_id(db, """INSERT INTO bookings
             (contact_name,phone_number,booking_date,time_slot,party_size,table_id,customer_phone)
-            VALUES(?,?,?,?,?,?,?)""", (name, phone, date, slot, size, table_id_final, customer_phone), "booking_id")
-        return {"booking_id": booking_id, "table_id": table_id_final, "status": "booked"}
+            VALUES(?,?,?,?,?,?,?)""", (name, phone, date, slot, size, table_id_final, customer_phone), "booking_id"))
+        if request_key and customer_phone:
+            db.execute("""INSERT INTO booking_create_requests
+                (customer_phone,request_key,request_fields,booking_id,initial_table_id) VALUES(?,?,?,?,?)""",
+                (customer_phone, request_key, request_fields, booking_id, table_id_final))
+        return {"booking_id": booking_id, "table_id": table_id_final, "status": "booked", "version": 1}
 
 
-def update_booking(booking_id, booking_date, time_slot, party_size, customer_phone=None, table_id=None):
+def update_booking(booking_id, booking_date, time_slot, party_size, customer_phone=None, table_id=None,
+                   *, expected_version):
     bid = positive_int(booking_id, "booking_id")
     date = valid_date(booking_date)
     slot = _normalize_time_slot(time_slot)
     size = positive_int(party_size, "party_size")
     tid = positive_int(table_id, "table_id") if table_id is not None else None
+    version = positive_int(expected_version, "expected_version")
     with get_connection() as db:
         begin_write(db)
-        current = db.execute("SELECT status,customer_phone,booking_date,time_slot FROM bookings WHERE booking_id=?", (bid,)).fetchone()
+        current = db.execute("SELECT status,customer_phone,booking_date,time_slot,version FROM bookings WHERE booking_id=?", (bid,)).fetchone()
         if not current: raise ServiceError("预订不存在。", 404)
         if customer_phone and current["customer_phone"] != customer_phone: raise ServiceError("无权修改此预订。",403,code="FORBIDDEN")
-        if current["status"] != "booked": raise ServiceError("当前预订状态不可修改。", 409)
-        table_id_final = _resolve_table(db, date, slot, size, tid, bid)
-        db.execute("UPDATE bookings SET booking_date=?,time_slot=?,party_size=?,table_id=? WHERE booking_id=?", (date, slot, size, table_id_final, bid))
+        if current["status"] != "booked" or current["version"] != version:
+            raise booking_conflict()
+        window = current_table_window()
+        _check_booking_date(date, window[0])
+        table_id_final = _resolve_table(db, date, slot, size, tid, bid, window=window)
+        updated_booking = _booking_write(lambda: db.execute("""UPDATE bookings
+            SET booking_date=?,time_slot=?,party_size=?,table_id=?,version=version+1
+            WHERE booking_id=? AND status='booked' AND version=? RETURNING version""",
+            (date, slot, size, table_id_final, bid, version)).fetchone())
+        if not updated_booking:
+            raise booking_conflict()
         db.execute("""UPDATE orders SET table_id=?
             WHERE booking_id=? AND order_type='preorder' AND visit_id IS NULL AND status='active'""", (table_id_final, bid))
         if (date, slot) != (current["booking_date"], current["time_slot"]):
@@ -124,14 +179,14 @@ def update_booking(booking_id, booking_date, time_slot, party_size, customer_pho
                     updated = new_start.astimezone(timezone.utc).replace(tzinfo=None)
                 changes.append((updated.isoformat(sep=" ", timespec="seconds"), line["order_item_id"]))
             db.executemany("UPDATE order_items SET estimated_ready_at=? WHERE order_item_id=?", changes)
-        return {"booking_id": bid, "table_id": table_id_final, "status": "booked"}
+        return {"booking_id": bid, "table_id": table_id_final, "status": "booked", "version": updated_booking["version"]}
 
 
 def cancel_booking(booking_id, customer_phone=None):
     bid = positive_int(booking_id, "booking_id")
     with get_connection() as db:
         begin_write(db)
-        query="UPDATE bookings SET status='cancelled',table_id=NULL WHERE booking_id=? AND status='booked'"
+        query="UPDATE bookings SET status='cancelled',table_id=NULL,version=version+1 WHERE booking_id=? AND status='booked'"
         args=[bid]
         if customer_phone: query += " AND customer_phone=?"; args.append(customer_phone)
         cur = db.execute(query,args)

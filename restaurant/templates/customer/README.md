@@ -69,6 +69,8 @@
 
 本轮复用 `GET /tables/available`、`GET/POST /bookings`、改约和取消接口、`POST /visits/<visit_id>/orders`、`GET /orders` 与 `POST /orders/<order_id>/pay`。写操作提交 Flask-WTF 的表单字段和 CSRF。现有首页增加 `GET /?fragment=seating` 模板片段，顾客只读取自己的进行中到店会话。
 
+顾客提交订座时生成 `idempotency_key`，同一次重试使用相同的键和原始表单。收到原预约后可再改约。改约提交页面读取到的 `version` 作为 `expected_version`，版本冲突返回 409，并保留输入供顾客核对。
+
 ## 旧前端删除清单
 
 以下为历史记录。Forum 字体及 OFL 许可已随菜单排版恢复。

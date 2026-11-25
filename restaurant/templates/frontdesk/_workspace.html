@@ -60,8 +60,9 @@
         <h3 id="desk-arrival-title">Check in</h3>
         <p data-desk-arrival-copy></p>
         <form class="desk-check-in" data-desk-check-in hidden>
-          <label>Actual table <select name="table_id" required></select></label>
+          <label data-desk-alternative hidden>Replacement table <select name="table_id" required disabled></select></label>
           <button type="submit" class="desk-confirm">Confirm arrival</button>
+          <button type="button" class="desk-subtle" data-desk-change-table aria-expanded="false">Change table for check-in</button>
         </form>
         <div class="desk-arrival-actions" data-desk-booking-actions hidden>
           <button type="button" class="desk-subtle" data-desk-open="edit">Edit booking</button>
@@ -153,6 +154,7 @@
         </select></label>
       </div>
       <p class="desk-form-error" data-desk-editor-error role="alert" hidden></p>
+      <button type="button" class="desk-subtle" data-desk-rebase hidden>Review my changes against the latest booking</button>
       <button type="submit" class="desk-confirm" data-desk-editor-submit>Save booking</button>
     </form>
     <form class="desk-editor" data-desk-walk-in hidden>

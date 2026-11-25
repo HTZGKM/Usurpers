@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from threading import Barrier
 from unittest.mock import patch
 
-from backend_test_helpers import RestaurantTestCase, login, write
+from backend_test_helpers import RestaurantTestCase, login, restaurant_date_in, write
 from restaurant.business_time import current_table_window
 from restaurant.db import database
 from restaurant.scheduler import run_scheduled_tasks
@@ -60,7 +60,8 @@ class RemainingFeatureTests(RestaurantTestCase):
         database.ensure_database()
         self.assertEqual(get_order(order)["total_amount"], 114)
 
-    def test_preorder_edit_and_promotion_follow_visit(self):
+    @patch("restaurant.services.booking_service.current_table_window", return_value=("2026-12-20", None))
+    def test_preorder_edit_and_promotion_follow_visit(self, _restaurant_clock):
         customer = self.signed_in("13900000001")
         desk = self.signed_in("frontdesk@shuangfen.local")
         kitchen = self.signed_in("kitchen@shuangfen.local")
@@ -74,8 +75,9 @@ class RemainingFeatureTests(RestaurantTestCase):
         self.assertEqual(write(kitchen, f"/kitchen/items/{line['order_item_id']}/start").status_code, 409)
         self.assertEqual(write(customer, f"/orders/{order}/pay").status_code, 409)
         self.assertEqual(QueueManager.enqueue_due_preorders("2026-12-20 04:00:00"), 0)
-        update_booking(booking, "2026-12-21", 2, 2, "13900000001", 1)
-        arrival = write(desk, f"/frontdesk/bookings/{booking}/check-in")
+        update_booking(booking, "2026-12-21", 2, 2, "13900000001", 1, expected_version=1)
+        with patch("restaurant.services.dining_service.current_table_window", return_value=("2026-12-21", None)):
+            arrival = write(desk, f"/frontdesk/bookings/{booking}/check-in")
         self.assertEqual(arrival.status_code, 201)
         visit = arrival.json["visit"]["visit_id"]
         self.assertEqual(get_order(order)["visit_id"], visit)
@@ -112,7 +114,7 @@ class RemainingFeatureTests(RestaurantTestCase):
 
     def test_concurrent_booking_cannot_take_same_table(self):
         gate = Barrier(2)
-        day = "2026-12-21"
+        day = restaurant_date_in(10)
 
         def submit(phone):
             gate.wait()
@@ -131,8 +133,9 @@ class RemainingFeatureTests(RestaurantTestCase):
             self.assertNotIn(2, [row["table_id"] for row in find_available_tables(date, 1, 2)])
             with self.assertRaises(ServiceError):
                 create_booking("Busy table", "13900000001", date, 1, 2, table_id=2)
-        self.assertIn(2, [row["table_id"] for row in find_available_tables("2026-12-22", 1, 2)])
-        self.assertEqual(create_booking("Future table", "13900000001", "2026-12-22", 1, 2, table_id=2)["table_id"], 2)
+        future = restaurant_date_in(10)
+        self.assertIn(2, [row["table_id"] for row in find_available_tables(future, 1, 2)])
+        self.assertEqual(create_booking("Future table", "13900000001", future, 1, 2, table_id=2)["table_id"], 2)
 
     def test_admin_inventory_recipe_and_manual_stock(self):
         admin = self.signed_in("admin@shuangfen.local")

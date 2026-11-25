@@ -70,7 +70,10 @@ const blank = () => ({
   orderHistory: [],
 });
 let state = blank(),
-  edit = false;
+  editingBooking = null,
+  editConflict = null,
+  pendingCreation = null,
+  focusedBookingId = null;
 const key = customer ? "double-portion-order-draft." + customer.username : null;
 try {
   const saved = key && JSON.parse(sessionStorage.getItem(key));
@@ -79,13 +82,14 @@ try {
       if (saved.draft[field] != null) state.draft[field] = saved.draft[field];
     }
     state.bag = restoreMealBag(saved.bag, menu);
+    pendingCreation = saved.pendingCreation ?? null;
   }
 } catch {}
 function persist() {
   if (!key) return;
   try {
     const { date, guests, time, table } = state.draft;
-    sessionStorage.setItem(key, JSON.stringify({ draft: { date, guests, time, table }, bag: state.bag }));
+    sessionStorage.setItem(key, JSON.stringify({ draft: { date, guests, time, table }, bag: state.bag, pendingCreation }));
   } catch {}
 }
 const esc = (s) =>
@@ -250,8 +254,8 @@ let customerRefreshVersion = 0;
 
 function available(t, d) {
   if (lastAvailability?.tables.has(tableIds[t[0]])) return true;
-  const original = state.booking;
-  return Boolean(lastAvailability && edit && original?.table === t[0] &&
+  const original = editingBooking;
+  return Boolean(lastAvailability && original?.table === t[0] &&
     original.date === d.date && original.time === d.time && t[1] >= d.guests);
 }
 
@@ -302,7 +306,7 @@ function bookingSummary(d) {
 function bookingView() {
   mount("booking");
   if (!customer) return;
-  const locked = !!state.booking && !edit;
+  const locked = !!state.booking && !editingBooking && !pendingCreation;
   const d = locked ? state.booking : state.draft;
   const form = app.querySelector("#reservation");
   const heading = app.querySelector(".panel h2");
@@ -337,7 +341,7 @@ function bookingView() {
   const dateField = form.querySelector("#date");
   if (!dateField.validity.valid) dateField.value = d.date = dateField.min;
   installBookingCalendar(form, app.querySelector("#booking-calendar"));
-  if (edit) {
+  if (editingBooking) {
     heading.textContent = "Edit reservation";
     form.insertAdjacentHTML(
       "afterend",
@@ -350,8 +354,9 @@ function syncDraft() {
   const d = state.draft;
   syncAvailability();
   const ready = availabilityReady();
-  const invalidated = ready && d.table && !tables.some(t => t[0] === d.table && available(t, d));
-  if (invalidated) d.table = "";
+  const tableAvailable = ready && d.table && tables.some(t => t[0] === d.table && available(t, d));
+  const invalidated = ready && d.table && !tableAvailable;
+  if (invalidated && !editConflict && !pendingCreation) d.table = "";
   const floor = app.querySelector(".floor-cover .floor");
   floor.setAttribute("aria-busy", String(availabilityLoading));
   let availableCount = 0;
@@ -368,7 +373,7 @@ function syncDraft() {
     .forEach((b) =>
       b.setAttribute("aria-pressed", b.dataset.action.slice(5) === d.time),
     );
-  const selected = Boolean(ready && d.table);
+  const selected = Boolean(tableAvailable);
   const summary = app.querySelector("#summary");
   const hint = availabilityLoading ? "Checking table availability…" : availabilityError ? "Could not check availability." :
     selected ? "Table " + d.table + " selected." : !availableCount ? "No tables available. Try another dining time or date." :
@@ -391,8 +396,17 @@ function syncDraft() {
     if (details.innerHTML !== markup) details.innerHTML = markup;
   }
   const submit = app.querySelector("#reservation button[type=submit]");
-  submit.disabled = customerPending || !customerLoaded || !selected;
-  submit.textContent = customerPending ? "Saving…" : edit ? "Save reservation" : "Confirm reservation";
+  submit.disabled = customerPending || !customerLoaded || !selected || Boolean(pendingCreation || editConflict);
+  submit.textContent = customerPending ? "Saving…" : editingBooking ? "Save reservation" : "Confirm reservation";
+  app.querySelector("[data-booking-recovery]").hidden = !pendingCreation;
+  const conflict = app.querySelector("[data-booking-conflict]");
+  conflict.hidden = !editConflict;
+  if (editConflict) {
+    conflict.querySelector("[data-booking-conflict-copy]").textContent = editConflict.message;
+    const reviewConflict = conflict.querySelector("button");
+    reviewConflict.hidden = editConflict.latest && editConflict.latest.status !== "booked";
+    reviewConflict.textContent = editConflict.latest ? "Keep my entries and review" : "Fetch latest reservation";
+  }
   app.querySelector("[data-booking-feedback]").textContent = customerFeedback;
   persist();
 }
@@ -666,7 +680,7 @@ function bookingRecord(row) {
   return {
     id: row.booking_id, table: tableLabel(row.table_id), date: row.booking_date,
     time: Object.keys(slots).find(id => slots[id] === row.time_slot) ?? row.time_slot,
-    guests: row.party_size, name: row.contact_name, status: row.status,
+    guests: row.party_size, name: row.contact_name, status: row.status, version: row.version,
   };
 }
 
@@ -710,6 +724,7 @@ async function refreshCustomer({ background = false } = {}) {
     customerQueue = waitlist.queue;
     const reservations = reservationData.bookings.map(bookingRecord);
     state.booking = reservations.find(row => row.id === visit?.booking_id) ??
+      reservations.find(row => row.id === focusedBookingId && row.status === "booked" && row.date >= today()) ??
       reservations.find(row => row.status === "booked" && row.date >= today()) ?? null;
     state.bookingHistory = reservations;
     state.orderHistory = orders;
@@ -724,7 +739,7 @@ async function refreshCustomer({ background = false } = {}) {
     if (background) return;
     if (version === customerRefreshVersion) customerFeedback = error.message;
   }
-  if (version === customerRefreshVersion && customerPage() && !edit) show(false);
+  if (version === customerRefreshVersion && customerPage() && !editingBooking) show(false);
 }
 
 async function runCustomer(control, work) {
@@ -736,11 +751,73 @@ async function runCustomer(control, work) {
     await work();
   } catch (error) {
     customerFeedback = error.message;
-    if (error.status === 409 && app.querySelector("#reservation")) syncAvailability(true);
+    if (["TABLE_UNAVAILABLE", "CAPACITY_INSUFFICIENT"].includes(error.code) && app.querySelector("#reservation")) {
+      syncAvailability(true);
+    }
   } finally {
     customerPending = false;
     if (control.isConnected) control.disabled = false;
     if (customerPage()) show(false);
+  }
+}
+
+function reservationFields(draft) {
+  return { booking_date: draft.date, time_slot_id: draft.time, party_size: draft.guests, table_id: tableIds[draft.table] };
+}
+
+async function loadCustomerEditConflict() {
+  const message = "This reservation changed. Your entries have been kept.";
+  editConflict = { message };
+  try {
+    const { booking } = await restaurantRequest("/bookings/" + editingBooking.id + "/edit");
+    const latest = bookingRecord(booking);
+    editConflict.latest = latest;
+    if (latest.status !== "booked") {
+      editConflict.message += " The reservation is now " + (bookingLabels[latest.status] ?? latest.status) + ".";
+      return;
+    }
+    editConflict.message += " Latest: " + latest.date + " · " + (slots[latest.time] ?? latest.time) +
+      " · " + latest.guests + " guests · " + (latest.table ? "Table " + latest.table : "Unassigned") + ".";
+  } catch {
+    editConflict.message += " The latest reservation could not load.";
+  }
+}
+
+async function resolveReservationCreation() {
+  const request = pendingCreation;
+  let booking;
+  try {
+    ({ booking } = await restaurantRequest("/bookings", request));
+  } catch (error) {
+    if (["TABLE_UNAVAILABLE", "CAPACITY_INSUFFICIENT", "BOOKING_DATE_IN_PAST"].includes(error.code)) {
+      pendingCreation = null;
+      persist();
+      throw error;
+    }
+    throw new Error("We could not confirm your reservation. Use Recover reservation to check the original request.");
+  }
+  try {
+    const { booking: latest } = await restaurantRequest("/bookings/" + booking.booking_id + "/edit");
+    const recovered = bookingRecord(latest);
+    const desired = reservationFields(state.draft);
+    const changed = Object.keys(desired).some(field => request[field] !== desired[field]);
+    ++customerRefreshVersion;
+    pendingCreation = null;
+    focusedBookingId = recovered.id;
+    state.booking = recovered.status === "booked" || recovered.status === "arrived" ? recovered : null;
+    customerLoaded = true;
+    if (changed && recovered.status === "booked") {
+      editingBooking = recovered;
+      customerFeedback = "Reservation recovered. Review and save any changes you still want.";
+    } else {
+      state.draft = { ...recovered };
+      customerFeedback = recovered.status === "cancelled"
+        ? "The recovered reservation has already been cancelled." : "Reservation confirmed.";
+    }
+    persist();
+    if (app.querySelector("#reservation")) syncAvailability(true);
+  } catch {
+    throw new Error("Your reservation was saved. Use Recover reservation to load its details.");
   }
 }
 
@@ -1310,6 +1387,7 @@ document.addEventListener("submit", (e) => {
   const d = state.draft,
     err = e.target.querySelector("[data-booking-feedback]"),
     f = e.target;
+  if (pendingCreation || editConflict || f.querySelector("[type=submit]").disabled) return;
   d.date = f.querySelector("#date").value;
   if (!availabilityReady()) return;
   if (!d.table || !tables.some((t) => t[0] === d.table && available(t, d))) {
@@ -1319,11 +1397,29 @@ document.addEventListener("submit", (e) => {
   }
   let saved = false;
   runCustomer(f.querySelector("[type=submit]"), async () => {
-    const { booking } = await restaurantRequest(edit ? "/bookings/" + state.booking.id + "/edit" : "/bookings", {
-      booking_date: d.date, time_slot_id: d.time, party_size: d.guests, table_id: tableIds[d.table],
-    });
-    state.booking = { ...d, id: booking.booking_id, table: tableLabel(booking.table_id), name: customer.name, status: booking.status };
-    edit = false;
+    const fields = reservationFields(d);
+    if (!editingBooking) {
+      pendingCreation = { ...fields, idempotency_key: crypto.randomUUID() };
+      persist();
+      await resolveReservationCreation();
+      saved = !editingBooking;
+      return;
+    }
+    let booking;
+    try {
+      ({ booking } = await restaurantRequest("/bookings/" + editingBooking.id + "/edit", {
+        ...fields, expected_version: editingBooking.version,
+      }));
+    } catch (error) {
+      if (error.code !== "BOOKING_CHANGED") throw error;
+      await loadCustomerEditConflict();
+      return;
+    }
+    focusedBookingId = booking.booking_id;
+    ++customerRefreshVersion;
+    state.booking = { ...editingBooking, ...d, id: booking.booking_id, table: tableLabel(booking.table_id),
+      status: booking.status, version: booking.version };
+    editingBooking = null;
     saved = true;
     await refreshCustomer();
   }).then(() => {
@@ -1399,8 +1495,23 @@ document.addEventListener("click", (e) => {
     syncDraft();
     return;
   }
+  if (a === "recover-reservation" && pendingCreation) {
+    runCustomer(b, resolveReservationCreation).then(() => {
+      if (!pendingCreation && route() === "Book a table") app.querySelector(".panel h2")?.focus();
+    });
+    return;
+  }
+  if (a === "review-booking-conflict" && editConflict) {
+    if (!editConflict.latest) return runCustomer(b, loadCustomerEditConflict);
+    editingBooking = editConflict.latest;
+    editConflict = null;
+    customerFeedback = "Review your entries before saving again.";
+    show(false);
+    app.querySelector("#booking-review-title")?.focus();
+    return;
+  }
   if (a.startsWith("seat:") || a.startsWith("time:")) {
-    if (state.booking && !edit) return;
+    if (state.booking && !editingBooking && !pendingCreation) return;
     if (a.startsWith("seat:")) {
       if (!availabilityReady()) return;
       state.draft.table = a.slice(5);
@@ -1411,15 +1522,21 @@ document.addEventListener("click", (e) => {
     return;
   }
   if (a === "edit") {
+    editingBooking = state.booking;
+    editConflict = null;
     state.draft = { ...state.booking };
-    edit = true;
     show(false);
     return;
   }
   if (a === "discard") {
-    edit = false;
-    state.draft = { ...state.booking };
+    const latest = editConflict?.latest ?? editingBooking;
+    state.booking = latest?.status === "booked" || latest?.status === "arrived" ? latest : null;
+    editingBooking = editConflict = null;
+    state.draft = state.booking ? { ...state.booking } : blank().draft;
+    customerFeedback = "";
+    persist();
     show(false);
+    refreshCustomer();
     return;
   }
   if (a === "ask-cancel") {
@@ -1444,9 +1561,9 @@ document.addEventListener("click", (e) => {
     runCustomer(b, async () => {
       await restaurantRequest("/bookings/" + state.booking.id + "/cancel", {});
       state.booking = null;
+      focusedBookingId = null;
       state.draft.table = "";
       availabilityKey = "";
-      edit = false;
       customerFeedback = "Reservation cancelled.";
       persist();
       await refreshCustomer();

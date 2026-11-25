@@ -2,7 +2,7 @@
 import sqlite3
 import unittest
 
-from backend_test_helpers import RestaurantTestCase, login, write
+from backend_test_helpers import RestaurantTestCase, login, restaurant_date_in, write
 from restaurant.db.database import ensure_database, get_connection
 from restaurant.services.booking_service import create_booking, update_booking
 from restaurant.services.common import ServiceError
@@ -34,14 +34,15 @@ class BackendEdgeCaseTests(RestaurantTestCase):
 
     def test_failed_booking_edit_preserves_original(self):
         """RES-003: impossible edit fails atomically, original booking remains."""
-        first=create_booking("甲","13910000001","2026-12-27",1,2)
-        create_booking("乙","13910000002","2026-12-28",3,6)
-        create_booking("丙","13910000003","2026-12-28",3,6)
+        original_day, other_day = restaurant_date_in(10), restaurant_date_in(11)
+        first=create_booking("甲","13910000001",original_day,1,2)
+        create_booking("乙","13910000002",other_day,3,6)
+        create_booking("丙","13910000003",other_day,3,6)
         with self.assertRaises(ServiceError):
-            update_booking(first["booking_id"],"2026-12-28",3,6)
+            update_booking(first["booking_id"],other_day,3,6, expected_version=1)
         with get_connection() as db:
             row=db.execute("SELECT booking_date,time_slot,party_size,table_id,status FROM bookings WHERE booking_id=?",(first["booking_id"],)).fetchone()
-            self.assertEqual(tuple(row),("2026-12-27","11:00-14:00",2,1,"booked"))
+            self.assertEqual(tuple(row),(original_day,"11:00-14:00",2,1,"booked"))
 
     def test_customer_cannot_access_another_customers_booking(self):
         """AUTH-002: foreign booking id should not disclose or mutate another account."""
@@ -103,7 +104,7 @@ class BackendEdgeCaseTests(RestaurantTestCase):
             tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             self.assertEqual(db.execute("PRAGMA foreign_key_check").fetchall(), [])
         self.assertEqual(tables - {"sqlite_sequence"}, {
-            "staff", "customers", "dining_tables", "dishes", "bookings", "dining_sessions",
+            "staff", "customers", "dining_tables", "dishes", "bookings", "booking_create_requests", "dining_sessions",
             "orders", "order_items", "waiting_queue", "kitchen_queue", "ingredients", "dish_ingredients",
         })
 

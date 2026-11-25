@@ -98,29 +98,37 @@ class QueueManager:
             if skip_conflict and error.status_code == 409:
                 return None
             raise
-        nextrow = db.execute("""SELECT queue_id FROM waiting_queue WHERE status='waiting' AND party_size<=?
-            AND (table_type IS NULL OR table_type<=?) ORDER BY queue_position LIMIT 1""", (capacity, capacity)).fetchone()
-        if not nextrow:
-            return None
-        queue_id = nextrow["queue_id"]
-        db.execute("UPDATE waiting_queue SET status='called',called_at=CURRENT_TIMESTAMP,called_table_id=? WHERE queue_id=?", (table_id, queue_id))
-        return {"queue_id":queue_id,"table_id":table_id,"status":"called"}
+        while True:
+            nextrow = db.execute("""SELECT queue_id FROM waiting_queue WHERE status='waiting' AND party_size<=?
+                AND (table_type IS NULL OR table_type<=?) ORDER BY queue_position LIMIT 1""", (capacity, capacity)).fetchone()
+            if not nextrow:
+                return None
+            queue_id = nextrow["queue_id"]
+            called = db.execute("""UPDATE waiting_queue SET status='called',called_at=?,called_table_id=?
+                WHERE queue_id=? AND status='waiting' RETURNING queue_id""", (utc_clock(), table_id, queue_id)).fetchone()
+            if called:
+                return {"queue_id":queue_id,"table_id":table_id,"status":"called"}
 
     @staticmethod
     def seat(queue_id, table_id):
         qid=positive_int(queue_id,"queue_id"); tid=positive_int(table_id,"table_id")
         with get_connection() as db:
             begin_write(db)
-            item=db.execute("""SELECT * FROM waiting_queue WHERE queue_id=? AND status='called'
-                AND called_at>=?""",(qid,utc_clock(10))).fetchone()
-            if not item: raise ServiceError("等位记录不存在或未叫号。",409)
+            lock = " FOR UPDATE" if using_postgres() else ""
+            item=db.execute("SELECT * FROM waiting_queue WHERE queue_id=? AND status='called'" + lock,(qid,)).fetchone()
+            if not item:
+                raise ServiceError("This waitlist ticket is no longer ready to seat.", 409, code="WAITLIST_CHANGED")
             if item["called_table_id"] not in (None, tid):
                 raise ServiceError("请使用叫号时分配的餐桌。",409,"table_id","TABLE_UNAVAILABLE")
             require_seatable_table(db, tid, max(item["party_size"], item["table_type"] or 0), allow_call=item["called_table_id"] == tid)
+            seated = db.execute("""UPDATE waiting_queue SET status='seated'
+                WHERE queue_id=? AND status='called' AND called_at>=? RETURNING queue_id""",
+                (qid, utc_clock(10))).fetchone()
+            if not seated:
+                raise ServiceError("This waitlist ticket is no longer ready to seat.", 409, code="WAITLIST_CHANGED")
             visit_id = insert_id(db, """INSERT INTO dining_sessions
                 (contact_name,phone_number,customer_phone,party_size,table_id,status) VALUES(?,?,?,?,?,'seated')""",
                 (item["contact_name"],item["phone_number"],item["customer_phone"],item["party_size"],tid), "visit_id")
-            db.execute("UPDATE waiting_queue SET status='seated' WHERE queue_id=? AND status='called'",(qid,))
             return {"queue_id":qid,"visit_id":visit_id,"table_id":tid,"status":"seated"}
 
     @staticmethod

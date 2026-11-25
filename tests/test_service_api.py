@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import patch
 
-from backend_test_helpers import RestaurantTestCase, write
+from backend_test_helpers import RestaurantTestCase, restaurant_date_in, write
 from restaurant.services.dining_service import register_arrival
 from restaurant.db.database import ensure_database, get_connection
 from restaurant.services.booking_service import create_booking
@@ -23,7 +24,7 @@ class ServiceAndApiTests(RestaurantTestCase):
 
     def test_valid_booking_and_conflict(self):
         client = self.signed_in("13900000001")
-        fields = {"booking_date":"2026-12-20", "time_slot_id":1, "party_size":2, "table_id":1}
+        fields = {"booking_date":restaurant_date_in(10), "time_slot_id":1, "party_size":2, "table_id":1}
         self.assertEqual(write(client, "/bookings", fields).status_code, 201)
         self.assertEqual(write(client, "/bookings", fields).status_code, 409)
         self.assertEqual(write(client, "/bookings", {**fields, "time_slot_id":99, "table_id":6}).status_code, 400)
@@ -77,7 +78,8 @@ class ServiceAndApiTests(RestaurantTestCase):
         with get_connection() as db:
             item_id=db.execute("SELECT order_item_id FROM order_items WHERE order_id=?",(result["order_id"],)).fetchone()[0]
         self.assertEqual(QueueManager.enqueue_due_preorders("2099-01-02 00:00:00"),0)
-        register_arrival(1)
+        with patch("restaurant.services.dining_service.current_table_window", return_value=("2026-12-01", None)):
+            register_arrival(1)
         self.assertEqual(QueueManager.enqueue_due_preorders("2098-01-01 00:00:00"),0)
         self.assertEqual(QueueManager.enqueue_due_preorders("2099-01-02 00:00:00"),1)
         with get_connection() as db:
@@ -137,7 +139,7 @@ class ServiceAndApiTests(RestaurantTestCase):
     def test_large_party_reservations_exhaust_distinct_tables(self):
         from restaurant.services.booking_service import create_booking
         from restaurant.services.common import ServiceError
-        day="2026-12-29"
+        day=restaurant_date_in(10)
         a=create_booking("甲","13900000041",day,3,6)
         b=create_booking("乙","13900000042",day,3,6)
         self.assertNotEqual(a["table_id"],b["table_id"])

@@ -78,3 +78,5 @@ Vercel 从根目录导入 `app.py` 中的 Flask 应用。项目的 Production �
 迁移会只读打开源库并保留记录 ID。仍在使用公开演示密码的账号会在目标库获得新密码，登录信息只写到上面指定的本机文件。导入命令会拒绝已有业务数据的目标库。
 
 在已连接 Vercel 项目的目录中发布组员要测试的版本时，运行 `vercel deploy --prod`。部署成功后继续分享该项目的公开网址。更新前后端代码用日常 Git 分支和 PR 流程。修改表结构时单独执行对应的数据库迁移。
+
+已有 PostgreSQL 库升级到预约版本号和提交恢复功能前，先执行 `restaurant/db/migrations/001_booking_consistency.sql`，再发布应用。迁移可重复执行，保留已有预约。

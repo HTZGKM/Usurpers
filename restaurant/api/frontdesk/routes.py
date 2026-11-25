@@ -86,7 +86,8 @@ def register_arrival(booking_id):
             {
                 "ok": True,
                 "visit": dining_service.register_arrival(
-                    booking_id, data.get("table_id")
+                    booking_id, data.get("table_id"), change_table=data["change_table"],
+                    expected_version=data.get("expected_version"),
                 ),
             }
         ),
@@ -279,7 +280,6 @@ def edit_booking(booking_id):
             raise ServiceError("Booking not found.", 404)
         return jsonify({"ok": True, "booking": booking})
     data = validated_data(StaffBookingEditForm)
-    data = data
     return jsonify(
         {
             "ok": True,
@@ -290,6 +290,7 @@ def edit_booking(booking_id):
                 data.get("party_size"),
                 None,
                 data.get("table_id"),
+                expected_version=data["expected_version"],
             ),
         }
     )

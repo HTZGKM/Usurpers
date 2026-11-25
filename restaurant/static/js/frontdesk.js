@@ -9,6 +9,11 @@ function mountFrontdeskWorkspace(workspace, navigate) {
   const cancellation = find("[data-desk-cancellation]");
   const serviceForm = find("[data-service-form]");
   const checkIn = find("[data-desk-check-in]");
+  const alternative = find("[data-desk-alternative]");
+  const changeTable = find("[data-desk-change-table]");
+  const arrivalSubmit = checkIn.querySelector("[type=submit]");
+  const editorSubmit = find("[data-desk-editor-submit]");
+  const rebase = find("[data-desk-rebase]");
   const callForm = find("[data-desk-call]");
   const feedback = find("[data-desk-floor-feedback]");
   const workspaceNotice = find("[data-desk-live-notice]");
@@ -17,7 +22,8 @@ function mountFrontdeskWorkspace(workspace, navigate) {
   let bookingId;
   let tableId;
   let visitId;
-  let dialogMode;
+  let arrivalOverride;
+  let editBooking;
   let bookings = [];
   let occupancy = [];
   let visits = [];
@@ -73,8 +79,14 @@ function mountFrontdeskWorkspace(workspace, navigate) {
   }
 
   function setTableOptions(select, rows, selected) {
-    select.innerHTML = rows.map(row => option(row.table_id, tableLabel(row.table_id) + " · " + row.capacity + " seats")).join("");
+    select.innerHTML = option("", "Choose a table") +
+      rows.map(row => option(row.table_id, tableLabel(row.table_id) + " · " + row.capacity + " seats")).join("");
     if (rows.some(row => row.table_id === selected)) select.value = selected;
+  }
+
+  function resetArrivalOverride() {
+    arrivalOverride = null;
+    checkIn.elements.table_id.value = "";
   }
 
   function renderReception(background = false) {
@@ -115,16 +127,20 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     checkIn.hidden = !canCheckIn;
     find("[data-desk-booking-actions]").hidden = !canEdit;
     if (canEdit && !canCheckIn) find("[data-desk-arrival-copy]").textContent += " · Check-in opens on the booking date.";
-    if (canCheckIn) {
-      const available = occupancy.filter(table => table.capacity >= row.party_size &&
-        (table.status === "available" || (table.status === "reserved" && table.table_id === row.table_id)));
-      const selection = checkIn.dataset.booking === String(row.booking_id) ? Number(checkIn.elements.table_id.value) : row.table_id;
-      if (!background || !checkIn.contains(document.activeElement)) {
-        setTableOptions(checkIn.elements.table_id, available, selection);
-        checkIn.dataset.booking = row.booking_id;
-      }
-      checkIn.querySelector("[type=submit]").disabled = available.length === 0;
+    if (!canCheckIn || arrivalOverride?.id !== row.booking_id) resetArrivalOverride();
+    if (!canCheckIn) return;
+    const select = checkIn.elements.table_id;
+    const overriding = Boolean(arrivalOverride);
+    alternative.hidden = select.disabled = !overriding;
+    changeTable.textContent = overriding ? "Use reserved table" : "Change table for check-in";
+    changeTable.setAttribute("aria-expanded", String(overriding));
+    if (overriding && (!background || document.activeElement !== select)) {
+      const available = occupancy.filter(table => table.capacity >= row.party_size && table.status === "available" &&
+        table.table_id !== row.table_id);
+      setTableOptions(select, available, Number(select.value));
     }
+    arrivalSubmit.textContent = overriding ? "Confirm arrival with new table" : "Confirm arrival";
+    arrivalSubmit.disabled = overriding ? !select.value : !row.table_id;
   }
 
   function renderDraft() {
@@ -138,7 +154,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     const select = callForm.elements.table_id;
     if (!background || !callForm.contains(document.activeElement)) setTableOptions(select, freeTables, Number(select.value));
     select.disabled = !freeTables.length;
-    callForm.querySelector("[type=submit]").disabled = !freeTables.length || !queue.some(row => row.status === "waiting");
+    callForm.querySelector("[type=submit]").disabled = !select.value || !queue.some(row => row.status === "waiting");
     find("[data-desk-waiting-empty]").hidden = queue.length > 0;
     replaceList(find("[data-desk-waiting-list]"), queue.map(row => {
       const called = row.status === "called";
@@ -149,7 +165,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
       return '<li><span><strong>Ticket #' + row.queue_id + '</strong> · ' + esc(row.contact_name || "Walk-in") +
         ' · ' + row.party_size + ' guests · ' + (called ? "Called" : "Waiting") + '</span>' +
         (called && choices ? '<form class="desk-check-in" data-seat-ticket="' + row.queue_id +
-          '"><label>Table <select name="table_id" required>' + choices +
+          '"><label>Table <select name="table_id" required>' + (row.called_table_id ? "" : option("", "Choose a table")) + choices +
           '</select></label><button type="submit" class="desk-confirm">Seat party</button></form>' : '') + '</li>';
     }).join(""), background);
   }
@@ -309,9 +325,17 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     try {
       const message = await work();
       if (message) workspaceNotice.textContent = message;
-      await refresh();
+      try {
+        await refresh();
+      } catch (error) {
+        workspaceNotice.textContent = message
+          ? message + " The view could not refresh. Use Refresh to update it." : error.message;
+      }
     } catch (error) {
       workspaceNotice.textContent = error.message;
+      if (["BOOKING_CHANGED", "CHECK_IN_REFRESH_REQUIRED", "WAITLIST_CHANGED", "TABLE_UNAVAILABLE"].includes(error.code)) {
+        try { await refresh(); } catch {}
+      }
       if (dialog.open) {
         const errorField = dialog.querySelector("form:not([hidden]) [role=alert]");
         if (errorField) {
@@ -326,7 +350,6 @@ function mountFrontdeskWorkspace(workspace, navigate) {
 
   function openDialog(mode) {
     const booking = chosenBooking();
-    dialogMode = mode;
     editor.hidden = !["new", "edit"].includes(mode);
     walkIn.hidden = mode !== "walk-in";
     cancellation.hidden = mode !== "cancel";
@@ -341,7 +364,11 @@ function mountFrontdeskWorkspace(workspace, navigate) {
       error.textContent = "";
     }
     if (!editor.hidden) {
+      editBooking = mode === "edit" ? { id: booking.booking_id, version: booking.version } : null;
+      editorSubmit.disabled = false;
+      rebase.hidden = true;
       editor.reset();
+      editor.elements.booking_date.min = today();
       editor.elements.booking_date.value = mode === "edit" ? booking.booking_date : dateFilter.value;
       editor.elements.time_slot_id.value = mode === "edit"
         ? Object.keys(slots).find(key => slots[key] === booking.time_slot) : slotFilter.value || "2";
@@ -354,6 +381,29 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     }
     if (mode === "walk-in") walkIn.reset();
     dialog.showModal();
+  }
+
+  async function loadEditConflict() {
+    const errorField = find("[data-desk-editor-error]");
+    editorSubmit.disabled = true;
+    rebase.hidden = false;
+    rebase.textContent = "Fetch latest booking";
+    errorField.hidden = false;
+    errorField.textContent = "This booking changed. Your entries have been kept.";
+    try {
+      const { booking } = await restaurantRequest("/frontdesk/bookings/" + editBooking.id + "/edit");
+      if (booking.status !== "booked") {
+        errorField.textContent += " The booking is now " + (bookingLabels[booking.status] ?? booking.status) + ".";
+        rebase.hidden = true;
+        return;
+      }
+      editBooking.latest = booking.version;
+      errorField.textContent += " Latest: " + booking.booking_date + " · " + booking.time_slot + " · " +
+        booking.party_size + " guests · " + (tableLabel(booking.table_id) || "Unassigned") + ".";
+      rebase.textContent = "Keep my entries and review";
+    } catch {
+      errorField.textContent += " The latest booking could not load.";
+    }
   }
 
   workspace.addEventListener("submit", (event) => {
@@ -385,9 +435,18 @@ function mountFrontdeskWorkspace(workspace, navigate) {
       renderDraft();
       return;
     }
-    if (form === editor) update(async () => {
-      const path = dialogMode === "edit" ? "/frontdesk/bookings/" + bookingId + "/edit" : "/frontdesk/bookings";
-      const { booking } = await restaurantRequest(path, fields);
+    if (form === editor) return update(async () => {
+      if (editorSubmit.disabled) return;
+      const path = editBooking ? "/frontdesk/bookings/" + editBooking.id + "/edit" : "/frontdesk/bookings";
+      if (editBooking) fields.expected_version = editBooking.version;
+      let booking;
+      try {
+        ({ booking } = await restaurantRequest(path, fields));
+      } catch (error) {
+        if (error.code !== "BOOKING_CHANGED") throw error;
+        await loadEditConflict();
+        return;
+      }
       bookingId = booking.booking_id;
       dateFilter.value = fields.booking_date;
       dialog.close();
@@ -401,7 +460,18 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     if (form === checkIn || form === walkIn) update(async () => {
       const path = form === checkIn ? "/frontdesk/bookings/" + bookingId + "/check-in" : "/frontdesk/walk-ins";
       if (form === walkIn) fields.table_id = tableId;
-      const { visit } = await restaurantRequest(path, fields);
+      if (form === checkIn && arrivalOverride) {
+        if (!fields.table_id) return "Choose a replacement table.";
+        fields.change_table = "true";
+        fields.expected_version = arrivalOverride.version;
+      }
+      let visit;
+      try {
+        ({ visit } = await restaurantRequest(path, fields));
+      } catch (error) {
+        if (form === checkIn && error.code === "BOOKING_CHANGED") resetArrivalOverride();
+        throw error;
+      }
       tableId = visit.table_id;
       selectServiceVisit(visit.visit_id);
       if (dialog.open) dialog.close();
@@ -409,10 +479,35 @@ function mountFrontdeskWorkspace(workspace, navigate) {
     });
   });
 
+  workspace.addEventListener("change", (event) => {
+    if (event.target === checkIn.elements.table_id) arrivalSubmit.disabled = !event.target.value;
+    if (event.target === callForm.elements.table_id) renderWaitlist(true);
+  });
+
   workspace.addEventListener("click", (event) => {
     const button = event.target.closest("button");
     if (!button || button.disabled || pending) return;
     const data = button.dataset;
+    if (button === changeTable) {
+      if (arrivalOverride) resetArrivalOverride();
+      else {
+        const row = chosenBooking();
+        arrivalOverride = { id: row.booking_id, version: row.version };
+      }
+      renderReception();
+      if (arrivalOverride) checkIn.elements.table_id.focus();
+      return;
+    }
+    if (button === rebase) {
+      if (!editBooking.latest) return update(loadEditConflict);
+      editBooking.version = editBooking.latest;
+      editBooking.latest = null;
+      rebase.hidden = true;
+      editorSubmit.disabled = false;
+      find("[data-desk-editor-error]").textContent = "Review your entries before saving again.";
+      editorSubmit.focus();
+      return;
+    }
     if (button.matches("[data-desk-refresh]")) return update(async () => "");
     if (button.matches("[data-desk-close]")) return dialog.close();
     if (data.deskTask === "ready") {

@@ -1,8 +1,15 @@
 import re
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
+
+from restaurant.business_time import current_table_window
+
+
+def restaurant_date_in(days):
+    return (date.fromisoformat(current_table_window()[0]) + timedelta(days=days)).isoformat()
 
 
 def csrf(client):

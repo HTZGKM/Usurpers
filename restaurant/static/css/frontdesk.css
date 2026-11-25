@@ -258,8 +258,13 @@ main.frontdesk-page {
   margin-top: 10px;
 }
 
-.desk-check-in[hidden] {
+.desk-check-in[hidden],
+.desk-check-in [data-desk-alternative][hidden] {
   display: none;
+}
+
+.desk-check-in [data-desk-alternative] {
+  grid-column: 1 / -1;
 }
 
 .desk-confirm {

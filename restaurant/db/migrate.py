@@ -21,6 +21,7 @@ TABLES = {
     "dining_tables": "table_id",
     "dishes": "dish_id",
     "bookings": "booking_id",
+    "booking_create_requests": None,
     "dining_sessions": "visit_id",
     "orders": "order_id",
     "order_items": "order_item_id",
@@ -59,6 +60,7 @@ def migrate(source_path, database_url, credentials_path, *, rotate_demo=True):
     with closing(sqlite3.connect(source_path.as_uri() + "?mode=ro", uri=True)) as source, connect(database_url) as target:
         source.row_factory = sqlite3.Row
         source.execute("BEGIN")
+        source_tables = {row[0] for row in source.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         sequences = dict(source.execute("SELECT name, seq FROM sqlite_sequence"))
         begin_write(target)
         with target.cursor() as cursor:
@@ -68,6 +70,9 @@ def migrate(source_path, database_url, credentials_path, *, rotate_demo=True):
                 cursor.execute(sql.SQL("SELECT 1 FROM {} LIMIT 1").format(identifier))
                 if cursor.fetchone() is not None:
                     raise RuntimeError(f"Destination table {table} already contains data.")
+                if table == "booking_create_requests" and table not in source_tables:
+                    counts[table] = 0
+                    continue
                 source_rows = source.execute(f"SELECT * FROM {table}")
                 columns = [column[0] for column in source_rows.description]
                 insert = sql.SQL("INSERT INTO {} ({}) VALUES ({})").format(

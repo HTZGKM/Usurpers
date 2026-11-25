@@ -58,6 +58,7 @@ def create_booking():
                     data.get("party_size", data.get("guests")),
                     customer_phone,
                     data.get("table_id"),
+                    idempotency_key=data.get("idempotency_key") or None,
                 ),
             }
         ),
@@ -129,6 +130,7 @@ def edit_booking(booking_id):
                 data.get("party_size"),
                 owner,
                 data.get("table_id"),
+                expected_version=data["expected_version"],
             ),
         }
     )
