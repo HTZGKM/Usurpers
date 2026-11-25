@@ -1431,19 +1431,17 @@ main.booking {
   margin: 4px 0 0;
   color: var(--ember-muted, #b9b6a8);
 }
-.account-visit .history-record:first-of-type {
-  margin-top: 14px;
-}
+.account-visit h4 { margin: 16px 0 0; font: 600 0.875rem/1.4 var(--guest-control); }
 .account-visit .history-record:last-child { margin-bottom: 0; }
 .account-content .account-profile {
   margin-top: 20px;
   padding-block: 12px;
-  border-bottom: 1px solid var(--ember-rule, #38362f);
+  border-top: 1px solid var(--ember-rule, #38362f);
 }
 .account-profile .account-details { order: 1; width: 100%; margin: 0; }
 .account-profile .account-details div { padding-block: 6px; }
 .account-profile form { margin: 0; }
-.account-content .guest-history { margin-top: 10px; padding-top: 0; border: 0; }
+.account-content .guest-history { margin-top: 18px; padding-top: 0; border: 0; }
 .account-content .history-record { margin: 0; border-width: 0 0 1px; border-radius: 0; padding: 0; }
 .account-content .history-record summary {
   display: grid;
@@ -1470,7 +1468,6 @@ main.booking {
 .account-content .history-record [data-order-lines] { padding-inline: 4px; }
 .account-reservation-history { margin-top: 22px; }
 .account-reservation-history > summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
-.booking-table-help { margin: 0; color: var(--ember-muted, #b9b6a8); font-size: 0.9rem; }
 .dish-modal {
   padding: 0;
   width: min(650px, 94vw);
@@ -2017,8 +2014,8 @@ main.menu-page {
   align-items: center;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 0 10px;
-  padding: 5px 12px;
+  gap: 0 12px;
+  padding: 10px 14px;
   border: 1px solid var(--guest-rule);
   border-radius: 7px;
   background: #1b1a14;
@@ -2029,6 +2026,15 @@ main.menu-page {
   margin: 0;
   font-size: 13px;
 }
+.booking-table-choice strong { font: 600 0.875rem/1.4 var(--guest-control); }
+.booking-review {
+  padding: 14px;
+  border: 1px solid var(--guest-rule);
+  border-radius: 7px;
+}
+.booking-review h3 { margin: 0 0 10px; font-size: 1.35rem; }
+.booking-review .account-details { margin: 0 0 12px; }
+.booking-review .account-details > div { padding-block: 8px; }
 .booking-table-choice .secondary,
 .visit-shortcuts .secondary,
 .booking .booking-continue {
@@ -2038,14 +2044,8 @@ main.menu-page {
   text-decoration: underline;
   text-underline-offset: 0.2em;
 }
-.booking .booking-continue {
-  display: none;
-}
+.booking .booking-continue { margin-bottom: 12px; }
 @media (max-width: 760px) {
-  .booking .booking-continue:not([hidden]) {
-    display: block;
-    margin-bottom: 12px;
-  }
   .menu-list .choice,
   .menu-list .menu-bag {
     min-height: 42px;

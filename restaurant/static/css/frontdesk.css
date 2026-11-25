@@ -525,6 +525,8 @@ main.frontdesk-page {
   text-align: start;
 }
 .desk-tasks button strong { font-size: 23px; font-variant-numeric: tabular-nums; }
+.desk-tasks button small { flex-basis: 100%; font-size: 0.8rem; }
+.desk-tasks button small:empty { display: none; }
 .desk-tasks button:disabled { color: #c0b79f; }
 .desk-tasks [data-desk-task="ready"]:enabled { border-color: #c3d7ae; background: #263324; color: #c3d7ae; }
 .desk-tasks button:enabled:hover,
@@ -553,6 +555,7 @@ main.frontdesk-page {
 .desk-table-card[data-ready="true"] { border-color: #c3d7ae; }
 .desk-table-card[data-ready="true"] .desk-table-status { color: #c3d7ae; font-weight: 650; }
 .desk-service-section { min-width: 0; }
+.desk-service-order[data-ready="true"] { border-color: #7f9772; }
 .desk-service-order .desk-item-status { margin-inline-start: 8px; }
 .desk-service-order [data-item-stage="ready"] {
   padding: 8px;

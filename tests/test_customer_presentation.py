@@ -102,9 +102,13 @@ class CustomerPresentationTests(unittest.TestCase):
         client, page = self.page({"customer_phone": "13900000001"})
         self.assertEqual(page.guest_data["account"]["role"], "customer")
         self.assertTrue({
-            "reservation", "date", "guests", "name", "phone", "summary",
+            "reservation", "date", "guests", "summary", "booking-review-title",
             "booking-calendar", "view-menu", "view-table",
         }.issubset(page.ids))
+        review = next(attrs for _, attrs in page.elements if "data-booking-review" in attrs)
+        self.assertIn("hidden", review)
+        actions = {attrs.get("data-action") for tag, attrs in page.elements if tag == "button"}
+        self.assertTrue({"focus-floor", "review-reservation", "retry-availability"}.issubset(actions))
         self.assertNotIn("customer-login-prompt", page.ids)
         self.assertNotIn("guest-login", page.ids)
         self.assertNotIn("view-workspace", page.ids)

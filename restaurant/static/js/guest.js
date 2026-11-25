@@ -216,6 +216,7 @@ function animate(el, ms) {
 let availableTables = null;
 let availabilityKey = "";
 let availabilityLoading = false;
+let availabilityError = false;
 let availabilityVersion = 0;
 let customerPending = false;
 let customerFeedback = "";
@@ -240,17 +241,17 @@ function syncAvailability(force = false) {
   availabilityKey = query;
   availableTables = null;
   availabilityLoading = true;
+  availabilityError = false;
   restaurantRequest(query).then(({ tables: rows }) => {
     if (version !== availabilityVersion) return;
     availableTables = new Set(rows.map(table => table.table_id));
     availabilityLoading = false;
     if (app.querySelector("#reservation")) syncDraft();
-  }).catch(error => {
+  }).catch(() => {
     if (version !== availabilityVersion) return;
-    availabilityKey = "";
     availabilityLoading = false;
-    app.querySelector("#summary")?.replaceChildren("Could not check availability.");
-    app.querySelector(".statusline")?.replaceChildren(error.message);
+    availabilityError = true;
+    if (app.querySelector("#reservation")) syncDraft();
   });
 }
 
@@ -280,25 +281,25 @@ function bookingView() {
   const form = app.querySelector("#reservation");
   const heading = app.querySelector(".panel h2");
   if (locked) {
+    const checkedIn = customerVisit?.booking_id === d.id;
     heading.textContent = "Your reservation";
     const confirmation = document.createElement("div");
-    let body;
-    body =
+    confirmation.innerHTML =
       '<p class="notice"><span class="tick">✓</span>' +
-      (state.checked
+      (checkedIn
         ? "Checked in at table " + esc(d.table)
         : "Your table is reserved.") +
       "</p>" +
       pair("Guest", d.name) +
       pair("Reservation", bookingSummary(d)) +
-      btn(state.checked ? "Explore the menu" : "View your visit", state.checked ? "Menu" : "Your table", "primary") +
-      (!state.checked
+      btn(checkedIn ? "Explore the menu" : "View your visit", checkedIn ? "Menu" : "Your table", "primary") +
+      (!checkedIn
         ? btn("Edit reservation", "edit") +
           btn("Cancel reservation", "ask-cancel")
         : "") +
       '<div id="inline-confirm"></div>';
-    confirmation.innerHTML = body;
     form.replaceWith(confirmation);
+    app.querySelector(".floor-cover .legend").hidden = true;
     app.querySelectorAll(".seat").forEach((button) => {
       button.disabled = true;
       button.setAttribute(
@@ -316,7 +317,6 @@ function bookingView() {
   installBookingCalendar(form, app.querySelector("#booking-calendar"));
   if (edit) {
     heading.textContent = "Edit reservation";
-    form.querySelector("[type=submit]").textContent = "Save reservation";
     form.insertAdjacentHTML(
       "afterend",
       btn("Keep original reservation", "discard"),
@@ -334,25 +334,29 @@ function syncDraft() {
     const t = tables.find((t) => t[0] === b.dataset.action.slice(5));
     b.disabled = !available(t, d);
     if (!b.disabled) availableCount++;
-    b.setAttribute("aria-pressed", t[0] === d.table);
+    b.setAttribute("aria-pressed", !b.disabled && t[0] === d.table);
   });
   document
     .querySelectorAll('[data-action^="time:"]')
     .forEach((b) =>
       b.setAttribute("aria-pressed", b.dataset.action.slice(5) === d.time),
     );
-  app.querySelector("#summary").textContent = availabilityLoading ? "Checking table availability…" : d.table
-    ? bookingSummary(d)
-    : availableCount === 0
-      ? "No tables for this party size and arrival time."
-      : availableCount + (availableCount === 1 ? " table available" : " tables available");
+  const selected = Boolean(d.table && availableTables);
+  app.querySelector("#summary").textContent = availabilityLoading ? "Checking table availability…" :
+    availabilityError ? "Could not check availability." : selected ? "Table " + d.table + " selected." :
+    availableCount ? "Choose from " + availableCount + (availableCount === 1 ? " available table." : " available tables.") :
+    "No tables available. Try another dining time or date.";
   const floorLink = app.querySelector('[data-action="focus-floor"]');
   floorLink.hidden = availableCount === 0;
-  floorLink.textContent = d.table ? "Change table" : "Choose a table";
-  app.querySelector(".booking-continue").hidden = !d.table;
-  app.querySelector("#booking-table-help").hidden = Boolean(d.table) || availabilityLoading || availableCount === 0;
-  app.querySelector("#reservation button[type=submit]").disabled = customerPending || !customerLoaded || !d.table || availabilityLoading;
-  app.querySelector(".statusline").textContent = customerFeedback;
+  floorLink.textContent = selected ? "Change table" : "Choose a table";
+  app.querySelector('[data-action="retry-availability"]').hidden = !availabilityError;
+  app.querySelector(".booking-continue").hidden = !selected;
+  app.querySelector("[data-booking-review]").hidden = !selected;
+  app.querySelector("[data-booking-selection]").textContent = selected ? bookingSummary(d) : "";
+  const submit = app.querySelector("#reservation button[type=submit]");
+  submit.disabled = customerPending || !customerLoaded || !selected;
+  submit.textContent = customerPending ? "Saving…" : edit ? "Save reservation" : "Confirm reservation";
+  app.querySelector("[data-booking-feedback]").textContent = customerFeedback;
   persist();
 }
 function bagButton() {
@@ -637,9 +641,13 @@ function bookingRecord(row) {
 }
 
 function orderLines(row) {
+  const dishStatuses = {
+    waiting: row.order_type === "preorder" && !row.visit_id ? "Awaiting check-in" : "Waiting for kitchen",
+    cooking: "Being prepared", ready: "Ready to serve", served: "Served", cancelled: "Cancelled",
+  };
   return row.items.map(item => ({
     name: item.dish_name, quantity: item.quantity, unitPrice: Number(item.unit_price), note: item.note,
-    labels: item.status === "cancelled" ? ["Cancelled"] : [],
+    labels: dishStatuses[item.status] ? [dishStatuses[item.status]] : [],
   }));
 }
 
@@ -750,7 +758,7 @@ function renderVisitHistory() {
       customerLoaded ? "" : "Loading restaurant records…") + '</p>';
   const reservations = bookingRecords || '<p class="history-empty">No reservations yet.</p>';
   if (accountVisit) {
-    const visitTitle = customerVisit ? "Current visit" : "Upcoming reservation";
+    const visitTitle = customerVisit ? "Current visit" : state.booking ? "Upcoming reservation" : "Plan a visit";
     const label = customerVisit ? "Table " + tableLabel(customerVisit.table_id) + " · Checked in" :
       state.booking ? bookingSummary(state.booking) : "No upcoming reservation.";
     const action = customerVisit ? btn("View your visit", "Your table", "secondary account-visit-link") :
@@ -758,10 +766,10 @@ function renderVisitHistory() {
       btn("Book a table", "Book a table", "secondary account-visit-link");
     accountVisit.innerHTML = notice + (customerLoaded ? '<section class="account-visit"><div class="account-visit-heading">' +
       '<div><h3>' + visitTitle + '</h3><p>' + esc(label) + '</p></div>' + action + '</div>' +
-      currentOrders.map(orderRecord).join("") + '</section>' : '');
+      (currentOrders.length ? '<h4>Current orders</h4>' + currentOrders.map(orderRecord).join("") : '') + '</section>' : '');
     section.innerHTML = customerLoaded ? '<section class="history-group"><h3>Order history</h3>' +
       (orderRecords || '<p class="history-empty">No past orders yet.</p>') +
-      '</section><details class="account-reservation-history"><summary>Reservations</summary>' + reservations + '</details>' : '';
+      '</section><details class="account-reservation-history"><summary>Reservation history</summary>' + reservations + '</details>' : '';
   } else {
     section.innerHTML = notice + '<section class="history-group"><h3>My reservations</h3>' + reservations +
       '</section><section class="history-group"><h3>My orders</h3>' +
@@ -1224,7 +1232,7 @@ document.addEventListener("submit", (e) => {
   e.preventDefault();
   if (!customer) return;
   const d = state.draft,
-    err = e.target.querySelector(".statusline"),
+    err = e.target.querySelector("[data-booking-feedback]"),
     f = e.target;
   d.date = f.querySelector("#date").value;
   if (!d.table || !tables.some((t) => t[0] === d.table && available(t, d))) {
@@ -1232,14 +1240,17 @@ document.addEventListener("submit", (e) => {
     document.querySelector(".seat:enabled")?.focus();
     return;
   }
+  let saved = false;
   runCustomer(f.querySelector("[type=submit]"), async () => {
     const { booking } = await restaurantRequest(edit ? "/bookings/" + state.booking.id + "/edit" : "/bookings", {
       booking_date: d.date, time_slot_id: d.time, party_size: d.guests, table_id: tableIds[d.table],
     });
     state.booking = { ...d, id: booking.booking_id, table: tableLabel(booking.table_id), name: customer.name, status: booking.status };
     edit = false;
+    saved = true;
     await refreshCustomer();
-    app.querySelector(".panel h2")?.focus({ preventScroll: true });
+  }).then(() => {
+    if (saved && route() === "Book a table") app.querySelector(".panel h2")?.focus();
   });
 });
 document.addEventListener("click", (e) => {
@@ -1300,8 +1311,15 @@ document.addEventListener("click", (e) => {
     seat?.scrollIntoView({ block: "center", behavior: reduce.matches ? "instant" : "smooth" });
     return;
   }
-  if (a === "focus-guest-details") {
-    app.querySelector("#name")?.focus();
+  if (a === "review-reservation") {
+    const review = app.querySelector("#booking-review-title");
+    review?.focus({ preventScroll: true });
+    review?.scrollIntoView({ block: "center", behavior: reduce.matches ? "instant" : "smooth" });
+    return;
+  }
+  if (a === "retry-availability") {
+    syncAvailability(true);
+    syncDraft();
     return;
   }
   if (a.startsWith("seat:") || a.startsWith("time:")) {
@@ -1335,7 +1353,7 @@ document.addEventListener("click", (e) => {
     return;
   }
   if (a === "cancel") {
-    if (!state.booking || state.checked) return;
+    if (!state.booking || customerVisit?.booking_id === state.booking.id) return;
     runCustomer(b, async () => {
       await restaurantRequest("/bookings/" + state.booking.id + "/cancel", {});
       state.booking = null;
