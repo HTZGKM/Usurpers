@@ -1532,6 +1532,6 @@ if (customer) {
       checkingVisit = false;
     }
   };
-  setInterval(checkVisit, 6000);
+  setInterval(checkVisit, 4000);
   document.addEventListener("visibilitychange", checkVisit);
 }

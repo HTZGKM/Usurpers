@@ -521,7 +521,7 @@ function mountFrontdeskWorkspace(workspace, navigate) {
       polling = false;
     }
   }
-  setInterval(poll, 5000);
+  setInterval(poll, 3000);
   document.addEventListener("visibilitychange", poll);
 
   return (section, focus) => {
