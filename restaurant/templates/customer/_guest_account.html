@@ -1,4 +1,4 @@
-{% from 'customer/_guest_parts.html' import cover, panel, button, sign_out %}
+{% from 'customer/_guest_parts.html' import cover, panel, sign_out %}
 
 {% macro account_field(field, control_id, autocomplete, label=None, inputmode='text') %}
   <div class="account-field">
@@ -14,16 +14,20 @@
 {% call panel('Double Portion', 'Your account' if account else 'Sign in') %}
   <div class="account-content">
     {% if account %}
-      <div data-account-visit></div>
-      <div class="guest-history" data-visit-history></div>
       <section class="account-profile" aria-labelledby="account-profile-title">
         <h3 id="account-profile-title">Profile</h3>
-        <dl class="account-details">
-          <div><dt>Name</dt><dd>{{ account.name }}</dd></div>
-          <div><dt>Phone number</dt><dd>{{ account.username }}</dd></div>
-        </dl>
-        {{ sign_out(logout_form) }}
+        <div class="account-profile-card">
+          <dl class="guest-facts">
+            <div><dt>Reservation name</dt><dd>{{ account.name }}</dd></div>
+            <div><dt>Sign-in phone number</dt><dd>{{ account.username }}</dd></div>
+          </dl>
+          <div class="account-profile-actions">
+            <p>This number is filled in automatically when you book a table.</p>
+            {{ sign_out(logout_form) }}
+          </div>
+        </div>
       </section>
+      <div data-account-reservation></div>
     {% else %}
       <div class="account-modes" role="group" aria-label="Account options">
         <button type="button" class="choice" data-account-mode="login" aria-controls="guest-login" aria-pressed="true">Sign in</button>
