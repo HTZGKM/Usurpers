@@ -39,7 +39,6 @@ const blank = () => ({
     table: "",
   },
   booking: null,
-  checked: false,
   bag: [],
   bill: null,
   bookingHistory: [],
@@ -255,11 +254,12 @@ function syncAvailability(force = false) {
   });
 }
 
-function prettyDate(v) {
+function prettyDate(v, options = {}) {
   return new Date(v + "T12:00:00").toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
+    ...options,
   });
 }
 function bookingSummary(d) {
@@ -683,7 +683,6 @@ async function refreshCustomer({ background = false } = {}) {
       reservations.find(row => row.status === "booked" && row.date >= today()) ?? null;
     state.bookingHistory = reservations;
     state.orderHistory = orders;
-    state.checked = Boolean(visit);
     state.bill = detail ? {
       id: detail.order_id, status: detail.status, paid: detail.payment_status === "paid",
       lines: orderLines(detail).filter(line => !line.labels.includes("Cancelled")),
@@ -715,67 +714,102 @@ async function runCustomer(control, work) {
   }
 }
 
+function guestStatus(status, label) {
+  return '<span class="history-status guest-status" data-status="' + esc(status) + '">' + esc(label) + '</span>';
+}
+
+function guestFacts(facts) {
+  return '<dl class="guest-facts">' + facts.map(([label, value]) =>
+    '<div><dt>' + esc(label) + '</dt><dd>' + esc(value) + '</dd></div>'
+  ).join("") + '</dl>';
+}
+
+function guestCount(guests) {
+  return guests + (Number(guests) === 1 ? " guest" : " guests");
+}
+
+function reservationFacts(booking) {
+  return guestFacts([
+    ["Date", prettyDate(booking.date, { year: "numeric" })], ["Dining time", slots[booking.time] ?? booking.time],
+    ["Table", booking.table || "Unassigned"], ["Guests", guestCount(booking.guests)],
+  ]);
+}
+
+function renderAccountReservation() {
+  const panel = app.querySelector("[data-account-reservation]");
+  const message = customerFeedback || (customerLoaded ? "" : "Checking your reservation…");
+  const booking = state.booking;
+  const checkedIn = booking && customerVisit?.booking_id === booking.id;
+  const title = checkedIn ? "Current reservation" : "Upcoming reservation";
+  const facts = booking && reservationFacts(checkedIn ? { ...booking, table: tableLabel(customerVisit.table_id) } : booking);
+  const action = checkedIn ? btn("View your visit", "Your table", "primary account-visit-link") :
+    btn("View reservation", "Book a table", "primary account-visit-link");
+  panel.innerHTML = (message ? '<p class="history-caption" role="status">' + esc(message) + '</p>' : '') +
+    (customerLoaded && booking ? '<section class="account-visit" aria-labelledby="account-reservation-title">' +
+      '<div class="account-visit-heading"><h3 id="account-reservation-title">' + title + '</h3>' +
+      guestStatus(booking.status, bookingLabels[booking.status] ?? booking.status) + '</div>' + facts +
+      '<div class="account-visit-actions">' + action + '</div></section>' : '');
+}
+
+function historyGroup(title, records, empty) {
+  if (!records && !empty) return "";
+  return '<section class="history-group"><h3>' + title + '</h3>' +
+    (records || '<p class="history-empty">' + empty + '</p>') + '</section>';
+}
+
 function renderVisitHistory() {
   const section = app.querySelector("[data-visit-history]");
-  if (!section) return;
-  const accountVisit = app.querySelector("[data-account-visit]");
-  const currentOrders = accountVisit ? state.orderHistory.filter(order => order.status !== "cancelled" && (
-    customerVisit ? order.visit_id === customerVisit.visit_id :
-      state.booking && !order.visit_id && order.booking_id === state.booking.id
-  )) : [];
-  const currentIds = new Set(currentOrders.map(order => order.order_id));
-  const pastOrders = state.orderHistory.filter(order => !currentIds.has(order.order_id));
-  const bookingRecords = state.bookingHistory.map(booking =>
-    '<article class="history-record">' +
-    '<div class="history-record-top"><strong>' + esc(bookingSummary(booking)) +
-    '</strong><span class="history-status">' + esc(bookingLabels[booking.status] ?? booking.status) + '</span></div>' +
-    (state.booking?.id === booking.id ? btn("View reservation", "Book a table", "bag-line-button") : '') +
-    '</article>',
-  ).join("");
+  if (!section || !customerLoaded) return;
+  const currentBookingId = state.booking?.id;
+  const date = today();
+  const upcoming = state.bookingHistory.filter(booking => booking.status === "booked" && booking.date >= date);
+  const upcomingIds = new Set(upcoming.map(booking => booking.id));
+  const currentOrders = [];
+  const pastOrders = [];
+  for (const order of state.orderHistory) {
+    const belongsToVisit = customerVisit && order.visit_id === customerVisit.visit_id;
+    const upcomingPreorder = order.order_type === "preorder" && !order.visit_id && upcomingIds.has(order.booking_id);
+    const group = order.status !== "cancelled" && (belongsToVisit || upcomingPreorder) ? currentOrders : pastOrders;
+    group.push(orderRecord(order));
+  }
+  function bookingRecordMarkup(booking) {
+    return '<article class="reservation-history-record">' + reservationFacts(booking) +
+      '<div class="reservation-record-actions">' + guestStatus(booking.status, bookingLabels[booking.status] ?? booking.status) +
+      '</div></article>';
+  }
   function orderRecord(order) {
-    const date = order.created_at
-      ? new Date(order.created_at.replace(" ", "T") + "Z").toLocaleString("en-GB", {
-          timeZone: "Asia/Shanghai", dateStyle: "medium", timeStyle: "short",
-        }) : "";
-    const status = order.order_type === "preorder" && !order.visit_id && order.status === "active"
-      ? "Awaiting check-in" : orderLabels[order.status] ?? order.status;
+    const timestamp = order.created_at?.replace(" ", "T");
+    const placed = new Date(timestamp && (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp) ? timestamp : timestamp + "Z"));
+    const validDate = Number.isFinite(placed.getTime());
+    const timeZone = "Asia/Shanghai";
+    const date = validDate ? placed.toLocaleDateString("en-GB", { timeZone, dateStyle: "medium" }) : "";
+    const time = validDate ? placed.toLocaleTimeString("en-GB", { timeZone, timeStyle: "short" }) : "";
+    const awaitingCheckIn = order.order_type === "preorder" && !order.visit_id && order.status === "active";
+    const status = awaitingCheckIn ? "Awaiting check-in" : orderLabels[order.status] ?? order.status;
     const number = (order.order_type === "preorder" ? "Preorder #" : "Order #") + order.order_id;
-    const payment = order.status === "cancelled" ? "" : order.payment_status === "paid" ? " · Paid" : " · Unpaid";
+    const paid = order.payment_status === "paid";
+    const payment = order.status === "cancelled" ? "" : paid ? "Paid" : "Unpaid";
     const amount = Number(order.total_amount);
-    const summary = accountVisit
-      ? '<span class="account-order-copy"><strong>' + esc(number) + '</strong><small>' + esc(date) +
-        '</small></span><span class="account-order-totals"><strong>' + (Number.isFinite(amount) ? '¥' + amount.toFixed(2) : '—') +
-        '</strong><span class="history-status" data-order-status="' + esc(order.status) + '">' +
-        esc(status + payment) + '</span></span>'
-      : '<strong>' + esc(number) + '</strong><span class="history-status">' + esc(status + payment) +
-        '</span><small>' + esc(date) + '</small>';
-    return '<details class="history-record" data-order-record="' + order.order_id + '">' +
-      '<summary>' + summary + '</summary><div data-order-lines></div></details>';
+    const table = tableLabel(order.table_id);
+    return '<details class="history-record" data-order-record="' + order.order_id + '"><summary>' +
+      '<span class="order-record-main"><strong>' + esc(number) + '</strong><span class="order-record-total">' +
+      (order.total_amount != null && Number.isFinite(amount) ? '¥' + amount.toFixed(2) : '—') + '</span></span>' +
+      '<span class="order-record-meta">' + [date, time, table && "Table " + table].filter(Boolean).map(value =>
+        '<span>' + esc(value) + '</span>').join("") + '</span>' +
+      '<span class="order-record-footer"><span class="order-record-statuses">' +
+      guestStatus(awaitingCheckIn ? "awaiting" : order.status, status) +
+      (payment ? guestStatus(paid ? "paid" : "unpaid", payment) : '') +
+      '</span><span class="order-disclosure-action" aria-hidden="true"><span>View order</span><span>Hide details</span></span></span>' +
+      '</summary><div data-order-lines></div></details>';
   }
-  const orderRecords = pastOrders.map(orderRecord).join("");
-  const notice = '<p class="history-caption" role="status">' +
-    esc(route() === "My account" ? customerFeedback || (customerLoaded ? "" : "Loading restaurant records…") :
-      customerLoaded ? "" : "Loading restaurant records…") + '</p>';
-  const reservations = bookingRecords || '<p class="history-empty">No reservations yet.</p>';
-  if (accountVisit) {
-    const visitTitle = customerVisit ? "Current visit" : state.booking ? "Upcoming reservation" : "Plan a visit";
-    const label = customerVisit ? "Table " + tableLabel(customerVisit.table_id) + " · Checked in" :
-      state.booking ? bookingSummary(state.booking) : "No upcoming reservation.";
-    const action = customerVisit ? btn("View your visit", "Your table", "secondary account-visit-link") :
-      state.booking ? btn("View reservation", "Book a table", "secondary account-visit-link") :
-      btn("Book a table", "Book a table", "secondary account-visit-link");
-    accountVisit.innerHTML = notice + (customerLoaded ? '<section class="account-visit"><div class="account-visit-heading">' +
-      '<div><h3>' + visitTitle + '</h3><p>' + esc(label) + '</p></div>' + action + '</div>' +
-      (currentOrders.length ? '<h4>Current orders</h4>' + currentOrders.map(orderRecord).join("") : '') + '</section>' : '');
-    section.innerHTML = customerLoaded ? '<section class="history-group"><h3>Order history</h3>' +
-      (orderRecords || '<p class="history-empty">No past orders yet.</p>') +
-      '</section><details class="account-reservation-history"><summary>Reservation history</summary>' + reservations + '</details>' : '';
-  } else {
-    section.innerHTML = notice + '<section class="history-group"><h3>My reservations</h3>' + reservations +
-      '</section><section class="history-group"><h3>My orders</h3>' +
-      (orderRecords || '<p class="history-empty">No orders yet.</p>') + '</section>';
-  }
-  for (const record of (accountVisit ? app : section).querySelectorAll("[data-order-record]")) {
+  const otherUpcoming = upcoming.filter(booking => booking.id !== currentBookingId).map(bookingRecordMarkup);
+  const pastReservations = state.bookingHistory.filter(booking => booking.id !== currentBookingId && !upcomingIds.has(booking.id))
+    .reverse().map(bookingRecordMarkup);
+  section.innerHTML = historyGroup("Current orders", currentOrders.join("")) +
+    historyGroup("Order history", pastOrders.join(""), "No past orders yet.") +
+    historyGroup("Other upcoming reservations", otherUpcoming.join("")) +
+    historyGroup("Reservation history", pastReservations.join(""), "No past reservations yet.");
+  for (const record of section.querySelectorAll("[data-order-record]")) {
     record.addEventListener("toggle", async () => {
       if (!record.open || record.dataset.loaded) return;
       const body = record.querySelector("[data-order-lines]");
@@ -839,20 +873,49 @@ function renderSubmittedOrder(body, order) {
 }
 
 function waitlistMarkup() {
-  if (customerVisit) return "";
-  let content;
   if (customerQueue) {
-    const status = customerQueue.status === "called"
-      ? "Please check in with the host" + (customerQueue.called_table_id ? " for table " + tableLabel(customerQueue.called_table_id) : "") + "."
-      : customerQueue.parties_ahead + " parties ahead.";
-    content = '<p><strong>Ticket #' + customerQueue.queue_id + '</strong> · ' + esc(status) + '</p>' +
-      btn("Refresh waitlist", "refresh-visit") + btn("Leave waitlist", "leave-waitlist");
-  } else {
-    content = '<form class="restaurant-inline-form" data-join-waitlist><label>Party size ' +
-      '<input type="number" name="party_size" min="1" max="' + Math.max(...tables.map(row => row[1])) +
-      '" value="2" required></label><button type="submit" class="secondary">Join waitlist</button></form>';
+    const called = customerQueue.status === "called";
+    const table = tableLabel(customerQueue.called_table_id);
+    const ahead = Number(customerQueue.parties_ahead);
+    const status = called ? "Table ready" : "Waiting for a table";
+    const instruction = called ? "Show this ticket at the front desk so staff can seat you." :
+      "Stay nearby. When a table is ready, you’ll see it here and can show your ticket at the front desk.";
+    const facts = [["Guests", guestCount(customerQueue.party_size)]];
+    if (called && table) facts.unshift(["Table", table]);
+    else if (!called && Number.isFinite(ahead)) facts.push(["Groups ahead", String(ahead)]);
+    return '<section class="visit-access visit-summary" aria-labelledby="visit-ticket-title">' +
+      '<div class="visit-summary-heading"><h3 id="visit-ticket-title">Waitlist ticket #' + esc(customerQueue.queue_id) + '</h3>' +
+      guestStatus(called ? "called" : "waiting", status) + '</div>' + guestFacts(facts) +
+      '<p>' + esc(instruction) + '</p><div class="visit-shortcuts">' + btn("Leave the waitlist", "leave-waitlist") + '</div></section>';
   }
-  return '<section class="visit-access"><h3>Walk-in waitlist</h3>' + content + '</section>';
+  if (state.booking) return "";
+  const capacity = Math.max(0, ...tables.map(row => row[1]));
+  if (!capacity) return "";
+  return '<section class="visit-access visit-summary" aria-labelledby="visit-waitlist-title">' +
+    '<h3 id="visit-waitlist-title">Wait for a table without a reservation</h3>' +
+    '<p>Already at the restaurant? Get a ticket to join the line. We’ll show your ticket and let you know here when a table is ready.</p>' +
+    '<form class="restaurant-inline-form visit-waitlist-form" data-join-waitlist><label class="field">Number of guests' +
+    '<select name="party_size" required>' + Array.from({ length: capacity }, (_, index) => {
+      const guests = index + 1;
+      return '<option value="' + guests + '"' + (guests === Math.min(2, capacity) ? ' selected' : '') + '>' + guestCount(guests) + '</option>';
+    }).join("") + '</select></label><button type="submit" class="primary">Get a waitlist ticket</button></form></section>';
+}
+
+function visitSummary() {
+  const booked = state.booking;
+  if (!customerVisit && !booked) return "";
+  const seated = Boolean(customerVisit);
+  const actualTable = seated ? tableLabel(customerVisit.table_id) : "";
+  const heading = seated ? "Your table" : "Your reservation";
+  const status = seated ? guestStatus("arrived", "Checked in") : guestStatus("awaiting", "Awaiting check-in");
+  const hasSeatedReservation = seated && booked && booked.id === customerVisit.booking_id;
+  const facts = seated && !hasSeatedReservation ? guestFacts([["Table", actualTable]]) :
+    reservationFacts(seated ? { ...booked, table: actualTable } : booked);
+  return '<section class="visit-access visit-summary" aria-labelledby="visit-summary-title">' +
+    '<div class="visit-summary-heading"><h3 id="visit-summary-title">' + heading + '</h3>' + status + '</div>' + facts +
+    (seated ? '' : '<div class="visit-check-in"><h4>Check in at the front desk</h4>' +
+      '<p>When you arrive, give staff the name on your reservation. Once they check you in, you can place a dine-in order.</p>' +
+      '<p class="visit-update-note">This page updates automatically while you’re here.</p></div>') + '</section>';
 }
 
 function preorderMarkup(blocked) {
@@ -869,19 +932,11 @@ function visitView() {
     return;
   }
   const previousTotal = app.querySelector("[data-bag-total]");
-  const booked = state.booking;
   const order = state.bill;
   const lines = order?.lines ?? state.bag;
   const value = order?.total ?? mealTotal(lines);
   const blocked = !order && lines.some((line) => menu.get(line.key)?.sold);
-  let body = customerVisit
-    ? pair("Table " + tableLabel(customerVisit.table_id), "Checked in")
-    : booked
-    ? pair(
-        "Table " + booked.table,
-        bookingSummary(booked),
-      )
-    : "";
+  let body = visitSummary();
   if (lines.length) {
     body += '<div id="lines">' + lines.map((line) => mealLineMarkup(line, !order)).join("") + "</div>";
     body += order ? pair(order.paid ? "Paid" : "Total", "¥" + value) :
@@ -895,33 +950,24 @@ function visitView() {
     body +=
       "<p>Order #" + order.id + " · " + esc(orderLabels[order.status]) + "</p>" +
       btn("Record ¥" + value + " payment", "pay", "primary");
-  else if (!state.checked) {
-    const nextStep =
-      "<p>" +
-      (booked
-        ? "Check in with your host before placing a dine-in order."
-        : "Book a table, then check in with your host to place a dine-in order.") +
-      "</p>" +
-      btn(
-        booked ? "Refresh check-in status" : "Book a table",
-        booked ? "refresh-visit" : "Book a table",
-        "primary",
-      );
-    const browse = btn("Explore the menu", "Menu");
-    body += lines.length
-      ? nextStep + browse
-      : '<div class="visit-access visit-next-step"><h3>' +
-        (booked ? "Next step: check in" : "Plan your visit") + "</h3>" +
-        nextStep + '</div><div class="visit-shortcuts">' + browse + "</div>";
-    body += preorderMarkup(blocked) + waitlistMarkup();
-  } else if (state.checked) {
+  else if (!customerLoaded) {
+    if (!customerFeedback) body += '<p role="status">Checking your visit…</p>';
+  } else if (!customerVisit) {
+    if (!state.booking && !customerQueue) {
+      body += '<section class="visit-access visit-summary"><h3>Reserve a table in advance</h3>' +
+        '<p>Choose a date, time and table before you arrive.</p>' + btn("Book a table", "Book a table", "primary") + '</section>';
+    }
+    body += preorderMarkup(blocked) + waitlistMarkup() + '<div class="visit-shortcuts">' + btn("Explore the menu", "Menu") + '</div>';
+  } else {
     body += lines.length
       ? (blocked ? '<p class="order-unavailable">Remove sold-out items before placing an order.</p>' : '') +
         btn("Place order", "order", "primary", blocked ? "disabled" : "") + btn("Add another dish", "Menu")
       : "<p>Your bag is empty.</p>" +
         btn("Explore the menu", "Menu", "primary");
   }
-  body += btn("Refresh visit", "refresh-visit");
+  if (state.booking || customerVisit || customerQueue || customerFeedback) {
+    body += '<div class="visit-shortcuts">' + btn("Check for updates", "refresh-visit") + '</div>';
+  }
   body += '<p class="statusline" role="status">' + esc(customerFeedback) + '</p>';
   mount("table");
   app.querySelector(".panel h2").textContent = order?.paid
@@ -1029,7 +1075,7 @@ function renderGuestPage(transition = true) {
   else if (page === "Your table") visitView();
   else if (page === "My account") {
     mount("account");
-    if (customer) renderVisitHistory();
+    if (customer) renderAccountReservation();
     if (!account && history.state?.signedOut) {
       history.replaceState(null, "");
       setAccountMode("login", "You have signed out.");
@@ -1212,7 +1258,7 @@ document.addEventListener("submit", (e) => {
     runCustomer(control, async () => {
       if (form.matches("[data-join-waitlist]")) {
         await restaurantRequest("/waiting-queue", { party_size: fields.get("party_size"), contact_name: customer.name });
-        customerFeedback = "You joined the waitlist.";
+        customerFeedback = "You’re in line. Your ticket is shown above.";
       } else {
         const booking = state.bookingHistory.find(row => row.id === Number(fields.get("booking_id")));
         if (!booking || !state.bag.length) return;

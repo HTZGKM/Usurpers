@@ -1359,13 +1359,12 @@ main.booking {
   border-top: 1px solid #38362f;
 }
 .history-caption,
-.history-empty,
-.history-record small {
+.history-empty {
   color: #b9b6a8;
   font-size: 0.9rem;
 }
 .history-caption {
-  margin: 0;
+  margin: 16px 0 0;
 }
 .guest-history .history-group {
   padding-top: 18px;
@@ -1373,19 +1372,6 @@ main.booking {
 .history-group h3 {
   margin-bottom: 8px;
   font-size: clamp(22px, 2.1vw, 32px);
-}
-.history-record {
-  margin-bottom: 8px;
-  padding: 12px;
-  border: 1px solid #38362f;
-  border-radius: 8px;
-}
-.history-record-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 6px 12px;
 }
 .history-status {
   color: #d4bc87;
@@ -1395,12 +1381,6 @@ main.booking {
   min-height: 44px;
   cursor: pointer;
 }
-.history-record summary .history-status {
-  margin-inline-start: 8px;
-}
-.history-record summary small {
-  display: block;
-}
 .history-record summary:focus-visible {
   outline: 2px solid #d4bc87;
   outline-offset: 3px;
@@ -1408,66 +1388,144 @@ main.booking {
 .history-record .order-line:last-child {
   border-bottom: 0;
 }
-.account-content .account-visit {
+.account-visit,
+.account-profile-card,
+.reservation-history-record,
+.history-record {
   padding: clamp(14px, 2vw, 22px);
-  border: 1px solid var(--ember-rule, #38362f);
+  border: 1px solid var(--ember-control-rule, #484848);
   border-radius: 8px;
   background: var(--ember-surface, #141410);
 }
 .account-visit-heading,
-.account-profile {
+.visit-summary-heading,
+.account-profile-actions,
+.reservation-record-actions,
+.order-record-main,
+.order-record-footer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 16px;
+  gap: 10px 16px;
 }
 .account-visit-heading h3,
 .account-profile h3 {
   margin: 0;
   font-size: clamp(21px, 2vw, 28px);
 }
-.account-visit-heading p {
-  margin: 4px 0 0;
-  color: var(--ember-muted, #b9b6a8);
+.account-visit { margin-top: 26px; }
+.account-visit-actions { margin-top: 16px; }
+.account-page .account-visit-link { margin: 0; }
+.guest-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  margin: 0;
 }
-.account-visit h4 { margin: 16px 0 0; font: 600 0.875rem/1.4 var(--guest-control); }
-.account-visit .history-record:last-child { margin-bottom: 0; }
-.account-content .account-profile {
-  margin-top: 20px;
-  padding-block: 12px;
+.account-visit .guest-facts,
+.visit-summary .guest-facts {
+  margin-top: 14px;
+  padding-top: 14px;
   border-top: 1px solid var(--ember-rule, #38362f);
 }
-.account-profile .account-details { order: 1; width: 100%; margin: 0; }
-.account-profile .account-details div { padding-block: 6px; }
-.account-profile form { margin: 0; }
-.account-content .guest-history { margin-top: 18px; padding-top: 0; border: 0; }
-.account-content .history-record { margin: 0; border-width: 0 0 1px; border-radius: 0; padding: 0; }
-.account-content .history-record summary {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 10px;
+.guest-facts dt {
+  color: var(--ember-muted, #b9b6a8);
+  font-size: 0.82rem;
+}
+.guest-facts dd { margin: 2px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.guest-facts > div:nth-child(-n+2) dd { font-size: 1.08rem; }
+.guest-public :is(.account-page, .visit) .guest-status {
+  display: inline-flex;
+  width: fit-content;
+  margin: 0;
+  padding: 3px 9px;
+  border: 1px solid var(--status-border, #777166);
+  border-radius: 4px;
+  background: var(--status-background, #2b2a27);
+  color: var(--status-text, #e2dcce);
+  font: 600 0.8rem/1.4 var(--guest-control);
+}
+.guest-status:is([data-status="booked"], [data-status="awaiting"], [data-status="active"], [data-status="unpaid"], [data-status="waiting"]) {
+  --status-background: #332915;
+  --status-border: #a88a51;
+  --status-text: #f1d497;
+}
+.guest-status:is([data-status="arrived"], [data-status="completed"], [data-status="paid"], [data-status="called"]) {
+  --status-background: #1b3023;
+  --status-border: #7f9b77;
+  --status-text: #d0e9c1;
+}
+.guest-status[data-status="cancelled"] {
+  --status-background: #402521;
+  --status-border: #c78c82;
+  --status-text: #f4c4bd;
+}
+.account-profile h3 { margin-bottom: 10px; }
+.account-profile-actions {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ember-rule, #38362f);
+}
+.account-profile-actions p { margin: 0; color: var(--ember-muted, #b9b6a8); font-size: 0.875rem; }
+.account-profile-actions form { margin: 0; }
+.visit .panel :is(.secondary, .bag-line-button),
+.account-content [data-account-form="logout"] button,
+.history-record .order-disclosure-action {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 4px;
+  gap: 8px;
+  margin: 0;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--ember-gold, #c9b892);
+  border-radius: 4px;
+  background: #211d16;
+  color: var(--ember-ink, #efe7d2);
+  font: 600 0.85rem/1.3 var(--guest-control);
+  text-decoration: none;
+}
+.visit .panel :is(.secondary, .bag-line-button):hover:enabled,
+.account-content [data-account-form="logout"] button:hover:enabled,
+.history-record summary:hover .order-disclosure-action {
+  background: #30281b;
+  border-color: var(--ember-ink, #efe7d2);
+}
+.visit .guest-history .history-record {
+  margin: 10px 0 0;
+  padding: 0;
+  border-color: var(--ember-control-rule, #484848);
+}
+.history-record > summary {
+  display: block;
+  padding: 14px 16px;
   list-style: none;
 }
-.account-content .history-record summary::-webkit-details-marker { display: none; }
-.account-content .history-record summary::after {
+.order-record-main strong { font-size: 1.05rem; }
+.order-record-total { font-weight: 600; font-variant-numeric: tabular-nums; }
+.order-record-meta,
+.order-record-statuses { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.order-record-meta { margin-top: 4px; color: var(--ember-muted, #b9b6a8); font-size: 0.875rem; }
+.order-record-meta > span + span { padding-inline-start: 12px; border-inline-start: 1px solid var(--ember-control-rule, #484848); }
+.order-record-footer { margin-top: 12px; }
+.history-record > summary::-webkit-details-marker { display: none; }
+.order-disclosure-action::after {
   content: "";
   width: 6px;
   height: 6px;
   border-right: 1px solid currentColor;
   border-bottom: 1px solid currentColor;
-  transform: rotate(-45deg);
+  transform: translateY(-2px) rotate(45deg);
 }
-.account-content .history-record[open] summary::after { transform: rotate(45deg); }
-.account-content .history-record summary .history-status { margin: 0; }
-.account-order-copy,
-.account-order-totals { display: grid; gap: 2px; }
-.account-order-totals { text-align: right; font-variant-numeric: tabular-nums; }
-.account-content .history-record [data-order-lines] { padding-inline: 4px; }
-.account-reservation-history { margin-top: 22px; }
-.account-reservation-history > summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
+.history-record[open] > summary .order-disclosure-action::after { transform: translateY(2px) rotate(225deg); }
+.history-record[open] > summary .order-disclosure-action > span:first-child,
+.history-record:not([open]) > summary .order-disclosure-action > span:last-child { display: none; }
+.history-record [data-order-lines] {
+  padding: 6px 16px 14px;
+  border-top: 1px solid var(--ember-rule, #38362f);
+}
+.reservation-history-record { margin-top: 10px; }
+.reservation-record-actions { margin-top: 12px; }
 .dish-modal {
   padding: 0;
   width: min(650px, 94vw);
@@ -2036,7 +2094,6 @@ main.menu-page {
 .booking-review .account-details { margin: 0 0 12px; }
 .booking-review .account-details > div { padding-block: 8px; }
 .booking-table-choice .secondary,
-.visit-shortcuts .secondary,
 .booking .booking-continue {
   margin: 0;
   min-height: 40px;
@@ -2223,11 +2280,29 @@ main.menu-page {
 .visit-access p {
   margin: 0 0 12px;
 }
-.visit-next-step {
-  margin-top: 14px;
+.visit-summary {
+  margin-bottom: 16px;
 }
-.visit-next-step h3 {
-  margin-bottom: 8px;
+.visit-summary h3 {
+  margin: 0;
+  font-size: clamp(21px, 2.2vw, 30px);
+}
+.visit-summary .guest-facts dd { font-size: 1.1rem; }
+.visit-summary > p { margin-top: 10px; }
+.visit-check-in {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ember-rule, #38362f);
+}
+.visit-check-in h4 { margin: 0 0 6px; font-weight: 650; }
+.visit-check-in p:last-child { margin-bottom: 0; }
+.visit-update-note { color: var(--ember-muted, #b9b6a8); font-size: 0.875rem; }
+.visit-waitlist-form { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
+.visit-summary .visit-waitlist-form { margin-bottom: 0; }
+.visit-waitlist-form .field { margin: 0; }
+@media (max-width: 520px) {
+  .visit-waitlist-form { grid-template-columns: minmax(0, 1fr); }
+  .visit-waitlist-form .primary { justify-self: start; }
 }
 .visit-access .primary {
   width: auto;
@@ -2237,7 +2312,7 @@ main.menu-page {
 .visit-shortcuts {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 8px;
+  gap: 8px;
   margin-top: 8px;
 }
 .restaurant-inline-form,
