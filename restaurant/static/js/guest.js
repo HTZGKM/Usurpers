@@ -282,29 +282,25 @@ function bookingView() {
   const heading = app.querySelector(".panel h2");
   if (locked) {
     const checkedIn = customerVisit?.booking_id === d.id;
+    const table = checkedIn ? tableLabel(customerVisit.table_id) || d.table : d.table;
     heading.textContent = "Your reservation";
     const confirmation = document.createElement("div");
     confirmation.innerHTML =
-      '<p class="notice"><span class="tick">✓</span>' +
-      (checkedIn
-        ? "Checked in at table " + esc(d.table)
-        : "Your table is reserved.") +
-      "</p>" +
-      pair("Guest", d.name) +
-      pair("Reservation", bookingSummary(d)) +
+      '<div class="booking-reservation-card">' +
+      (checkedIn ? guestStatus("arrived", "Checked in") : guestStatus("booked", "Reserved")) +
+      reservationFacts({ ...d, table }) + '<div class="booking-contact">' + guestFacts([["Guest name", d.name]]) + '</div></div>' +
       btn(checkedIn ? "Explore the menu" : "View your visit", checkedIn ? "Menu" : "Your table", "primary") +
-      (!checkedIn
-        ? btn("Edit reservation", "edit") +
-          btn("Cancel reservation", "ask-cancel")
-        : "") +
-      '<div id="inline-confirm"></div>';
+      (checkedIn ? '' : '<div class="booking-actions">' + btn("Edit reservation", "edit") +
+        btn("Cancel reservation", "ask-cancel", "secondary booking-cancel", 'aria-controls="inline-confirm" aria-expanded="false"') +
+        '</div><section id="inline-confirm" class="booking-cancel-confirmation" aria-labelledby="booking-cancel-title" hidden></section>') +
+      (customerFeedback ? '<p class="statusline" role="status">' + esc(customerFeedback) + '</p>' : '');
     form.replaceWith(confirmation);
     app.querySelector(".floor-cover .legend").hidden = true;
     app.querySelectorAll(".seat").forEach((button) => {
       button.disabled = true;
       button.setAttribute(
         "aria-pressed",
-        button.dataset.action.slice(5) === d.table,
+        button.dataset.action.slice(5) === table,
       );
     });
     return;
@@ -319,7 +315,7 @@ function bookingView() {
     heading.textContent = "Edit reservation";
     form.insertAdjacentHTML(
       "afterend",
-      btn("Keep original reservation", "discard"),
+      '<div class="booking-actions">' + btn("Keep original reservation", "discard") + '</div>',
     );
   }
   syncDraft();
@@ -352,7 +348,7 @@ function syncDraft() {
   app.querySelector('[data-action="retry-availability"]').hidden = !availabilityError;
   app.querySelector(".booking-continue").hidden = !selected;
   app.querySelector("[data-booking-review]").hidden = !selected;
-  app.querySelector("[data-booking-selection]").textContent = selected ? bookingSummary(d) : "";
+  app.querySelector("[data-booking-selection]").innerHTML = selected ? reservationFacts(d) : "";
   const submit = app.querySelector("#reservation button[type=submit]");
   submit.disabled = customerPending || !customerLoaded || !selected;
   submit.textContent = customerPending ? "Saving…" : edit ? "Save reservation" : "Confirm reservation";
@@ -1388,14 +1384,20 @@ document.addEventListener("click", (e) => {
     return;
   }
   if (a === "ask-cancel") {
-    document.querySelector("#inline-confirm").innerHTML =
-      "<p>Release this table?</p>" +
-      btn("Keep reservation", "keep", "choice") +
-      btn("Yes, cancel", "cancel", "choice");
+    const confirmation = app.querySelector("#inline-confirm");
+    confirmation.innerHTML = '<h3 id="booking-cancel-title">Cancel this reservation?</h3>' +
+      '<p>Your table will be released.</p><div class="booking-actions">' +
+      btn("Keep reservation", "keep") + btn("Yes, cancel", "cancel", "secondary booking-cancel") + '</div>';
+    confirmation.hidden = false;
+    b.setAttribute("aria-expanded", "true");
+    confirmation.querySelector('[data-action="keep"]').focus();
     return;
   }
   if (a === "keep") {
-    document.querySelector("#inline-confirm").replaceChildren();
+    app.querySelector("#inline-confirm").hidden = true;
+    const cancel = app.querySelector('[data-action="ask-cancel"]');
+    cancel.setAttribute("aria-expanded", "false");
+    cancel.focus();
     return;
   }
   if (a === "cancel") {
@@ -1406,6 +1408,7 @@ document.addEventListener("click", (e) => {
       state.draft.table = "";
       availabilityKey = "";
       edit = false;
+      customerFeedback = "Reservation cancelled.";
       persist();
       await refreshCustomer();
     });
