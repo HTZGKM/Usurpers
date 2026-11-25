@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from wtforms import DecimalField, IntegerField, StringField, SubmitField
+from wtforms import BooleanField, DecimalField, IntegerField, StringField, SubmitField
 from wtforms.validators import (
     DataRequired,
     InputRequired,
@@ -41,6 +41,8 @@ class CancelBookingForm(FlaskForm):
 
 
 class CheckInForm(FlaskForm):
+    change_table = BooleanField("Change table")
+    expected_version = IntegerField("Reservation version", validators=[Optional(), NumberRange(min=1)])
     table_id = IntegerField(
         "Table ID",
         validators=[Optional(), NumberRange(min=1)],

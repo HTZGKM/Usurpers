@@ -1,10 +1,10 @@
 from restaurant.business_time import current_table_window
 from restaurant.db.database import begin_write, get_connection, insert_id
-from .booking_service import table_has_booking, table_has_call, table_has_visit
+from .booking_service import booking_conflict, table_has_booking, table_has_call, table_has_visit
 from .common import ServiceError, phone_number, positive_int, required_text
 
 
-def require_seatable_table(db, table_id, party_size=0, booking=None, *, allow_call=False):
+def require_seatable_table(db, table_id, party_size=0, booking=None, *, allow_call=False, window=None):
     table = db.execute("SELECT capacity FROM dining_tables WHERE table_id=?", (table_id,)).fetchone()
     if not table:
         raise ServiceError("餐桌不存在。", 404, "table_id", "NOT_FOUND")
@@ -12,7 +12,7 @@ def require_seatable_table(db, table_id, party_size=0, booking=None, *, allow_ca
         raise ServiceError("餐桌容量不足。", 409, "table_id", "CAPACITY_INSUFFICIENT")
     if table_has_visit(db, table_id) or (not allow_call and table_has_call(db, table_id)):
         raise ServiceError("餐桌当前已占用。", 409, "table_id", "TABLE_UNAVAILABLE")
-    date, slot = current_table_window()
+    date, slot = window or current_table_window()
     if booking and table_has_booking(db, table_id, booking["booking_date"], booking["time_slot"], booking["booking_id"]):
         raise ServiceError("该桌在预订时段已被其他顾客预订。", 409, "table_id", "TABLE_UNAVAILABLE")
     if slot and table_has_booking(db, table_id, date, slot, booking["booking_id"] if booking else None):
@@ -20,21 +20,36 @@ def require_seatable_table(db, table_id, party_size=0, booking=None, *, allow_ca
     return table["capacity"]
 
 
-def register_arrival(booking_id, table_id=None):
+def register_arrival(booking_id, table_id=None, *, change_table=False, expected_version=None):
     bid=positive_int(booking_id,"booking_id")
+    if table_id is not None and not change_table:
+        raise ServiceError("Refresh the page and use Change table to seat this guest at another table.",
+                           409, code="CHECK_IN_REFRESH_REQUIRED")
+    if change_table and expected_version is None:
+        raise booking_conflict()
     with get_connection() as db:
         begin_write(db)
         booking=db.execute("SELECT * FROM bookings WHERE booking_id=?",(bid,)).fetchone()
         if not booking: raise ServiceError("预订不存在。",404,"booking_id","NOT_FOUND")
         if booking["status"]!="booked": raise ServiceError("该预订已签到或已取消。",409,"status","STATE_CONFLICT")
-        tid=positive_int(table_id,"table_id") if table_id is not None else booking["table_id"]
+        if change_table and booking["version"] != positive_int(expected_version, "expected_version"):
+            raise booking_conflict()
+        window = current_table_window()
+        if booking["booking_date"] != window[0]:
+            raise ServiceError("Check in is only available on the reservation date.", 409,
+                               "booking_date", "CHECK_IN_DATE_MISMATCH")
+        tid=positive_int(table_id,"table_id") if change_table else booking["table_id"]
         if tid is None: raise ServiceError("签到前必须分配餐桌。",400,"table_id")
-        require_seatable_table(db, tid, booking["party_size"], booking)
+        require_seatable_table(db, tid, booking["party_size"], booking, window=window)
+        arrived = db.execute("""UPDATE bookings SET status='arrived',table_id=?,version=version+1
+            WHERE booking_id=? AND status='booked' AND version=? RETURNING booking_id""",
+            (tid, bid, booking["version"])).fetchone()
+        if not arrived:
+            raise booking_conflict()
         visit_id = insert_id(db, """INSERT INTO dining_sessions
             (booking_id,customer_phone,contact_name,phone_number,party_size,table_id,status)
             VALUES(?,?,?,?,?,?,'seated')""",
             (bid,booking["customer_phone"],booking["contact_name"],booking["phone_number"],booking["party_size"],tid), "visit_id")
-        db.execute("UPDATE bookings SET status='arrived',table_id=? WHERE booking_id=? AND status='booked'",(tid,bid))
         db.execute("""UPDATE orders SET visit_id=?,table_id=?
             WHERE booking_id=? AND order_type='preorder' AND visit_id IS NULL AND status<>'cancelled'""",
             (visit_id, tid, bid))

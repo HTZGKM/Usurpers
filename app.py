@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
+from psycopg.errors import LockNotAvailable
 from werkzeug.exceptions import HTTPException
 
 from restaurant.api.auth.forms import LoginForm, LogoutForm, RegisterForm
@@ -89,6 +90,12 @@ def create_app() -> Flask:
     @app.errorhandler(ServiceError)
     def service_error(error: ServiceError):
         return error_response(error.status_code, error.as_dict())
+
+    @app.errorhandler(LockNotAvailable)
+    def database_busy(error: LockNotAvailable):
+        app.logger.warning("Database lock unavailable: %s", error.sqlstate)
+        unavailable = ServiceError("The restaurant is busy. Try the same request again shortly.", 503, code="DATABASE_BUSY")
+        return error_response(unavailable.status_code, unavailable.as_dict())
 
     @app.errorhandler(HTTPException)
     def http_error(error: HTTPException):

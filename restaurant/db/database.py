@@ -208,9 +208,18 @@ def create_schema(connection: sqlite3.Connection) -> None:
             customer_phone TEXT,
             booking_date TEXT NOT NULL, time_slot TEXT NOT NULL, party_size INTEGER NOT NULL CHECK(party_size > 0),
             status TEXT NOT NULL DEFAULT 'booked' CHECK(status IN ('booked','arrived','cancelled')),
+            version INTEGER NOT NULL DEFAULT 1 CHECK(version > 0),
             table_id INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(table_id) REFERENCES dining_tables(table_id),
             FOREIGN KEY(customer_phone) REFERENCES customers(customer_phone)
+        );
+        CREATE TABLE IF NOT EXISTS booking_create_requests (
+            customer_phone TEXT NOT NULL REFERENCES customers(customer_phone),
+            request_key TEXT NOT NULL,
+            request_fields TEXT NOT NULL,
+            booking_id INTEGER NOT NULL REFERENCES bookings(booking_id),
+            initial_table_id INTEGER NOT NULL REFERENCES dining_tables(table_id),
+            PRIMARY KEY (customer_phone, request_key)
         );
         CREATE TABLE IF NOT EXISTS dining_sessions (
             visit_id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER, customer_phone TEXT,
@@ -282,6 +291,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
     )
     for table, field, declaration in (
         ("bookings", "customer_phone", "TEXT REFERENCES customers(customer_phone)"),
+        ("bookings", "version", "INTEGER NOT NULL DEFAULT 1 CHECK(version > 0)"),
         ("orders", "booking_id", "INTEGER REFERENCES bookings(booking_id)"),
         ("staff", "is_active", "INTEGER NOT NULL DEFAULT 1"),
         ("customers", "is_active", "INTEGER NOT NULL DEFAULT 1"),
@@ -345,7 +355,7 @@ def seed_defaults(connection: sqlite3.Connection) -> None:
         "(2,2,'18612345678','朱哥','18612345678',4,3,'seated'),"
         "(3,3,'13900000003','散客甲','13900000003',6,5,'seated'),"
         "(4,4,'13900000005','常客丙','13900000005',4,4,'seated')")
-    connection.execute("""UPDATE bookings SET status='arrived' WHERE status='booked' AND EXISTS (
+    connection.execute("""UPDATE bookings SET status='arrived',version=version+1 WHERE status='booked' AND EXISTS (
         SELECT 1 FROM dining_sessions s WHERE s.booking_id=bookings.booking_id
         AND s.table_id=bookings.table_id AND s.status IN ('seated','closed'))""")
     connection.execute("""UPDATE orders SET

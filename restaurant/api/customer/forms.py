@@ -36,10 +36,12 @@ class BookingForm(FlaskForm):
         "Table ID",
         validators=[Optional(), NumberRange(min=1)],
     )
+    idempotency_key = StringField("Reservation submission ID", validators=[Optional(), Length(max=80)])
     submit = SubmitField("Confirm Booking")
 
 
 class BookingEditForm(BookingForm):
+    expected_version = IntegerField("Reservation version", validators=[InputRequired(), NumberRange(min=1)])
     submit = SubmitField("Save Booking Changes")
 
 

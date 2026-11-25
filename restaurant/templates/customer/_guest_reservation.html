@@ -14,6 +14,14 @@
 {% call panel(none, 'Book a table') %}
   {% if account %}
   <form id="reservation">
+    <section class="booking-review" data-booking-recovery hidden>
+      <p>Check or retry your original reservation first. Once it is confirmed, you can review any changes you made.</p>
+      <button type="button" class="primary" data-action="recover-reservation">Recover reservation</button>
+    </section>
+    <section class="booking-review" data-booking-conflict hidden>
+      <p role="alert" data-booking-conflict-copy></p>
+      <button type="button" class="secondary" data-action="review-booking-conflict">Fetch latest reservation</button>
+    </section>
     <div class="twocol">
       <div class="field booking-date">
         <label for="date" id="booking-date-label">Date</label>

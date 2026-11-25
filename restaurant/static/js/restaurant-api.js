@@ -38,6 +38,7 @@ async function restaurantRequest(path, fields, method = fields === undefined ? "
       fallback[response.status] ?? "The restaurant service could not complete this request."
   ));
   error.status = response.status;
+  error.code = data?.error;
   throw error;
 }
 
