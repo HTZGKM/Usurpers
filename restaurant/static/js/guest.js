@@ -732,7 +732,7 @@ function orderLines(row) {
   };
   return row.items.map(item => ({
     name: item.dish_name, quantity: item.quantity, unitPrice: Number(item.unit_price), note: item.note,
-    labels: dishStatuses[item.status] ? [dishStatuses[item.status]] : [],
+    labels: [restaurantPreorderWaiting(row, item) || dishStatuses[item.status]].filter(Boolean),
   }));
 }
 
@@ -962,7 +962,8 @@ function renderVisitHistory() {
     const status = awaitingCheckIn ? "Awaiting check-in" : orderLabels[order.status] ?? order.status;
     const number = (order.order_type === "preorder" ? "Preorder #" : "Order #") + order.order_id;
     const paid = order.payment_status === "paid";
-    const payment = order.status === "cancelled" ? "" : paid ? "Paid" : "Unpaid";
+    const payment = order.status === "cancelled" ? "" : paid ? "Paid" : restaurantCanPayOrder(order) ? "Payment due" :
+      ({ unpaid: "Pay after seating", refunded: "Refunded", partially_refunded: "Partially refunded" })[order.payment_status];
     const amount = Number(order.total_amount);
     const table = tableLabel(order.table_id);
     return '<details class="history-record" data-order-record="' + order.order_id + '"><summary>' +
@@ -1003,16 +1004,15 @@ function renderVisitHistory() {
 
 function renderSubmittedOrder(body, order) {
   const base = "/orders/" + order.order_id;
-  body.innerHTML = orderLines(order).map((line, index) => {
-    const item = order.items[index];
+  const items = order.items.filter(item => item.status !== "cancelled");
+  body.innerHTML = orderLines({ ...order, items }).map((line, index) => {
+    const item = items[index];
     return mealLineMarkup(line) + (item.status === "waiting" && order.payment_status === "unpaid"
       ? btn("Cancel " + esc(line.name), "cancel-item:" + item.order_item_id, "bag-line-button") : "");
-  }).join("") + pair("Total", "¥" + order.total_amount) +
+  }).join("") + pair("Total", "¥" + order.total_amount) + restaurantCancelledItems(order.items) +
     (restaurantCanEditOrder(order)
       ? btn("Edit order", "edit-submitted-order") + btn("Cancel order", "cancel-submitted-order") : "") +
-    (order.status !== "cancelled" && order.payment_status === "unpaid" && order.visit_id &&
-      order.order_id !== state.bill?.id && order.visit_id === customerVisit?.visit_id
-      ? btn("Record ¥" + order.total_amount + " payment", "pay-submitted-order", "primary") : "");
+    (restaurantCanPayOrder(order) ? btn("Record ¥" + order.total_amount + " payment", "pay-submitted-order", "primary") : "");
   body.onclick = event => {
     const button = event.target.closest("button[data-action]");
     if (!button) return;

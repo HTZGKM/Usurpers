@@ -16,16 +16,29 @@ def get_ready_items():
     return _queue_items("ready", "q.completed_at")
 
 
+def get_active_items():
+    from .queue_manager import QueueManager
+
+    QueueManager.enqueue_due_preorders()
+    return _queue_items(None, """
+        CASE WHEN q.status='waiting' THEN q.priority ELSE 0 END DESC,
+        CASE q.status WHEN 'waiting' THEN COALESCE(q.estimated_ready_at, q.created_at)
+            WHEN 'cooking' THEN q.started_at ELSE q.completed_at END
+    """)
+
+
 def _queue_items(status, sort):
+    condition = "q.status=?" if status else "q.status IN ('waiting','cooking','ready')"
+    params = (status,) if status else ()
     with get_connection() as db:
         rows = db.execute(f"""
-            SELECT q.*, i.note, i.status AS item_status, o.table_id
+            SELECT q.*, i.note, i.status AS item_status, o.table_id, o.order_type
             FROM kitchen_queue q
             JOIN order_items i USING (order_item_id)
             JOIN orders o ON o.order_id=q.order_id
-            WHERE q.status=?
+            WHERE {condition}
             ORDER BY {sort}, q.queue_id
-        """, (status,))
+        """, params)
         return [dict(row) for row in rows]
 
 

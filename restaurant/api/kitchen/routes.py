@@ -20,6 +20,7 @@ def queue():
         "waiting": kitchen_service.get_waiting_items,
         "cooking": kitchen_service.get_cooking_items,
         "ready": kitchen_service.get_ready_items,
+        "active": kitchen_service.get_active_items,
     }.get(state)
     if not fn:
         from restaurant.services.common import ServiceError

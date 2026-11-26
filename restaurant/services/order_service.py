@@ -98,10 +98,21 @@ def pay_order(order_id, customer_phone=None):
         if not row: raise ServiceError("订单不存在。",404)
         if row["payment_status"]=="paid": return {"order_id":oid,"payment_status":"paid","already_paid":True}
         if row["status"]=="cancelled": raise ServiceError("已取消订单不能付款。",409)
+        if row["payment_status"] != "unpaid":
+            raise ServiceError("This order is not awaiting payment.", 409)
         if row["order_type"] == "preorder" and row["visit_id"] is None:
             raise ServiceError("预点订单须到店后结账。",409,code="STATE_CONFLICT")
         db.execute("UPDATE orders SET payment_status='paid',paid_at=CURRENT_TIMESTAMP WHERE order_id=? AND payment_status='unpaid'",(oid,))
         return {"order_id":oid,"payment_status":"paid","already_paid":False}
+
+
+def _order_detail_items(db, order_id):
+    return [dict(row) for row in db.execute("""
+        SELECT l.*, d.dish_name, q.status AS kitchen_status
+        FROM order_items l JOIN dishes d USING(dish_id)
+        LEFT JOIN kitchen_queue q USING(order_item_id)
+        WHERE l.order_id=? ORDER BY l.order_item_id
+    """, (order_id,))]
 
 
 def get_order(order_id, customer_phone=None):
@@ -112,7 +123,7 @@ def get_order(order_id, customer_phone=None):
         order=db.execute(query,args).fetchone()
         if not order: raise ServiceError("订单不存在。",404,"order_id","NOT_FOUND")
         result=dict(order)
-        result["items"]=[dict(r) for r in db.execute("SELECT l.*,d.dish_name FROM order_items l JOIN dishes d USING(dish_id) WHERE l.order_id=? ORDER BY l.order_item_id",(oid,))]
+        result["items"] = _order_detail_items(db, oid)
         result["total_amount"]=_order_total(db, oid)
         result["refunded_amount"]=0.0
         return result
@@ -180,16 +191,40 @@ def update_order(order_id, items, customer_phone=None):
             if not schedule:
                 raise ServiceError("预点订单缺少制作时段。",409,code="STATE_CONFLICT")
             ready_at = schedule["estimated_ready_at"]
-        db.execute("UPDATE order_items SET status='cancelled' WHERE order_id=? AND status='waiting'",(oid,))
-        db.execute("UPDATE kitchen_queue SET status='cancelled',completed_at=CURRENT_TIMESTAMP WHERE order_id=? AND status='waiting'",(oid,))
+        remaining = db.execute("""SELECT * FROM order_items WHERE order_id=? AND status='waiting'
+                                 ORDER BY order_item_id""", (oid,)).fetchall()
+        matched = []
         for line in lines:
+            existing = next((item for item in remaining if item["dish_id"] == line["dish_id"]
+                             and item["quantity"] == line["quantity"] and (item["note"] or "") == line["note"]), None)
+            matched.append(existing)
+            if existing is not None:
+                remaining.remove(existing)
+        for line, existing in zip(lines, matched):
+            if existing is not None:
+                continue
+            replacement = next((item for item in remaining if item["dish_id"] == line["dish_id"]), None)
+            if replacement is not None:
+                item_id = replacement["order_item_id"]
+                total = round(float(replacement["unit_price"]) * line["quantity"], 2)
+                db.execute("UPDATE order_items SET quantity=?, note=?, total_price=? WHERE order_item_id=?",
+                           (line["quantity"], line["note"], total, item_id))
+                db.execute("UPDATE kitchen_queue SET quantity=? WHERE order_item_id=? AND status='waiting'",
+                           (line["quantity"], item_id))
+                remaining.remove(replacement)
+                continue
             price = dishes[line["dish_id"]]
             line_total = round(price * line["quantity"], 2)
             item_id = insert_id(db, "INSERT INTO order_items(order_id,dish_id,quantity,unit_price,total_price,note,estimated_ready_at) VALUES(?,?,?,?,?,?,?)",
                                 (oid,line["dish_id"],line["quantity"],price,line_total,line["note"],ready_at), "order_item_id")
             if not preorder:
                 db.execute("INSERT INTO kitchen_queue(order_id,order_item_id,dish_id,quantity) VALUES(?,?,?,?)",(oid,item_id,line["dish_id"],line["quantity"]))
-        result=dict(db.execute("SELECT * FROM orders WHERE order_id=?",(oid,)).fetchone())
-        result["items"]=[dict(r) for r in db.execute("SELECT l.*,d.dish_name FROM order_items l JOIN dishes d USING(dish_id) WHERE l.order_id=? ORDER BY l.order_item_id",(oid,))]
+        for item in remaining:
+            item_id = item["order_item_id"]
+            db.execute("UPDATE order_items SET status='cancelled' WHERE order_item_id=?", (item_id,))
+            db.execute("""UPDATE kitchen_queue SET status='cancelled',completed_at=CURRENT_TIMESTAMP
+                          WHERE order_item_id=? AND status='waiting'""", (item_id,))
+        result = dict(order)
+        result["items"] = _order_detail_items(db, oid)
         result["total_amount"]=_order_total(db, oid)
         return result

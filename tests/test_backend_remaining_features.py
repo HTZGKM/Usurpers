@@ -44,12 +44,16 @@ class RemainingFeatureTests(RestaurantTestCase):
         placed = write(customer, f"/visits/{visit}/orders", dish())
         self.assertEqual(placed.status_code, 201)
         order = placed.json["order"]["order_id"]
+        original_item = get_order(order)["items"][0]["order_item_id"]
         self.assertEqual(write(customer, f"/orders/{order}/edit", dish(quantity=2)).json["order"]["total_amount"], 76)
         self.assertEqual(write(frontdesk, f"/frontdesk/orders/{order}/edit", dish(quantity=3)).json["order"]["total_amount"], 114)
-        items = [item for item in kitchen.get("/kitchen/queue").json["items"] if item["order_id"] == order]
+        self.assertEqual([row["order_item_id"] for row in get_order(order)["items"]], [original_item])
+        items = [item for item in kitchen.get("/kitchen/queue?status=active").json["items"] if item["order_id"] == order]
         self.assertEqual(len(items), 1)
         item = items[0]["order_item_id"]
+        self.assertEqual((item, items[0]["status"], items[0]["quantity"]), (original_item, "waiting", 3))
         self.assertEqual(write(kitchen, f"/kitchen/items/{item}/start").status_code, 200)
+        self.assertEqual(get_order(order)["items"][0]["kitchen_status"], "cooking")
         self.assertEqual(write(customer, f"/orders/{order}/cancel").status_code, 409)
         self.assertEqual(write(kitchen, f"/kitchen/items/{item}/complete").status_code, 200)
         self.assertEqual(write(frontdesk, f"/frontdesk/orders/{order}/items/{item}/serve").status_code, 200)
@@ -59,6 +63,19 @@ class RemainingFeatureTests(RestaurantTestCase):
         self.assertEqual(admin.get(f"/admin/orders/{order}").json["order"]["payment_status"], "paid")
         database.ensure_database()
         self.assertEqual(get_order(order)["total_amount"], 114)
+
+    def test_closed_unpaid_order_can_be_paid_by_owner_or_frontdesk_once(self):
+        owner = self.signed_in("13900000002")
+        other = self.signed_in("13900000001")
+        desk = self.signed_in("frontdesk@shuangfen.local")
+        with database.get_connection() as db:
+            db.execute("""UPDATE dining_sessions SET status='closed'
+                          WHERE visit_id=(SELECT visit_id FROM orders WHERE order_id=9001)""")
+        self.assertEqual(write(other, "/orders/9001/pay").status_code, 404)
+        paid = write(owner, "/orders/9001/pay")
+        self.assertEqual(paid.status_code, 200)
+        self.assertFalse(paid.json["payment"]["already_paid"])
+        self.assertTrue(write(desk, "/frontdesk/orders/9001/pay").json["payment"]["already_paid"])
 
     @patch("restaurant.services.booking_service.current_table_window", return_value=("2026-12-20", None))
     def test_preorder_edit_and_promotion_follow_visit(self, _restaurant_clock):
@@ -70,8 +87,11 @@ class RemainingFeatureTests(RestaurantTestCase):
                          {**dish(), "estimated_ready_at": "2026-12-20T11:00:00+08:00"})
         self.assertEqual(response.status_code, 201)
         order = response.json["order"]["order_id"]
+        original = get_order(order)["items"][0]
         edited = write(customer, f"/orders/{order}/edit", dish(quantity=2))
         line = next(item for item in edited.json["order"]["items"] if item["status"] == "waiting")
+        self.assertEqual([item["order_item_id"] for item in edited.json["order"]["items"]], [original["order_item_id"]])
+        self.assertIsNone(line["kitchen_status"])
         self.assertEqual(write(kitchen, f"/kitchen/items/{line['order_item_id']}/start").status_code, 409)
         self.assertEqual(write(customer, f"/orders/{order}/pay").status_code, 409)
         self.assertEqual(QueueManager.enqueue_due_preorders("2026-12-20 04:00:00"), 0)

@@ -13,19 +13,16 @@
         <h2 id="kitchen-queue-title" tabindex="-1">Preparation queue</h2>
         <p data-kitchen-count role="status"></p>
       </div>
-      <dl class="kitchen-stages" aria-label="Items by preparation stage">
-        <div data-stage="waiting"><dt>To start</dt><dd data-kitchen-stage="waiting">—</dd></div>
-        <div data-stage="cooking"><dt>Cooking</dt><dd data-kitchen-stage="cooking">—</dd></div>
-        <div data-stage="ready"><dt>Ready for front desk</dt><dd data-kitchen-stage="ready">—</dd></div>
-      </dl>
-      <div class="kitchen-ticket-grid" data-kitchen-tickets></div>
-      <section class="kitchen-handoff" aria-labelledby="kitchen-handoff-title" hidden>
-        <div class="kitchen-section-heading">
-          <h3 id="kitchen-handoff-title">Waiting to be served</h3>
-          <p>Front desk marks these dishes served.</p>
-        </div>
-        <div class="kitchen-ticket-grid" data-kitchen-handoff></div>
-      </section>
+      <div class="kitchen-lanes">
+        {% for stage, title in [('waiting', 'To start'), ('cooking', 'Cooking'), ('ready', 'Ready for front desk')] %}
+          <section class="kitchen-lane" aria-labelledby="kitchen-lane-{{ stage }}">
+            <h3 class="kitchen-stage" id="kitchen-lane-{{ stage }}" data-stage="{{ stage }}">
+              <span data-kitchen-stage="{{ stage }}">—</span> {{ title }}
+            </h3>
+            <div class="kitchen-lane-tickets" data-kitchen-lane="{{ stage }}"></div>
+          </section>
+        {% endfor %}
+      </div>
     </section>
 
     <section id="kitchen-availability" aria-labelledby="kitchen-availability-title" hidden>

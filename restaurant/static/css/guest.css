@@ -1508,6 +1508,8 @@ main.booking {
 .order-record-total { font-weight: 600; font-variant-numeric: tabular-nums; }
 .order-record-meta,
 .order-record-statuses { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.restaurant-cancelled-items { margin-block: 8px; }
+.restaurant-cancelled-items > summary { cursor: pointer; color: #bdb39b; font-size: .9em; }
 .order-record-meta { margin-top: 4px; color: var(--ember-muted, #b9b6a8); font-size: 0.875rem; }
 .order-record-meta > span + span { padding-inline-start: 12px; border-inline-start: 1px solid var(--ember-control-rule, #484848); }
 .order-record-footer { margin-top: 12px; }

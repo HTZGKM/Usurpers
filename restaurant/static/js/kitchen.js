@@ -1,7 +1,5 @@
 function mountKitchenWorkspace(workspace) {
   const find = (selector) => workspace.querySelector(selector);
-  const tickets = find("[data-kitchen-tickets]");
-  const handoff = find("[data-kitchen-handoff]");
   const feedback = find("[data-kitchen-feedback]");
   const syncNotice = find("[data-kitchen-sync]");
   const stages = {
@@ -27,57 +25,59 @@ function mountKitchenWorkspace(workspace) {
 
   function renderQueue(rows, menuRows) {
     const names = new Map(menuRows.map(dish => [dish.dish_id, dish.dish_name]));
-    const orders = new Map();
+    const groups = Object.fromEntries(Object.keys(stages).map(stage => [stage, new Map()]));
     for (const row of rows) {
+      const orders = groups[row.status];
       if (!orders.has(row.order_id)) orders.set(row.order_id, []);
       orders.get(row.order_id).push(row);
     }
-    const activeTickets = [];
-    const handoffTickets = [];
-    for (const [order, lines] of orders) {
-      const items = lines.map(line => {
-        const [status, label, action] = stages[line.status];
-        return '<li class="kitchen-item" data-stage="' + line.status + '"><div class="kitchen-item-copy"><strong>' +
+    const focused = document.activeElement;
+    const focusedTicket = focused?.closest("[data-kitchen-ticket]");
+    const itemId = focused?.dataset.kitchenItem;
+    let restoreFocus = false;
+    for (const [stage, orders] of Object.entries(groups)) {
+      const [status, label, action] = stages[stage];
+      const tickets = [...orders].map(([order, lines]) => {
+        const items = lines.map(line => '<li class="kitchen-item" data-stage="' + stage + '" data-kitchen-line="' +
+          line.order_item_id + '"><div class="kitchen-item-copy"><strong>' +
           line.quantity + ' × ' + esc(names.get(line.dish_id) ?? "Dish #" + line.dish_id) +
           '</strong><span class="kitchen-item-stage">' + esc(status) + '</span>' +
           (line.note ? '<p class="kitchen-note"><b>Note</b> ' + esc(line.note) + '</p>' : '') + '</div>' +
           (action ? '<button type="button" class="kitchen-action" data-kitchen-item="' + line.order_item_id +
-            '" data-kitchen-step="' + action + '">' + label + '</button>' : '') + '</li>';
+            '" data-kitchen-step="' + action + '">' + label + '</button>' : '') + '</li>').join("");
+        const table = tableLabel(lines[0].table_id);
+        const orderLabel = (lines[0].order_type === "preorder" ? "Preorder #" : "Order #") + order;
+        const metadata = [table && orderLabel, queueAge(lines)].filter(Boolean).join(" · ");
+        return '<article class="kitchen-ticket" data-kitchen-ticket="' + order + '" data-stage="' + stage +
+          '"><div class="kitchen-ticket-heading"><div><h3 tabindex="-1">' + esc(table ? 'Table ' + table : orderLabel) +
+          '</h3><p>' + esc(metadata) + '</p></div></div><ul class="kitchen-item-list">' + items + '</ul></article>';
       }).join("");
-      const table = tableLabel(lines[0].table_id);
-      const markup = '<article class="kitchen-ticket" data-kitchen-ticket="' + order + '" data-stage="' + lines[0].status +
-        '"><div class="kitchen-ticket-heading"><div>' +
-        '<h3 tabindex="-1">' + (table ? 'Table ' + esc(table) : 'Order #' + order) + '</h3><p>' +
-        (table ? 'Order #' + order + ' · ' : '') + esc(queueAge(lines)) + '</p></div>' +
-        '</div><ul class="kitchen-item-list">' + items + '</ul></article>';
-      const destination = lines.every(line => line.status === "ready") ? handoffTickets : activeTickets;
-      destination.push(markup);
-    }
-
-    const markup = activeTickets.join("") || '<p class="kitchen-empty">No dishes to prepare.</p>';
-    const handoffMarkup = handoffTickets.join("");
-    const focused = document.activeElement;
-    const itemId = tickets.contains(focused) && focused.dataset.kitchenItem;
-    const orderId = focused.closest("[data-kitchen-ticket]")?.dataset.kitchenTicket;
-    const handoffHadFocus = handoff.contains(focused);
-    const activeHadFocus = tickets.contains(focused);
-    const activeChanged = tickets.innerHTML !== markup;
-    const handoffChanged = handoff.innerHTML !== handoffMarkup;
-    if (activeChanged) tickets.innerHTML = markup;
-    if (handoffChanged) handoff.innerHTML = handoffMarkup;
-    handoff.closest("section").hidden = !handoffTickets.length;
-    if ((activeHadFocus && activeChanged) || (handoffHadFocus && handoffChanged)) {
-      const target = itemId && find('[data-kitchen-item="' + itemId + '"]');
-      (target || find('[data-kitchen-ticket="' + orderId + '"] h3') || find("#kitchen-queue-title")).focus({ preventScroll: true });
-    }
-    const count = activeTickets.length + (activeTickets.length === 1 ? " active order" : " active orders");
-    const total = find("[data-kitchen-count]");
-    if (total.textContent !== count) total.textContent = count;
-    for (const stage of Object.keys(stages)) {
-      const quantity = rows.filter(row => row.status === stage).reduce((sum, row) => sum + row.quantity, 0);
+      const column = find('[data-kitchen-lane="' + stage + '"]');
+      const markup = tickets || '<p class="kitchen-empty">' + ({ waiting: "Nothing to start.",
+        cooking: "Nothing cooking.", ready: "Nothing ready to serve." })[stage] + '</p>';
+      if (column.innerHTML !== markup) {
+        restoreFocus ||= column.contains(focused);
+        column.innerHTML = markup;
+      }
+      const quantity = [...orders.values()].flat().reduce((sum, row) => sum + row.quantity, 0);
       const stageCount = find('[data-kitchen-stage="' + stage + '"]');
       if (stageCount.textContent !== String(quantity)) stageCount.textContent = quantity;
     }
+    if (restoreFocus) {
+      const heading = focusedTicket && find('[data-kitchen-ticket="' + focusedTicket.dataset.kitchenTicket +
+        '"][data-stage="' + focusedTicket.dataset.stage + '"] h3');
+      (itemFocus(itemId) ?? heading ?? find("#kitchen-queue-title")).focus({ preventScroll: true });
+    }
+    const size = new Set(rows.map(row => row.order_id)).size;
+    const count = size + (size === 1 ? " active order" : " active orders");
+    const total = find("[data-kitchen-count]");
+    if (total.textContent !== count) total.textContent = count;
+  }
+
+  function itemFocus(itemId) {
+    if (!itemId) return null;
+    return find('[data-kitchen-item="' + itemId + '"]') ??
+      find('[data-kitchen-line="' + itemId + '"]')?.closest('[data-kitchen-ticket]')?.querySelector('h3');
   }
 
   function renderMenu(rows) {
@@ -103,14 +103,13 @@ function mountKitchenWorkspace(workspace) {
   async function refresh() {
     const current = ++revision;
     try {
-      const { items: menuRows } = await restaurantRequest("/kitchen/menu");
+      const [menu, queue] = await Promise.all([
+        restaurantRequest("/kitchen/menu"),
+        view === "queue" ? restaurantRequest("/kitchen/queue?status=active") : null,
+      ]);
       if (current !== revision) return;
-      const rows = view === "queue" ? (await Promise.all(Object.keys(stages).map(status =>
-        restaurantRequest(restaurantQuery("/kitchen/queue", { status }))
-      ))).flatMap(result => result.items) : [];
-      if (current !== revision) return;
-      if (view === "queue") renderQueue(rows, menuRows);
-      else renderMenu(menuRows);
+      if (view === "queue") renderQueue(queue.items, menu.items);
+      else renderMenu(menu.items);
       if (refreshError) feedback.textContent = "";
       refreshError = false;
       syncNotice.textContent = view === "queue" ? "Auto-updates on" : "";
@@ -152,7 +151,7 @@ function mountKitchenWorkspace(workspace) {
       if (!refreshed || requestedView !== view) return;
       if (kitchenStep === "complete") feedback.textContent = "Dish ready. Front desk can now mark it served.";
       const replacement = kitchenItem
-        ? find('[data-kitchen-item="' + kitchenItem + '"]')
+        ? itemFocus(kitchenItem)
         : find('[data-kitchen-dish="' + kitchenDish + '"]');
       (replacement ?? find('[data-kitchen-ticket="' + orderId + '"] h3') ?? find("[data-kitchen-refresh]")).focus();
     } catch (error) {

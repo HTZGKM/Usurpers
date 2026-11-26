@@ -76,6 +76,30 @@ function restaurantCanEditOrder(order) {
     order.items.every(item => ["waiting", "cancelled"].includes(item.status));
 }
 
+function restaurantCanPayOrder(order) {
+  return order.status !== "cancelled" && order.payment_status === "unpaid" &&
+    (order.order_type !== "preorder" || Boolean(order.visit_id));
+}
+
+function restaurantPreorderWaiting(order, item) {
+  if (order.order_type !== "preorder" || item.status !== "waiting" || item.kitchen_status) return "";
+  if (!order.visit_id) return "Awaiting seating";
+  if (!item.estimated_ready_at) return "Scheduled for kitchen";
+  const timestamp = item.estimated_ready_at.replace(" ", "T");
+  const time = new Date(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp) ? timestamp : timestamp + "Z");
+  return Number.isFinite(time.getTime()) ? "Scheduled · from " + time.toLocaleTimeString("en-GB", {
+    timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit",
+  }) : "Scheduled for kitchen";
+}
+
+function restaurantCancelledItems(items) {
+  const cancelled = items.filter(item => item.status === "cancelled");
+  if (!cancelled.length) return "";
+  return '<details class="restaurant-cancelled-items"><summary>Removed or cancelled items (' + cancelled.length +
+    ')</summary><ul>' + cancelled.map(item => '<li>' + item.quantity + ' × ' + esc(item.dish_name) + '</li>').join("") +
+    '</ul></details>';
+}
+
 function restaurantOrderEditor(order, path, menuItems, onSaved) {
   const dialog = document.createElement("dialog");
   dialog.className = "restaurant-order-dialog";

@@ -235,11 +235,13 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
   }
 
   function orderCard(order) {
-    const items = [...order.items].sort((a, b) => Number(b.status === "ready") - Number(a.status === "ready")).map(item => {
+    const items = order.items.filter(item => item.status !== "cancelled")
+      .sort((a, b) => Number(b.status === "ready") - Number(a.status === "ready")).map(item => {
       const path = "/frontdesk/orders/" + order.order_id + "/items/" + item.order_item_id;
       return '<li data-item-stage="' + esc(item.status) + '"><div><strong>' + item.quantity + ' × ' + esc(item.dish_name) +
         '</strong><span class="desk-item-status">' +
-        esc({ waiting: "Waiting", cooking: "Cooking", ready: "Ready to serve", served: "Served", cancelled: "Cancelled" }[item.status] ?? item.status) +
+        esc(restaurantPreorderWaiting(order, item) ||
+          ({ waiting: "Waiting", cooking: "Cooking", ready: "Ready to serve", served: "Served" })[item.status] || item.status) +
         '</span>' + (item.note ? '<small>' + esc(item.note) + '</small>' : '') + '</div>' +
         (item.status === "ready" ? '<button type="button" class="desk-confirm" data-desk-write="' + path + '/serve">Mark served</button>' :
           item.status === "waiting" && order.payment_status === "unpaid"
@@ -250,15 +252,18 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
       order.order_id + ' · ¥' + esc(order.total_amount) + '</h4><p>' +
       esc(orderLabels[order.status] ?? order.status) + ' · ' +
       (order.payment_status === "paid" ? "Paid" : "Unpaid") + '</p><ul class="desk-service-list">' +
-      items + '</ul>' + (restaurantCanEditOrder(order) ?
+      items + '</ul>' + restaurantCancelledItems(order.items) + (restaurantCanEditOrder(order) ?
         deskButton("Edit order", 'data-desk-edit-order="' + order.order_id + '"') : '') +
-      (order.payment_status === "unpaid" && order.status !== "cancelled"
+      (restaurantCanPayOrder(order)
         ? deskButton("Record payment", 'data-desk-write="/frontdesk/orders/' + order.order_id + '/pay"') : '') + '</article>';
   }
 
   function renderBilling(orders) {
-    find("[data-desk-billing-list]").innerHTML = orders.map(row =>
-      '<details class="desk-service-order" data-billing-order="' + row.order_id + '"><summary>Order #' +
+    const list = find("[data-desk-billing-list]");
+    const opened = new Set([...list.querySelectorAll("[data-billing-order][open]")].map(row => row.dataset.billingOrder));
+    list.innerHTML = orders.map(row =>
+      '<details class="desk-service-order" data-billing-order="' + row.order_id + '"' +
+      (opened.has(String(row.order_id)) ? ' open' : '') + '><summary>Order #' +
       row.order_id + ' · ' + esc(tableLabel(row.table_id) || "No table") + ' · ' +
       (row.payment_status === "paid" ? "Paid" : "Unpaid") + '</summary><div data-billing-detail></div></details>'
     ).join("") || "<p>No orders found.</p>";
@@ -748,8 +753,10 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
     detail.textContent = "Loading order…";
     try {
       const { order } = await restaurantRequest("/frontdesk/orders/" + record.dataset.billingOrder);
-      detail.innerHTML = '<p>Total · ¥' + esc(order.total_amount) + '</p><ul class="desk-service-list">' +
-        order.items.map(item => '<li>' + item.quantity + ' × ' + esc(item.dish_name) + '</li>').join("") + '</ul>';
+      detail.innerHTML = '<p>Total · ¥' + esc(order.total_amount) + '</p><ul class="desk-service-list">' + order.items
+        .filter(item => item.status !== "cancelled").map(item => '<li>' + item.quantity + ' × ' + esc(item.dish_name) + '</li>').join("") + '</ul>' +
+        restaurantCancelledItems(order.items) + (restaurantCanPayOrder(order)
+          ? deskButton("Record payment", 'data-desk-write="/frontdesk/orders/' + order.order_id + '/pay"') : '');
       record.dataset.loaded = "true";
     } catch (error) {
       detail.textContent = error.message;
