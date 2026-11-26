@@ -97,15 +97,19 @@ test('a lost order response is recovered with its original key and draft', async
     restaurantRequest:async (_path,fields) => {
       calls.push(fields);
       if (calls.length === 1) throw new Error('connection lost');
+      if (calls.length === 2) throw Object.assign(new Error('form expired'), {status:400, csrfExpired:true});
       return {order:{order_id:17}};
     },
   });
   vm.runInContext(section(api, 'const pendingRestaurantSubmissions', 'function restaurantOrderFields('), context);
   await assert.rejects(context.restaurantSubmitOnce('/frontdesk/orders', {visit_id:4,quantity:1}), /connection lost/);
+  await assert.rejects(context.restaurantSubmitOnce('/frontdesk/orders', {visit_id:4,quantity:1}), /form expired/);
+  assert.equal(storage.size, 1);
   const recovered = await context.restaurantSubmitOnce('/frontdesk/orders', {visit_id:4,quantity:2});
   assert.equal(recovered.recoveredPrevious, true);
   assert.equal(recovered.order.order_id, 17);
   assert.deepEqual(calls[0], calls[1]);
-  assert.equal(calls[1].quantity, 1);
+  assert.deepEqual(calls[0], calls[2]);
+  assert.equal(calls[2].quantity, 1);
   assert.equal(storage.size, 0);
 });

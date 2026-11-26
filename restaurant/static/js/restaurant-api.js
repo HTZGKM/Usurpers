@@ -43,6 +43,7 @@ async function restaurantRequest(path, fields, method = fields === undefined ? "
   ));
   error.status = response.status;
   error.code = data?.error;
+  error.csrfExpired = Boolean(data?.errors?.csrf_token);
   throw error;
 }
 
@@ -65,6 +66,7 @@ async function restaurantSubmitOnce(path, fields) {
   const body = Object.fromEntries(Object.entries(fields).sort(([left], [right]) => left.localeCompare(right)));
   let pending = pendingRestaurantSubmissions.get(scope);
   try { pending ??= JSON.parse(sessionStorage.getItem(scope)); } catch {}
+  const wasUnconfirmed = Boolean(pending);
   const recoveredPrevious = Boolean(pending && JSON.stringify(pending.body) !== JSON.stringify(body));
   if (recoveredPrevious && !window.confirm("A previous submission is unconfirmed. Retry its original details before sending this draft?")) {
     throw new Error("The previous submission is still unconfirmed. Your current draft is available to review.");
@@ -81,7 +83,8 @@ async function restaurantSubmitOnce(path, fields) {
     clear();
     return { ...result, recoveredPrevious };
   } catch (error) {
-    if ([400, 404, 409, 422].includes(error.status)) clear();
+    if (!error.csrfExpired && (error.status === 409 ||
+      (!wasUnconfirmed && [400, 404, 422].includes(error.status)))) clear();
     throw error;
   }
 }
