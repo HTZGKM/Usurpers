@@ -98,6 +98,7 @@ function adminSales(overrides) {
     section('const minute =', 'const bookingsOn ='),
     section('const salesGroups =', 'function dishRankingRings('),
     section('function popularDishes(', 'function popularDishMode('),
+    section('function recentOrderLabel(', 'function orderDateText('),
   ].join('\n'), context);
   return context;
 }
@@ -130,4 +131,32 @@ test('historical sales and popular dishes retain past paid orders when today has
   assert.match(view.popularDishes(), /No portions sold today/);
   view.state.salesDays = 7;
   assert.ok(view.salesBuckets('history', 'orders').every(bucket => bucket.amounts[0] === 0));
+});
+
+test('returning to the recent order range keeps the monthly rows when a date request finishes late', async () => {
+  let finishDateRequest;
+  const orders = [{ id:'1', day:'2026-11-25' }, { id:'2', day:'2026-11-24' }];
+  const context = vm.createContext({
+    recentOrderRange: 'recent', historyDays: Array(30), historyOrders: orders,
+    state: { orderDate:'2026-11-24' }, ledgerDate: null, ledgerRequest: 0,
+    ledgerOrders: [], ledgerLoading: false, ledgerError: '', invalidLedgerDates: 0,
+    root: { dataset:{ orderUrl:'/admin/workspace/orders' } },
+    refreshOrderResults() {},
+    request: () => new Promise(resolve => { finishDateRequest = resolve; }),
+    normalizeOrders: rows => rows,
+  });
+  vm.runInContext([
+    section('function hasSpecificOrderDate(', 'function renderOrderCalendar('),
+    section('async function loadLedger(', 'function setUserProfileOpen('),
+  ].join('\n'), context);
+  const pendingDate = context.loadLedger();
+  context.state.orderDate = 'recent';
+  await context.loadLedger();
+  finishDateRequest({ orders:[orders[1]] });
+  await pendingDate;
+  assert.equal(context.orderDateText(), 'Last 30 days');
+  assert.equal(context.hasSpecificOrderDate(), false);
+  assert.equal(context.ledgerDate, 'recent');
+  assert.equal(context.ledgerLoading, false);
+  assert.equal(context.ledgerOrders, orders);
 });
