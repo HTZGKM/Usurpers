@@ -85,3 +85,27 @@ test('the table bill includes only the open balance for the current visit', () =
   assert.equal(context.currentVisitBill(null,orders),null);
   assert.doesNotMatch(context.visitBillMarkup(context.currentVisitBill({ visit_id:5 },[orders[3]])),/pay-visit/);
 });
+
+test('a lost order response is recovered with its original key and draft', async () => {
+  const storage = new Map();
+  const calls = [];
+  const api = script('restaurant-api.js');
+  const context = vm.createContext({
+    document:{ querySelector:() => ({textContent:JSON.stringify({account:{role:'frontdesk',username:'desk'}})}) },
+    sessionStorage:{getItem:k => storage.get(k) ?? null,setItem:(k,v) => storage.set(k,v),removeItem:k => storage.delete(k)},
+    window:{confirm:() => true}, crypto:{randomUUID:() => 'first-draft'},
+    restaurantRequest:async (_path,fields) => {
+      calls.push(fields);
+      if (calls.length === 1) throw new Error('connection lost');
+      return {order:{order_id:17}};
+    },
+  });
+  vm.runInContext(section(api, 'const pendingRestaurantSubmissions', 'function restaurantOrderFields('), context);
+  await assert.rejects(context.restaurantSubmitOnce('/frontdesk/orders', {visit_id:4,quantity:1}), /connection lost/);
+  const recovered = await context.restaurantSubmitOnce('/frontdesk/orders', {visit_id:4,quantity:2});
+  assert.equal(recovered.recoveredPrevious, true);
+  assert.equal(recovered.order.order_id, 17);
+  assert.deepEqual(calls[0], calls[1]);
+  assert.equal(calls[1].quantity, 1);
+  assert.equal(storage.size, 0);
+});

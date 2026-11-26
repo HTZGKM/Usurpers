@@ -4,6 +4,7 @@ from .forms import (
     BookingEditForm,
     CancelBookingForm,
     OrderForm,
+    OrderEditForm,
     PaymentForm,
     PreorderForm,
     VisitPaymentForm,
@@ -94,6 +95,7 @@ def preorder(booking_id):
                     user["username"],
                     data.get("items"),
                     data.get("estimated_ready_at"),
+                    request_key=data.get("idempotency_key"),
                 ),
             }
         ),
@@ -160,7 +162,8 @@ def create_visit_order(visit_id):
             {
                 "ok": True,
                 "order": order_service.create_dine_in_order(
-                    visit_id, data.get("items"), owner
+                    visit_id, data.get("items"), owner, request_key=data.get("idempotency_key"),
+                    actor=session["user"]["role"] + ":" + session["user"]["username"],
                 ),
             }
         ),
@@ -180,7 +183,8 @@ def confirm_order():
             {
                 "ok": True,
                 "order": order_service.create_dine_in_order(
-                    visit_id, data.get("items"), user["username"]
+                    visit_id, data.get("items"), user["username"], request_key=data.get("idempotency_key"),
+                    actor=user["role"] + ":" + user["username"],
                 ),
             }
         ),
@@ -241,14 +245,14 @@ def cancel_order(order_id):
 
 @customer_bp.post("/orders/<int:order_id>/edit")
 def edit_order(order_id):
-    data = validated_data(OrderForm)
+    data = validated_data(OrderEditForm)
     owner = (
         session["user"]["username"] if session["user"]["role"] == "customer" else None
     )
     return jsonify(
         {
             "ok": True,
-            "order": order_service.update_order(order_id, data.get("items"), owner),
+            "order": order_service.update_order(order_id, data.get("items"), owner, expected_version=data["expected_version"]),
         }
     )
 

@@ -1320,7 +1320,13 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     errorOutput.hidden = true;
     button.disabled = true;
     try {
-      const data = await request(url,fields,method);
+      const data = container.matches('[data-adjust-ingredient]')
+        ? await restaurantSubmitOnce(url, Object.fromEntries(fields)) : await request(url,fields,method);
+      if (data.recoveredPrevious) {
+        errorOutput.textContent = 'Previous stock adjustment recovered. Review this draft before sending it.';
+        errorOutput.hidden = false;
+        return;
+      }
       await complete(data);
     } catch (error) {
       errorOutput.textContent = error.message;

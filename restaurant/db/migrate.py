@@ -25,6 +25,7 @@ TABLES = {
     "dining_sessions": "visit_id",
     "orders": "order_id",
     "order_items": "order_item_id",
+    "mutation_requests": None,
     "waiting_queue": "queue_id",
     "kitchen_queue": "queue_id",
     "ingredients": "ingredient_id",
@@ -70,7 +71,7 @@ def migrate(source_path, database_url, credentials_path, *, rotate_demo=True):
                 cursor.execute(sql.SQL("SELECT 1 FROM {} LIMIT 1").format(identifier))
                 if cursor.fetchone() is not None:
                     raise RuntimeError(f"Destination table {table} already contains data.")
-                if table == "booking_create_requests" and table not in source_tables:
+                if table in {"booking_create_requests", "mutation_requests"} and table not in source_tables:
                     counts[table] = 0
                     continue
                 source_rows = source.execute(f"SELECT * FROM {table}")

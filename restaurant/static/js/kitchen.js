@@ -44,7 +44,7 @@ function mountKitchenWorkspace(workspace) {
           '</strong><span class="kitchen-item-stage">' + esc(status) + '</span>' +
           (line.note ? '<p class="kitchen-note"><b>Note</b> ' + esc(line.note) + '</p>' : '') + '</div>' +
           (action ? '<button type="button" class="kitchen-action" data-kitchen-item="' + line.order_item_id +
-            '" data-kitchen-step="' + action + '">' + label + '</button>' : '') + '</li>').join("");
+            '" data-kitchen-version="' + line.order_version + '" data-kitchen-step="' + action + '">' + label + '</button>' : '') + '</li>').join("");
         const table = tableLabel(lines[0].table_id);
         const orderLabel = (lines[0].order_type === "preorder" ? "Preorder #" : "Order #") + order;
         const metadata = [table && orderLabel, queueAge(lines)].filter(Boolean).join(" · ");
@@ -135,7 +135,7 @@ function mountKitchenWorkspace(workspace) {
       await refresh();
       return;
     }
-    const { kitchenItem, kitchenStep, kitchenDish, kitchenNext } = button.dataset;
+    const { kitchenItem, kitchenStep, kitchenVersion, kitchenDish, kitchenNext } = button.dataset;
     if (!kitchenItem && !kitchenDish) return;
     pending = true;
     ++revision;
@@ -145,7 +145,8 @@ function mountKitchenWorkspace(workspace) {
     refreshError = false;
     feedback.textContent = "";
     try {
-      if (kitchenItem) await restaurantRequest("/kitchen/items/" + kitchenItem + "/" + kitchenStep, {});
+      if (kitchenItem) await restaurantRequest("/kitchen/items/" + kitchenItem + "/" + kitchenStep,
+        kitchenStep === "start" ? { expected_version: kitchenVersion } : {});
       else await restaurantRequest("/kitchen/menu/" + kitchenDish + "/availability", { is_available: kitchenNext });
       const refreshed = await refresh();
       if (!refreshed || requestedView !== view) return;

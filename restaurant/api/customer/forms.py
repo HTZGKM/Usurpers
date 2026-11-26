@@ -56,18 +56,26 @@ class OrderItemForm(Form):
     )
     quantity = IntegerField(
         "Quantity",
-        validators=[InputRequired("Enter a quantity."), NumberRange(min=1)],
+        validators=[InputRequired("Enter a quantity."), NumberRange(min=1, max=99)],
     )
+    quoted_unit_cents = IntegerField("Displayed unit price", validators=[Optional(), NumberRange(min=0, max=10_000_000)])
     note = StringField("Notes", default="", validators=[Optional(), Length(max=200)])
 
 
 class OrderForm(FlaskForm):
     items = FieldList(FormField(OrderItemForm))
+    idempotency_key = StringField("Order submission ID", validators=[Optional(), Length(max=80)])
     submit = SubmitField("Place Order")
 
     def validate_items(self, items):
         if not items.entries:
             raise ValidationError("Select at least one dish.")
+        if len(items.entries) > 50:
+            raise ValidationError("An order can contain up to 50 dish lines.")
+
+
+class OrderEditForm(OrderForm):
+    expected_version = IntegerField("Order version", validators=[InputRequired(), NumberRange(min=1)])
 
 
 class PaymentForm(FlaskForm):
@@ -82,7 +90,7 @@ class VisitPaymentForm(FlaskForm):
 class PreorderForm(OrderForm):
     estimated_ready_at = StringField(
         "Requested preparation time",
-        validators=[InputRequired(), Length(max=32), iso_date_time],
+        validators=[Optional(), Length(max=32), iso_date_time],
     )
 
 

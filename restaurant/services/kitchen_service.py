@@ -32,7 +32,7 @@ def _queue_items(status, sort):
     params = (status,) if status else ()
     with get_connection() as db:
         rows = db.execute(f"""
-            SELECT q.*, i.note, i.status AS item_status, o.table_id, o.order_type
+            SELECT q.*, i.note, i.status AS item_status, o.table_id, o.order_type, o.version AS order_version
             FROM kitchen_queue q
             JOIN order_items i USING (order_item_id)
             JOIN orders o ON o.order_id=q.order_id
@@ -42,10 +42,16 @@ def _queue_items(status, sort):
         return [dict(row) for row in rows]
 
 
-def _transition(item_id, expected, target):
+def _transition(item_id, expected, target, expected_version=None):
     iid=positive_int(item_id,"order_item_id")
     with get_connection() as db:
         begin_write(db)
+        if expected_version is not None:
+            order = db.execute("""SELECT o.version FROM orders o JOIN order_items i USING(order_id)
+                                  WHERE i.order_item_id=?""", (iid,)).fetchone()
+            if order and order["version"] != expected_version:
+                raise ServiceError("The order changed. Check the updated dish and quantity before starting.",
+                                   409, code="ORDER_CHANGED")
         cur=db.execute("""UPDATE order_items SET status=? WHERE order_item_id=? AND status=?
             AND EXISTS (SELECT 1 FROM kitchen_queue WHERE order_item_id=? AND status=?)""",
             (target,iid,expected,iid,expected))
@@ -64,7 +70,8 @@ def _transition(item_id, expected, target):
         raise ServiceError(f"不能从 {row['status']} 转为 {target}。",409,"status","STATE_CONFLICT")
 
 
-def start_item(order_item_id): return _transition(order_item_id,"waiting","cooking")
+def start_item(order_item_id, expected_version=None):
+    return _transition(order_item_id, "waiting", "cooking", expected_version)
 def finish_item(order_item_id): return _transition(order_item_id,"cooking","ready")
 def serve_item(order_item_id): return _transition(order_item_id,"ready","served")
 def check_order_complete(order_id):

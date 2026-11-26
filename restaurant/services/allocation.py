@@ -7,6 +7,7 @@ from psycopg.errors import ExclusionViolation, UniqueViolation
 
 from restaurant.business_time import RESTAURANT_TIME
 from restaurant.db.database import begin_read, begin_write, get_connection, insert_id, using_postgres
+from . import submission
 from .booking_service import TIME_SLOT_MAP, booking_conflict
 from .common import ServiceError, clock_time, phone_number, positive_int, required_text, valid_date
 
@@ -189,6 +190,17 @@ def _call_tables(db, table_ids, now):
     return calls
 
 
+def _cancel_unseated_preorders(db, booking_id, now):
+    orders = db.execute("""UPDATE orders SET status='cancelled'
+        WHERE booking_id=? AND visit_id IS NULL AND order_type='preorder' AND status='active'
+        AND payment_status='unpaid' AND NOT EXISTS(SELECT 1 FROM order_items i WHERE i.order_id=orders.order_id
+            AND i.status IN ('cooking','ready','served')) RETURNING order_id""", (booking_id,)).fetchall()
+    for order in orders:
+        db.execute("UPDATE order_items SET status='cancelled' WHERE order_id=? AND status='waiting'", (order[0],))
+        db.execute("""UPDATE kitchen_queue SET status='cancelled',completed_at=(?::timestamptz AT TIME ZONE 'UTC')
+            WHERE order_id=? AND status='waiting'""", (now, order[0]))
+
+
 def _reconcile(db, now):
     released = set()
     for row in db.execute("""UPDATE bookings SET status='no_show',no_show_at=?,ready_at=NULL,ready_table_id=NULL,
@@ -196,6 +208,7 @@ def _reconcile(db, now):
         WHERE status='booked' AND checked_in_at IS NULL AND arrival_deadline < ?
         RETURNING booking_id,table_id""", (now, now)).fetchall():
         holds = db.execute("DELETE FROM table_holds WHERE booking_id=? RETURNING table_id", (row["booking_id"],)).fetchall()
+        _cancel_unseated_preorders(db, row["booking_id"], now)
         released.update(hold["table_id"] for hold in holds)
         released.add(row["table_id"])
     for row in db.execute("""UPDATE waiting_queue SET status='expired',ended_at=?
@@ -257,11 +270,11 @@ def _schedule_start(row):
     return timestamp(row["arrival_at"]) or at_local(row["booking_date"], time.fromisoformat(row["time_slot"][:5]))
 
 
-def preorder_time(db, booking, requested_at):
+def preorder_time(db, booking):
     now = database_now(db)
     if _visible(booking, now)["phase"] not in ("reserved", "ready", "waiting_to_seat"):
         raise ServiceError("This reservation is no longer open for preorders.", 409, code="STATE_CONFLICT")
-    return max(timestamp(requested_at), _schedule_start(booking)).astimezone(timezone.utc).replace(tzinfo=None).isoformat(sep=" ")
+    return _schedule_start(booking).astimezone(timezone.utc).replace(tzinfo=None).isoformat(sep=" ")
 
 
 def _visible(row, now):
@@ -324,12 +337,19 @@ def create_booking(fields, user):
     size = positive_int(fields.get("party_size"), "party_size")
     table_id = positive_int(fields["table_id"], "table_id") if fields.get("table_id") else None
     arrival = fields.get("arrival_time")
-    request_key = required_text(fields.get("idempotency_key"), "idempotency_key", limit=80) if online else None
+    raw_key = fields.get("idempotency_key")
+    request_key = required_text(raw_key, "idempotency_key", limit=80) if online or raw_key else None
     request_fields = json.dumps([date, arrival or _legacy_slot(fields), size, table_id], separators=(",", ":"))
     name = user["name"] if online else required_text(fields.get("contact_name"), "contact_name", limit=100)
     phone = owner if online else phone_number(fields.get("phone_number"))
+    actor = user["role"] + ":" + user["username"]
+    staff_payload = [date, arrival, size, table_id, name, phone]
 
     def create(db, now):
+        if not online:
+            recovered = submission.replay(db, "staff-booking", actor, request_key, staff_payload)
+            if recovered is not None:
+                return recovered
         previous = db.execute("""SELECT * FROM booking_create_requests
             WHERE customer_phone=? AND request_key=?""", (owner, request_key)).fetchone() if online else None
         if previous:
@@ -347,10 +367,11 @@ def create_booking(fields, user):
             VALUES(?,?,?,?,?,?,?,?,?)""", (name, phone, customer[0] if customer else None, date,
             f"{arrival}-{end:%H:%M}", size, selected, start, deadline), "booking_id")
         _add_hold(db, selected, "reservation", start, end, booking_id=booking_id)
-        if request_key:
+        if online and request_key:
             db.execute("""INSERT INTO booking_create_requests(customer_phone,request_key,request_fields,booking_id,initial_table_id)
                 VALUES(?,?,?,?,?)""", (owner, request_key, request_fields, booking_id, selected))
-        return dict(booking_id=booking_id, table_id=selected, status="booked", version=1)
+        result = dict(booking_id=booking_id, table_id=selected, status="booked", version=1)
+        return result if online else submission.record(db, "staff-booking", actor, request_key, staff_payload, result)
 
     return _run(create)
 
@@ -377,12 +398,9 @@ def update_booking(booking_id, fields, owner=None):
         _add_hold(db, selected, "reservation", start, end, booking_id=booking_id)
         db.execute("""UPDATE orders SET table_id=? WHERE booking_id=? AND order_type='preorder'
             AND visit_id IS NULL AND status='active'""", (selected, booking_id))
-        delta = (start - _schedule_start(old)).total_seconds()
-        if delta:
-            db.execute("""UPDATE order_items SET estimated_ready_at=COALESCE(
-                estimated_ready_at + make_interval(secs => ?::double precision), (?::timestamptz AT TIME ZONE 'UTC'))
-                WHERE status='waiting' AND order_id IN (SELECT order_id FROM orders WHERE booking_id=?
-                    AND order_type='preorder' AND visit_id IS NULL AND status='active')""", (delta, start, booking_id))
+        db.execute("""UPDATE order_items SET estimated_ready_at=(?::timestamptz AT TIME ZONE 'UTC')
+            WHERE status='waiting' AND order_id IN (SELECT order_id FROM orders WHERE booking_id=?
+                AND order_type='preorder' AND visit_id IS NULL AND status='active')""", (start, booking_id))
         _call_tables(db, (row["table_id"] for row in released), now)
         return _visible(_booking(db, booking_id), now)
 
@@ -401,11 +419,7 @@ def cancel_booking(booking_id, owner=None):
         db.execute("""UPDATE bookings SET status='cancelled',version=version+1,ready_at=NULL,ready_table_id=NULL,
             offered_table_id=NULL,offer_expires_at=NULL WHERE booking_id=?""", (booking_id,))
         hold = db.execute("DELETE FROM table_holds WHERE booking_id=? RETURNING table_id", (booking_id,)).fetchall()
-        preorder = "SELECT order_id FROM orders WHERE booking_id=? AND order_type='preorder' AND status='active'"
-        db.execute("UPDATE order_items SET status='cancelled' WHERE order_id IN (" + preorder + ") AND status='waiting'", (booking_id,))
-        db.execute("""UPDATE kitchen_queue SET status='cancelled',completed_at=(?::timestamptz AT TIME ZONE 'UTC')
-            WHERE order_id IN (""" + preorder + ") AND status='waiting'", (now, booking_id))
-        db.execute("UPDATE orders SET status='cancelled' WHERE order_id IN (" + preorder + ")", (booking_id,))
+        _cancel_unseated_preorders(db, booking_id, now)
         _call_tables(db, (entry["table_id"] for entry in hold), now)
         return dict(booking_id=booking_id, status="cancelled")
 

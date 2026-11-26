@@ -57,12 +57,42 @@ async function restaurantSeating() {
   return JSON.parse(payload.textContent);
 }
 
+const pendingRestaurantSubmissions = new Map();
+
+async function restaurantSubmitOnce(path, fields) {
+  const actor = JSON.parse(document.querySelector("#guest-data").textContent).account;
+  const scope = "double-portion-submit:" + actor.role + ":" + actor.username + ":" + path + ":" + (fields.visit_id ?? "");
+  const body = Object.fromEntries(Object.entries(fields).sort(([left], [right]) => left.localeCompare(right)));
+  let pending = pendingRestaurantSubmissions.get(scope);
+  try { pending ??= JSON.parse(sessionStorage.getItem(scope)); } catch {}
+  const recoveredPrevious = Boolean(pending && JSON.stringify(pending.body) !== JSON.stringify(body));
+  if (recoveredPrevious && !window.confirm("A previous submission is unconfirmed. Retry its original details before sending this draft?")) {
+    throw new Error("The previous submission is still unconfirmed. Your current draft is available to review.");
+  }
+  pending ??= { body, key: crypto.randomUUID() };
+  pendingRestaurantSubmissions.set(scope, pending);
+  try { sessionStorage.setItem(scope, JSON.stringify(pending)); } catch {}
+  function clear() {
+    pendingRestaurantSubmissions.delete(scope);
+    try { sessionStorage.removeItem(scope); } catch {}
+  }
+  try {
+    const result = await restaurantRequest(path, { ...pending.body, idempotency_key: pending.key });
+    clear();
+    return { ...result, recoveredPrevious };
+  } catch (error) {
+    if ([400, 404, 409, 422].includes(error.status)) clear();
+    throw error;
+  }
+}
+
 function restaurantOrderFields(lines) {
   const fields = {};
   lines.forEach((line, index) => {
     fields[`items-${index}-dish_id`] = line.dishId;
     fields[`items-${index}-quantity`] = line.quantity;
     fields[`items-${index}-note`] = line.note;
+    if (Number.isFinite(line.unitPrice)) fields[`items-${index}-quoted_unit_cents`] = Math.round(line.unitPrice * 100);
   });
   return fields;
 }
@@ -106,7 +136,8 @@ function restaurantOrderEditor(order, path, menuItems, onSaved) {
   dialog.setAttribute("aria-label", "Edit order #" + order.order_id);
   dialog.innerHTML = '<h2>Edit order #' + order.order_id + '</h2>' +
     '<form><div class="restaurant-order-fields"></div>' +
-    '<p role="alert"></p><div class="restaurant-order-actions">' +
+    '<p role="alert"></p><p data-latest-order></p><div class="restaurant-order-actions">' +
+    '<button type="button" class="secondary" data-refresh-order-editor hidden>Load latest order</button>' +
     '<button type="button" class="secondary" data-append-line>Add dish</button>' +
     '<button type="button" class="secondary" data-close-order-editor>Discard</button>' +
     '<button type="submit" class="primary">Save changes</button></div></form>';
@@ -114,6 +145,26 @@ function restaurantOrderEditor(order, path, menuItems, onSaved) {
   const container = form.querySelector(".restaurant-order-fields");
   const feedback = form.querySelector("[role=alert]");
   const save = form.querySelector("[type=submit]");
+  const reload = form.querySelector("[data-refresh-order-editor]");
+  let expectedVersion = order.version;
+  let needsReload = false;
+  reload.onclick = async () => {
+    reload.disabled = true;
+    try {
+      const { order: current } = await restaurantRequest(path.replace(/\/edit$/, ""));
+      form.querySelector("[data-latest-order]").textContent = "Latest order · " + current.items.filter(item => item.status !== "cancelled")
+        .map(item => item.quantity + " × " + item.dish_name + (item.note ? " (" + item.note + ")" : "")).join(", ");
+      expectedVersion = current.version;
+      needsReload = !restaurantCanEditOrder(current);
+      feedback.textContent = needsReload ? "This order can no longer be edited." : "Review the latest order before applying your draft.";
+      reload.hidden = true;
+      save.disabled = needsReload;
+    } catch (error) {
+      feedback.textContent = error.message;
+    } finally {
+      reload.disabled = false;
+    }
+  };
   const allowed = new Map(menuItems.map(item => [item.dish_id, item.dish_name]));
   function appendLine(item = {}) {
     const row = document.createElement("fieldset");
@@ -158,13 +209,18 @@ function restaurantOrderEditor(order, path, menuItems, onSaved) {
     save.disabled = true;
     feedback.textContent = "";
     try {
-      await restaurantRequest(path, restaurantOrderFields(lines));
+      await restaurantRequest(path, { ...restaurantOrderFields(lines), expected_version: expectedVersion });
       dialog.close();
       await onSaved();
     } catch (error) {
       feedback.textContent = error.message;
+      if (error.code === "ORDER_CHANGED") {
+        needsReload = true;
+        reload.hidden = false;
+        reload.focus();
+      }
     } finally {
-      save.disabled = false;
+      save.disabled = needsReload;
     }
   });
   dialog.addEventListener("cancel", event => {

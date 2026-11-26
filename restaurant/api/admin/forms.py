@@ -154,6 +154,7 @@ class IngredientForm(FlaskForm):
 
 
 class StockAdjustmentForm(FlaskForm):
+    idempotency_key = StringField("Stock adjustment submission ID", validators=[Optional(), Length(max=80)])
     quantity = DecimalField(
         "Quantity change", places=None, validators=[InputRequired(), nonzero_number]
     )

@@ -1,4 +1,5 @@
-from restaurant.db.database import begin_write, get_connection, insert_id, using_postgres
+from restaurant.db.database import begin_read, begin_write, get_connection, insert_id, using_postgres
+from . import submission
 from .common import ServiceError, date_time, order_items, positive_int
 
 
@@ -10,7 +11,7 @@ def refresh_order_status(db, order_id):
     if counts["cancelled"]==counts["total"]: status="cancelled"
     elif counts["served"]+counts["cancelled"]==counts["total"]: status="completed"
     else: status="active"
-    db.execute("UPDATE orders SET status=? WHERE order_id=?",(status,order_id))
+    db.execute("UPDATE orders SET status=?,version=version+1 WHERE order_id=?",(status,order_id))
 
 
 def _order_total(db, order_id):
@@ -19,11 +20,32 @@ def _order_total(db, order_id):
     return round(float(row[0]), 2)
 
 
-def create_dine_in_order(visit_id, items, customer_phone=None):
+def _sale_price(db, line):
+    dish = db.execute("SELECT price FROM dishes WHERE dish_id=? AND is_available=1 AND is_archived=0",
+                      (line["dish_id"],)).fetchone()
+    if dish is None:
+        raise ServiceError("A dish is no longer available. Review your order.", 409, "items", "DISH_UNAVAILABLE")
+    price = float(dish["price"])
+    if "quoted_unit_cents" in line and round(price * 100) != line["quoted_unit_cents"]:
+        raise ServiceError("A dish price changed. Review the updated amount before placing the order.",
+                           409, "items", "PRICE_CHANGED")
+    return price
+
+
+def _check_order_total(total):
+    if total > 1_000_000:
+        raise ServiceError("The order exceeds the maximum amount of ¥1,000,000.", field="items")
+
+
+def create_dine_in_order(visit_id, items, customer_phone=None, *, request_key=None, actor=None):
     visit = positive_int(visit_id, "visit_id")
     lines = order_items(items)
     with get_connection() as db:
         begin_write(db)
+        identity, payload = actor or customer_phone, [visit, lines]
+        previous = submission.replay(db, "dine-in", identity, request_key, payload)
+        if previous is not None:
+            return previous
         session = db.execute("SELECT * FROM dining_sessions WHERE visit_id=? AND status='seated'", (visit,)).fetchone()
         if not session: raise ServiceError("堂食记录不存在或已结束。", 409, "visit_id")
         if customer_phone and session["customer_phone"] != customer_phone: raise ServiceError("无权为该堂食记录下单。",403,code="FORBIDDEN")
@@ -31,39 +53,43 @@ def create_dine_in_order(visit_id, items, customer_phone=None):
                              (visit, customer_phone or session["customer_phone"],session["contact_name"],session["phone_number"],session["table_id"]), "order_id")
         total = 0
         for line in lines:
-            dish = db.execute("SELECT price FROM dishes WHERE dish_id=? AND is_available=1 AND is_archived=0",(line["dish_id"],)).fetchone()
-            if not dish: raise ServiceError(f"菜品 {line['dish_id']} 不存在或当前停售。",409,"items")
-            price = float(dish["price"])
+            price = _sale_price(db, line)
             line_total = round(price * line["quantity"], 2)
             total += line_total
             item_id = insert_id(db, "INSERT INTO order_items(order_id,dish_id,quantity,unit_price,total_price,note) VALUES(?,?,?,?,?,?)",
                                 (order_id,line["dish_id"],line["quantity"],price,line_total,line["note"]), "order_item_id")
             db.execute("INSERT INTO kitchen_queue(order_id,order_item_id,dish_id,quantity) VALUES(?,?,?,?)",(order_id,item_id,line["dish_id"],line["quantity"]))
-        return {"order_id": order_id, "total_amount": round(total,2), "status":"active", "payment_status":"unpaid"}
+        _check_order_total(total)
+        result = {"order_id": order_id, "total_amount": round(total,2), "status":"active", "payment_status":"unpaid"}
+        return submission.record(db, "dine-in", identity, request_key, payload, result)
 
 
-def create_preorder(booking_id, customer_phone, items, estimated_ready_at):
-    bid=positive_int(booking_id,"booking_id"); ready=date_time(estimated_ready_at)
+def create_preorder(booking_id, customer_phone, items, estimated_ready_at, *, request_key=None):
+    bid=positive_int(booking_id,"booking_id")
     lines=order_items(items)
     with get_connection() as db:
         begin_write(db)
+        payload = [bid, lines, estimated_ready_at]
+        previous = submission.replay(db, "preorder", customer_phone, request_key, payload)
+        if previous is not None:
+            return previous
         booking=db.execute("SELECT * FROM bookings WHERE booking_id=? AND customer_phone=? AND status='booked'",(bid,customer_phone)).fetchone()
         if not booking: raise ServiceError("预订不存在、已取消或不属于当前顾客。",404)
         from . import allocation
 
-        if allocation.enabled(db):
-            ready = allocation.preorder_time(db, booking, ready)
+        ready = allocation.preorder_time(db, booking) if allocation.enabled(db) else date_time(estimated_ready_at)
         oid = insert_id(db, "INSERT INTO orders(booking_id,customer_phone,contact_name,phone_number,table_id,order_type) VALUES(?,?,?,?,?,'preorder')",
                         (bid,customer_phone,booking["contact_name"],booking["phone_number"],booking["table_id"]), "order_id")
         total = 0
         for item in lines:
-            dish=db.execute("SELECT price FROM dishes WHERE dish_id=? AND is_available=1 AND is_archived=0",(item["dish_id"],)).fetchone()
-            if not dish: raise ServiceError(f"菜品 {item['dish_id']} 不存在或停售。",409,"items","RESOURCE_CONFLICT")
-            price=float(dish["price"])
+            price = _sale_price(db, item)
             item_total = round(price * item["quantity"], 2)
             total += item_total
             db.execute("INSERT INTO order_items(order_id,dish_id,quantity,unit_price,total_price,note,estimated_ready_at) VALUES(?,?,?,?,?,?,?)",(oid,item["dish_id"],item["quantity"],price,item_total,item["note"],ready))
-        return {"order_id":oid,"total_amount":round(total,2),"status":"active","payment_status":"unpaid","estimated_ready_at":ready,"kitchen_queued":False}
+        _check_order_total(total)
+        result = {"order_id":oid,"total_amount":round(total,2),"status":"active","payment_status":"unpaid",
+                  "estimated_ready_at":ready,"kitchen_queued":False}
+        return submission.record(db, "preorder", customer_phone, request_key, payload, result)
 
 
 def calculate_total(order_id):
@@ -149,6 +175,7 @@ def _order_detail_items(db, order_id):
 def get_order(order_id, customer_phone=None):
     oid=positive_int(order_id,"order_id")
     with get_connection() as db:
+        begin_read(db)
         query="SELECT * FROM orders WHERE order_id=?"; args=[oid]
         if customer_phone: query += " AND customer_phone=?"; args.append(customer_phone)
         order=db.execute(query,args).fetchone()
@@ -198,7 +225,7 @@ def cancel_order(order_id, customer_phone=None):
         return {"order_id":oid,"status":"cancelled"}
 
 
-def update_order(order_id, items, customer_phone=None):
+def update_order(order_id, items, customer_phone=None, *, expected_version=None):
     oid=positive_int(order_id,"order_id"); lines=order_items(items)
     with get_connection() as db:
         begin_write(db)
@@ -206,6 +233,9 @@ def update_order(order_id, items, customer_phone=None):
         if customer_phone: query+=" AND customer_phone=?"; args.append(customer_phone)
         order=db.execute(query,args).fetchone()
         if not order: raise ServiceError("订单不存在。",404)
+        if expected_version is not None and order["version"] != expected_version:
+            raise ServiceError("This order changed. Review the latest order before saving your draft.",
+                               409, code="ORDER_CHANGED")
         if order["status"]!="active" or order["payment_status"]!="unpaid": raise ServiceError("当前订单状态不可修改。",409)
         if db.execute("SELECT 1 FROM order_items WHERE order_id=? AND status<>'waiting' AND status<>'cancelled'",(oid,)).fetchone(): raise ServiceError("菜品已开始制作，订单不能修改。",409)
         # Validate every new dish before mutating any existing line.
@@ -257,5 +287,8 @@ def update_order(order_id, items, customer_phone=None):
                           WHERE order_item_id=? AND status='waiting'""", (item_id,))
         result = dict(order)
         result["items"] = _order_detail_items(db, oid)
-        result["total_amount"]=_order_total(db, oid)
+        result["total_amount"] = _order_total(db, oid)
+        _check_order_total(result["total_amount"])
+        db.execute("UPDATE orders SET version=version+1 WHERE order_id=?", (oid,))
+        result["version"] += 1
         return result

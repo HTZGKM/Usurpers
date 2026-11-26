@@ -256,6 +256,7 @@ def admin_adjust_ingredient(ingredient_id):
                 data.get("quantity"),
                 data.get("movement_type", "adjustment"),
                 data.get("reference"),
+                request_key=data.get("idempotency_key"), actor=session["user"]["username"],
             ),
         }
     )

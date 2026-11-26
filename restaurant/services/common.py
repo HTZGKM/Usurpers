@@ -56,8 +56,8 @@ def money(value: Any, field: str = "price") -> Decimal:
         amount = Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError) as exc:
         raise ServiceError("金额格式不正确。", field=field) from exc
-    if not amount.is_finite() or amount <= 0 or amount.as_tuple().exponent < -2:
-        raise ServiceError("金额必须大于 0 且最多两位小数。", field=field)
+    if not amount.is_finite() or not 0 < amount <= 100_000 or amount.as_tuple().exponent < -2:
+        raise ServiceError("Enter an amount from 0.01 to 100,000 with at most two decimal places.", field=field)
     return amount.quantize(Decimal("0.01"))
 
 
@@ -93,14 +93,24 @@ def phone_number(value: Any, field: str = "phone_number") -> str:
 def order_items(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list) or not value:
         raise ServiceError("订单至少需要一道菜。", field="items")
+    if len(value) > 50:
+        raise ServiceError("An order can contain up to 50 dish lines.", field="items")
     validated = []
     for index, item in enumerate(value):
         if not isinstance(item, dict):
             raise ServiceError("菜品明细格式不正确。", field=f"items[{index}]")
         dish_id = positive_int(item.get("dish_id"), f"items[{index}].dish_id")
         quantity = positive_int(item.get("quantity"), f"items[{index}].quantity")
+        if quantity > 99:
+            raise ServiceError("A dish line can contain up to 99 portions.", field=f"items[{index}].quantity")
         note = item.get("note", item.get("remarks", ""))
         if not isinstance(note, str) or len(note) > 200:
             raise ServiceError("备注不能超过200个字符。", field=f"items[{index}].note")
-        validated.append({"dish_id": dish_id, "quantity": quantity, "note": note.strip()})
+        line = {"dish_id": dish_id, "quantity": quantity, "note": note.strip()}
+        quoted = item.get("quoted_unit_cents")
+        if quoted is not None:
+            if not isinstance(quoted, int) or not 0 <= quoted <= 10_000_000:
+                raise ServiceError("Invalid dish price quote.", field=f"items[{index}].quoted_unit_cents")
+            line["quoted_unit_cents"] = quoted
+        validated.append(line)
     return validated
