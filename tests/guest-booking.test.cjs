@@ -90,3 +90,32 @@ test('a booking race tells the guest to choose another table', async () => {
     status: 409, code: 'TABLE_UNAVAILABLE', message: 'That table was just reserved. Choose another table.',
   });
 });
+
+test('arrival-time buttons group lunch and dinner and stay in place during table refreshes', () => {
+  function timeGroup(name) {
+    const grid = { innerHTML: '' };
+    return { dataset: { arrivalGroup: name }, hidden: true, querySelector: () => grid, grid };
+  }
+  const lunch = timeGroup('lunch');
+  const dinner = timeGroup('dinner');
+  const picker = { dataset: {}, contains: () => false, querySelectorAll: () => [lunch, dinner] };
+  const context = vm.createContext({ document: { activeElement: null }, picker });
+  vm.runInContext([
+    take(guest, 'const esc =', 'const pair ='),
+    take(guest, 'function renderArrivalTimes(', 'function syncDraft('),
+  ].join('\n'), context);
+  const times = ['11:45', '12:00', '17:00', '17:15'];
+  context.renderArrivalTimes(picker, times);
+  assert.equal(lunch.hidden, false);
+  assert.equal(dinner.hidden, false);
+  assert.match(lunch.grid.innerHTML, /type="button"[^>]*data-action="time:11:45"[^>]*aria-pressed="false"/);
+  assert.doesNotMatch(lunch.grid.innerHTML, /17:00/);
+  assert.match(dinner.grid.innerHTML, /17:00.*17:15/);
+  dinner.grid.innerHTML = dinner.grid.innerHTML.replace('aria-pressed="false"', 'aria-pressed="true"');
+  context.renderArrivalTimes(picker, times);
+  assert.match(dinner.grid.innerHTML, /time:17:00"[^>]*aria-pressed="true"/);
+  context.renderArrivalTimes(picker, ['17:15']);
+  assert.equal(lunch.hidden, true);
+  assert.equal(dinner.hidden, false);
+  assert.doesNotMatch(dinner.grid.innerHTML, /17:00/);
+});
