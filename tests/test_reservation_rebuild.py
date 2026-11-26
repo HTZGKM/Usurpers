@@ -71,6 +71,7 @@ class ReservationRebuildTests(unittest.TestCase):
             booking = self.reserve(guest).json["booking"]["booking_id"]
         path = f"{DESK}/bookings/{booking}"
         order = self.send(guest, f"/bookings/{booking}/preorders", {
+            "idempotency_key": "fixture-preorder",
             "estimated_ready_at": DAY + "T19:00:00+08:00", "items-0-dish_id": 1, "items-0-quantity": 1,
         })
         self.assertEqual(order.status_code, 201)
@@ -123,6 +124,7 @@ class ReservationRebuildTests(unittest.TestCase):
         with clock(18):
             booking = self.reserve(guest).json["booking"]["booking_id"]
             response = self.send(guest, f"/bookings/{booking}/preorders", {
+                "idempotency_key": "fixture-missed-preorder",
                 "estimated_ready_at": DAY + "T20:00:00+08:00", "items-0-dish_id": 1, "items-0-quantity": 1,
             })
         self.assertEqual(response.status_code, 201)
@@ -132,7 +134,8 @@ class ReservationRebuildTests(unittest.TestCase):
             self.send(desk, DESK + "/snapshot", method="GET")
             self.assertEqual(self.send(guest, f"/orders/{order['order_id']}", method="GET").json["order"]["status"], "active")
         with clock(19, 10, 1):
-            self.send(desk, DESK + "/snapshot", method="GET")
+            history = self.send(guest, "/orders", method="GET").json["orders"]
+            self.assertEqual(history[0]["status"], "cancelled")
         expired = self.send(guest, f"/orders/{order['order_id']}", method="GET").json["order"]
         self.assertEqual((expired["status"], expired["total_amount"], expired["items"][0]["status"]), ("cancelled", 0, "cancelled"))
 

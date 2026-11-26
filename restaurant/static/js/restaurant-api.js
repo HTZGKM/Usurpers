@@ -166,6 +166,8 @@ function restaurantOrderEditor(order, path, menuItems, onSaved) {
     }
   };
   const allowed = new Map(menuItems.map(item => [item.dish_id, item.dish_name]));
+  const prices = new Map(menuItems.map(item => [item.dish_id, Number(item.price)]));
+  const choiceLabel = (id, name) => Number.isFinite(prices.get(id)) ? name + " · ¥" + prices.get(id).toFixed(2) : name;
   function appendLine(item = {}) {
     const row = document.createElement("fieldset");
     row.innerHTML = '<label>Dish<select name="dish" required></select></label>' +
@@ -176,7 +178,7 @@ function restaurantOrderEditor(order, path, menuItems, onSaved) {
     const choices = new Map(allowed);
     if (item.dish_id && !choices.has(item.dish_id)) choices.set(item.dish_id, item.dish_name + " (unavailable)");
     for (const [id, name] of choices) {
-      dish.add(new Option(name, id, false, id === item.dish_id));
+      dish.add(new Option(choiceLabel(id, name), id, false, id === item.dish_id));
     }
     row.querySelector('[name="qty"]').value = item.quantity ?? 1;
     row.querySelector('[name="note"]').value = item.note ?? "";
@@ -201,6 +203,7 @@ function restaurantOrderEditor(order, path, menuItems, onSaved) {
       dishId: row.querySelector("select").value,
       quantity: row.querySelector('[name="qty"]').value,
       note: row.querySelector('[name="note"]').value,
+      unitPrice: prices.get(Number(row.querySelector("select").value)),
     }));
     if (!lines.length || lines.some(line => !allowed.has(Number(line.dishId)))) {
       feedback.textContent = "Keep at least one dish and remove or replace any unavailable dishes.";
@@ -218,6 +221,17 @@ function restaurantOrderEditor(order, path, menuItems, onSaved) {
         needsReload = true;
         reload.hidden = false;
         reload.focus();
+      } else if (error.code === "PRICE_CHANGED") {
+        try {
+          const { items } = await restaurantRequest(path.startsWith("/frontdesk/") ? "/frontdesk/menu" : "/menu");
+          for (const item of items) prices.set(item.dish_id, Number(item.price));
+          for (const option of container.querySelectorAll("option")) {
+            const id = Number(option.value);
+            if (allowed.has(id)) option.textContent = choiceLabel(id, allowed.get(id));
+          }
+        } catch {
+          feedback.textContent += " Reload the menu to check the current price.";
+        }
       }
     } finally {
       save.disabled = needsReload;

@@ -1030,7 +1030,7 @@ function renderSubmittedOrder(body, order) {
     }
     if (action === "edit-submitted-order") {
       const available = dishes.filter(dish => !dish.sold)
-        .map(dish => ({ dish_id: dish.id, dish_name: dish.name }));
+        .map(dish => ({ dish_id: dish.id, dish_name: dish.name, price: dish.price }));
       return restaurantOrderEditor(order, base + "/edit", available, async () => {
         customerFeedback = "Order updated.";
         resumeOrderHistory = order.order_id;

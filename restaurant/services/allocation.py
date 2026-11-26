@@ -837,6 +837,18 @@ def customer_bookings(owner, booking_id=None):
     return dict(bookings=rows, server_now=now.isoformat(), visit=dict(visit) if visit else None)
 
 
+def reconcile_customer_order_deadlines(db, owner):
+    if not enabled(db):
+        return
+    deadlines = db.execute("""SELECT b.arrival_deadline FROM orders o JOIN bookings b USING(booking_id)
+        WHERE o.customer_phone=? AND o.visit_id IS NULL AND o.order_type='preorder' AND o.status='active'
+        AND b.status='booked' AND b.checked_in_at IS NULL AND b.arrival_deadline IS NOT NULL""", (owner,)).fetchall()
+    if deadlines:
+        now = database_now(db)
+        if any(timestamp(row[0]) < now for row in deadlines):
+            _run(lambda connection, tick: None, write=False)
+
+
 def table_projection(db, now):
     tables = []
     cutoff = service_cutoff(now)

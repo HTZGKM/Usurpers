@@ -64,7 +64,6 @@ class OrderItemForm(Form):
 
 class OrderForm(FlaskForm):
     items = FieldList(FormField(OrderItemForm))
-    idempotency_key = StringField("Order submission ID", validators=[Optional(), Length(max=80)])
     submit = SubmitField("Place Order")
 
     def validate_items(self, items):
@@ -72,6 +71,10 @@ class OrderForm(FlaskForm):
             raise ValidationError("Select at least one dish.")
         if len(items.entries) > 50:
             raise ValidationError("An order can contain up to 50 dish lines.")
+
+
+class OrderCreateForm(OrderForm):
+    idempotency_key = StringField("Order submission ID", validators=[InputRequired("Refresh before submitting this order."), Length(max=80)])
 
 
 class OrderEditForm(OrderForm):
@@ -87,7 +90,7 @@ class VisitPaymentForm(FlaskForm):
     total_cents = IntegerField("Bill amount", validators=[InputRequired(), NumberRange(min=0)])
 
 
-class PreorderForm(OrderForm):
+class PreorderForm(OrderCreateForm):
     estimated_ready_at = StringField(
         "Requested preparation time",
         validators=[Optional(), Length(max=32), iso_date_time],

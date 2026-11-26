@@ -10,7 +10,7 @@ from wtforms.validators import (
 )
 from restaurant.forms import monetary_amount
 
-from ..customer.forms import BookingEditForm, BookingForm, OrderForm
+from ..customer.forms import BookingEditForm, BookingForm, OrderCreateForm
 
 
 class StaffBookingForm(BookingForm):
@@ -64,7 +64,7 @@ class WalkInForm(FlaskForm):
     submit = SubmitField("Register Walk-In")
 
 
-class StaffOrderForm(OrderForm):
+class StaffOrderForm(OrderCreateForm):
     visit_id = IntegerField(
         "Visit ID",
         validators=[InputRequired("Select a visit."), NumberRange(min=1)],

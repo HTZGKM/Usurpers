@@ -132,7 +132,8 @@ class ServiceAndApiTests(RestaurantTestCase):
         desk = self.signed_in("frontdesk@shuangfen.local")
         with get_connection() as db:
             visit = db.execute("INSERT INTO dining_sessions(party_size,table_id) VALUES(2,6) RETURNING visit_id").fetchone()[0]
-        fields = {"visit_id": visit, "items-0-dish_id": 1, "items-0-quantity": 1, "items-0-quoted_unit_cents": 100}
+        fields = {"visit_id": visit, "items-0-dish_id": 1, "items-0-quantity": 1,
+                  "items-0-quoted_unit_cents": 100, "idempotency_key": "fixture-stale-price"}
         stale = write(desk, "/frontdesk/orders", fields)
         self.assertEqual((stale.status_code, stale.json["error"]), (409, "PRICE_CHANGED"))
         self.assertEqual(write(desk, "/frontdesk/orders", {**fields, "items-0-quantity": 100}).status_code, 400)

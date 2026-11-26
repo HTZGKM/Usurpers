@@ -3,7 +3,7 @@ from .forms import (
     BookingForm,
     BookingEditForm,
     CancelBookingForm,
-    OrderForm,
+    OrderCreateForm,
     OrderEditForm,
     PaymentForm,
     PreorderForm,
@@ -154,7 +154,7 @@ def cancel_booking(booking_id):
 
 @customer_bp.post("/visits/<int:visit_id>/orders")
 def create_visit_order(visit_id):
-    data = validated_data(OrderForm)
+    data = validated_data(OrderCreateForm)
     user = session.get("user", {})
     owner = user.get("username") if user.get("role") == "customer" else None
     return (
@@ -173,17 +173,15 @@ def create_visit_order(visit_id):
 
 @customer_bp.post("/orders")
 def confirm_order():
-    data = validated_data(OrderForm)
-    from restaurant.services.dining_service import get_active_customer_visit
+    data = validated_data(OrderCreateForm)
 
     user = session["user"]
-    visit_id = get_active_customer_visit(user["username"])
     return (
         jsonify(
             {
                 "ok": True,
                 "order": order_service.create_dine_in_order(
-                    visit_id, data.get("items"), user["username"], request_key=data.get("idempotency_key"),
+                    None, data.get("items"), user["username"], request_key=data.get("idempotency_key"),
                     actor=user["role"] + ":" + user["username"],
                 ),
             }

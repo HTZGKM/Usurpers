@@ -38,7 +38,7 @@ def _check_order_total(total):
 
 
 def create_dine_in_order(visit_id, items, customer_phone=None, *, request_key=None, actor=None):
-    visit = positive_int(visit_id, "visit_id")
+    visit = positive_int(visit_id, "visit_id") if visit_id is not None else None
     lines = order_items(items)
     with get_connection() as db:
         begin_write(db)
@@ -46,6 +46,12 @@ def create_dine_in_order(visit_id, items, customer_phone=None, *, request_key=No
         previous = submission.replay(db, "dine-in", identity, request_key, payload)
         if previous is not None:
             return previous
+        if visit is None:
+            current = db.execute("""SELECT visit_id FROM dining_sessions WHERE customer_phone=? AND status='seated'
+                                     ORDER BY arrived_at DESC, visit_id DESC LIMIT 1""", (customer_phone,)).fetchone()
+            if not current:
+                raise ServiceError("Check in and be seated before ordering.", 409, "visit_id")
+            visit = current[0]
         session = db.execute("SELECT * FROM dining_sessions WHERE visit_id=? AND status='seated'", (visit,)).fetchone()
         if not session: raise ServiceError("堂食记录不存在或已结束。", 409, "visit_id")
         if customer_phone and session["customer_phone"] != customer_phone: raise ServiceError("无权为该堂食记录下单。",403,code="FORBIDDEN")
@@ -189,6 +195,10 @@ def get_order(order_id, customer_phone=None):
 
 def get_customer_orders(customer_phone):
     with get_connection() as db:
+        if using_postgres():
+            from .allocation import reconcile_customer_order_deadlines
+
+            reconcile_customer_order_deadlines(db, customer_phone)
         rows = db.execute("""
             SELECT o.*, ROUND(COALESCE(SUM(i.total_price), 0), 2) AS total_amount
             FROM orders o
@@ -275,6 +285,9 @@ def update_order(order_id, items, customer_phone=None, *, expected_version=None)
                 remaining.remove(replacement)
                 continue
             price = dishes[line["dish_id"]]
+            if "quoted_unit_cents" in line and round(price * 100) != line["quoted_unit_cents"]:
+                raise ServiceError("A new dish price changed. Review its updated price before saving.",
+                                   409, "items", "PRICE_CHANGED")
             line_total = round(price * line["quantity"], 2)
             item_id = insert_id(db, "INSERT INTO order_items(order_id,dish_id,quantity,unit_price,total_price,note,estimated_ready_at) VALUES(?,?,?,?,?,?,?)",
                                 (oid,line["dish_id"],line["quantity"],price,line_total,line["note"],ready_at), "order_item_id")

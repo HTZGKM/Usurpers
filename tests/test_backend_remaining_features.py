@@ -41,7 +41,7 @@ class RemainingFeatureTests(RestaurantTestCase):
         visit = write(frontdesk, f"/frontdesk/waiting-queue/{ticket}/seat", {"table_id": 6}).json["visit"]["visit_id"]
         self.assertIsNone(customer.get("/waiting-queue/mine").json["queue"])
 
-        placed = write(customer, f"/visits/{visit}/orders", dish())
+        placed = write(customer, f"/visits/{visit}/orders", {**dish(), "idempotency_key": "fixture-dine-in"})
         self.assertEqual(placed.status_code, 201)
         order = placed.json["order"]["order_id"]
         original_item = get_order(order)["items"][0]["order_item_id"]
@@ -84,7 +84,7 @@ class RemainingFeatureTests(RestaurantTestCase):
         kitchen = self.signed_in("kitchen@shuangfen.local")
         booking = create_booking("Preorder fixture", "13900000001", "2026-12-20", 1, 2, "13900000001", 6)["booking_id"]
         response = write(customer, f"/bookings/{booking}/preorders",
-                         {**dish(), "estimated_ready_at": "2026-12-20T11:00:00+08:00"})
+                         {**dish(), "idempotency_key": "fixture-preorder", "estimated_ready_at": "2026-12-20T11:00:00+08:00"})
         self.assertEqual(response.status_code, 201)
         order = response.json["order"]["order_id"]
         original = get_order(order)["items"][0]
