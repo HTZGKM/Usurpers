@@ -42,7 +42,8 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
   const titles = { overview:'Overview', orders:'Orders', queue:'Kitchen queue', floor:'Tables',
     timeline:'Tables', calendar:'Tables', accounts:'Accounts', dishes:'Dishes', inventory:'Inventory' };
   const tones = { 'In queue':'amber', Queued:'amber', Cooking:'amber', Unpaid:'amber', Reserved:'amber',
-    Ready:'sage', Paid:'sage', Seated:'sage', Active:'sage', Cancelled:'rose', Unavailable:'rose' };
+    Protected:'amber', 'No walk-ins':'slate', Cleaning:'slate', Disabled:'rose', Ready:'sage', Paid:'sage',
+    Seated:'sage', Active:'sage', Cancelled:'rose', Unavailable:'rose' };
   const state = { view:'overview', date:'', calendarMonth:'', table:'', booking:'', order:'', orderDate:'',
     orderStatus:'', payment:'', orderLimit:100, role:'', account:'', accountEditing:false, category:'', dishStatus:'', dish:'', roseLimit:12,
     salesMetric:{ today:'revenue', week:'orders' } };
@@ -223,7 +224,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     floor = data.tables.map(row => {
       const position = layout.find(table => table[0] === tableName(row.table_id));
       return { id:tableName(row.table_id), seats:row.capacity, x:position?.[2], y:position?.[3],
-        status:row.status, reason:row.reason_text, next:row.next_booking };
+        status:row.status, reasonCode:row.reason, reason:row.reason_text, next:row.next_booking };
     });
     reservations = readReservations(data.bookings, data.visits);
     if (!loaded || (previousDate !== serviceDate && state.date === previousDate)) {
@@ -721,11 +722,34 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
       '<button type="button" data-view="' + view + '"' + active(view === state.view) + '>' + label + '</button>').join('') +
       '</nav>';
   }
+  function floorStatus(table) {
+    switch (table.reasonCode) {
+      case 'closed': return 'No walk-ins';
+      case 'cleaning': return 'Cleaning';
+      default: return ({ occupied:'Seated', disabled:'Disabled', reserved:'Protected' })[table.status] || 'Available';
+    }
+  }
+
+  function nextReservationLabel(table) {
+    if (!table.next) return '';
+    const day = table.next.booking_date;
+    return day && day !== serviceDate
+      ? orderDateLabel.format(new Date(day + 'T00:00:00Z')) + ' · ' + table.next.label
+      : table.next.label;
+  }
+
   function reservationDetail(record) {
     if (!record) {
       const table = state.view === 'floor' && floor.find(entry => entry.id === state.table);
       if (!table) return '<aside class="dp-panel dp-detail">' + head('Reservation details') +
         '<p class="dp-caption">Select a table or booking to view its details.</p></aside>';
+      if (reservationFlow) {
+        const next = nextReservationLabel(table);
+        return '<aside class="dp-panel dp-detail">' + head('Table ' + es(table.id)) + tag(floorStatus(table)) +
+          '<dl><div><dt>Capacity</dt><dd>' + table.seats + ' seats</dd></div>' +
+          (next ? '<div><dt>Next reservation</dt><dd>' + es(next) + '</dd></div>' : '') + '</dl>' +
+          (table.reason ? '<p class="dp-caption">' + es(table.reason) + '</p>' : '') + '</aside>';
+      }
       return '<aside class="dp-panel dp-detail">' + head('Table ' + es(table.id)) + tag('Available') +
         '<dl><div><dt>Capacity</dt><dd>' + table.seats + ' seats</dd></div></dl>' +
         '<p class="dp-caption">No reservation for this table on ' + dateText(state.view === 'floor' ? serviceDate : state.date) + '.</p></aside>';
@@ -749,10 +773,10 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
   }
   function floorSeat(table) {
     const entry = liveTable(table.id);
-    const label = reservationFlow ? ({ occupied:'Seated', disabled:'Disabled', reserved:'Protected',
-      available:'Available' }[table.status] || 'Available') : entry?.status || 'Available';
+    const label = reservationFlow ? floorStatus(table) : entry?.status || 'Available';
+    const next = reservationFlow ? nextReservationLabel(table) : '';
     const short = label === 'Seated' && entry ? entry.guests + ' guests' :
-      reservationFlow && table.next ? table.next.label : label === 'Reserved' && entry ? entry.start : table.seats + ' seats';
+      next || (label === 'Reserved' && entry ? entry.start : table.seats + ' seats');
     const chairs = Array.from({length:table.seats}, (_,index) => {
       const columns = Math.ceil(table.seats / 2);
       return '<i class="dp-chair" aria-hidden="true" data-side="' + (index < columns ? 'top' : 'bottom') +
@@ -760,18 +784,20 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     }).join('');
     return '<button type="button" class="dp-seat" data-table="' + table.id + '" data-capacity="' + table.seats +
       '"' + (table.x == null ? '' : ' style="--x:' + table.x + '%;--y:' + table.y + '%"') + selected(state.table === table.id) +
-      ' aria-label="Table ' + table.id + ', ' + label + ', ' + short + '">' + chairs + '<strong>' + table.id +
+       ' aria-label="Table ' + table.id + ', ' + label + ', ' + es(short === next ? 'next reservation ' + next : short) + '">' + chairs + '<strong>' + table.id +
       '</strong>' + tag(label) + '<small>' + es(short) + '</small></button>';
   }
   function floorPage() {
     const hasLayout = floor.length && floor.every(table => table.x != null);
+    const legend = reservationFlow ? ['Available','Protected','Seated','Cleaning','No walk-ins','Disabled'] :
+      ['Available','Reserved','Seated'];
     return title(titles.floor) + tableTabs() + '<div class="dp-split"><section class="dp-panel">' +
       head('Dining room', '<span class="dp-caption">Today · ' + serviceTime + '</span>') +
       '<div class="dp-floor' + (hasLayout ? '' : ' dp-floor-grid') + '" role="group" aria-label="Dining room floor plan">' +
       (hasLayout ? '<span class="dp-floor-zone dp-zone-window">Window seats</span><span class="dp-floor-zone dp-zone-door">Entrance</span>' +
       '<span class="dp-floor-zone dp-zone-bar">Service bar</span>' : '') +
       (floor.map(floorSeat).join('') || '<p class="dp-empty">No tables have been configured.</p>') +
-      '</div><div class="dp-key">' + ['Available','Reserved','Seated'].map(tag).join('') +
+      '</div><div class="dp-key">' + legend.map(tag).join('') +
       '</div></section>' + reservationDetail(liveTable(state.table)) + '</div>';
   }
   function timelinePage() {
@@ -889,13 +915,19 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     const now = (Date.parse(data.server_now) - midnight) / 60000;
     const relative = value => value ? (Date.parse(value) - midnight) / 60000 : null;
     const bookingRows = data.bookings.filter(row => row.status === 'booked' && row.protected_start);
-    const points = [...bookingRows.map(row => relative(row.protected_start)), ...data.visits.map(row => relative(row.seated_at ?? row.recorded_at))];
-    const ends = [...bookingRows.map(row => relative(row.protected_end)), ...data.visits.map(row => relative(row.closed_at) ?? now)];
+    const timedVisits = data.visits.filter(row => row.seated_at);
+    const points = [...bookingRows.map(row => relative(row.protected_start)), ...timedVisits.map(row => relative(row.seated_at))];
+    const ends = [...bookingRows.map(row => relative(row.protected_end)), ...timedVisits.map(row => relative(row.closed_at) ?? now)];
     const left = Math.max(0, Math.min(11 * 60, ...points.map(value => Math.floor(value / 60) * 60)));
     const right = Math.min(1440, Math.max(21 * 60, ...ends.map(value => Math.ceil(value / 60) * 60)));
     const percentage = minute => Math.min(100, Math.max(0, (minute - left) * 100 / (right - left)));
     const format = value => value ? localTimestamp(value).slice(11,16) : '';
+    const dateAndTime = value => {
+      const local = localTimestamp(value);
+      return local ? dateText(local.slice(0,10)) + ' · ' + local.slice(11,16) : '';
+    };
     const labels = [];
+    const untimed = [];
     const entries = data.tables.map(table => {
       const bookings = bookingRows.filter(row => row.table_id === table.table_id).map(row => ({
         id: 'b' + row.booking_id, label: row.contact_name, table: tableName(row.table_id),
@@ -906,25 +938,27 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
       const visits = data.visits.filter(row => row.table_id === table.table_id).map(row => ({
         id: 'v' + row.visit_id, label: row.contact_name || 'Walk-in', table: tableName(row.table_id),
         mode: row.seated_at ? (row.status === 'closed' ? 'closed' : 'live') : 'unknown',
-        start: relative(row.seated_at), recorded: relative(row.recorded_at),
+        start: relative(row.seated_at),
         end: relative(row.closed_at) ?? now, party: row.party_size,
-        seated: format(row.seated_at), closed: format(row.closed_at), ongoing: row.status !== 'closed',
+        seated: format(row.seated_at), closed: dateAndTime(row.closed_at), ongoing: row.status !== 'closed',
         linkedBooking: row.booking_id ? 'b' + row.booking_id : null,
-        recordedLabel: format(row.recorded_at),
+        recordedDay: localTimestamp(row.recorded_at ?? row.closed_at).slice(0,10),
+        recordedLabel: dateAndTime(row.recorded_at),
         arrival: row.booking_id ? (format(row.arrival_at) || row.legacy_reservation_window) : null,
       }));
-      const records = [...bookings, ...visits];
+      const records = [...bookings, ...visits.filter(row => row.mode !== 'unknown')];
+      untimed.push(...visits.filter(row => row.mode === 'unknown' &&
+        (row.recordedDay === day || (row.ongoing && day === serviceDate))));
       labels.push(...records);
       return '<div class="dp-timeline-row"><span class="dp-row-label">' + es(tableName(table.table_id)) +
         '</span><div class="dp-time-track">' + (now >= left && now < right ?
           '<span class="dp-now" aria-hidden="true"></span>' : '') + records.map(row => {
-          const begin = percentage(row.start ?? (row.ongoing ? row.recorded : row.end));
+          const begin = percentage(row.start);
           const end = percentage(row.end);
-          const shownEnd = row.mode === 'unknown' ? begin + 1.2 : end;
           const band = '<button type="button" class="dp-booking-band dp-service-band" data-history-record="' + row.id +
-            '" data-period="' + row.mode + '" style="--begin:' + Math.min(begin, 99) + '%;--span:' + Math.max(.7, shownEnd-begin) +
+            '" data-period="' + row.mode + '" style="--begin:' + Math.min(begin, 99) + '%;--span:' + Math.max(.7, end-begin) +
             '%"' + selected(historySelection === row.id) + ' aria-label="' + es(row.table + ' • ' + row.label +
-            (row.mode === 'unknown' ? ' • Seating time unknown' : row.ongoing ? ' • Still dining' : '')) + '">' +
+            (row.ongoing ? ' • Still dining' : '')) + '">' +
             es(row.label) + '</button>';
           const marker = row.point == null ? '' : '<span class="dp-arrival-point" style="--point:' +
             percentage(row.point) + '%" aria-hidden="true"></span>';
@@ -933,7 +967,12 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
           return band + marker + continuation;
         }).join('') + '</div></div>';
     });
-    const current = labels.find(row => row.id === historySelection || row.linkedBooking === historySelection);
+    const untimedList = untimed.length ? '<div class="dp-untimed-visits"><h3>Visits with unknown seating time</h3>' +
+      '<ul class="dp-booking-list">' + untimed.map(row => '<li><button type="button" data-history-record="' + row.id +
+        '"' + selected(historySelection === row.id) + '>' + es(row.table + ' · ' + row.label) + '</button> · ' +
+        (row.ongoing ? 'Open' : 'Closed') + '</li>').join('') + '</ul></div>' : '';
+    const current = historySelection && [...labels, ...untimed].find(row =>
+      row.id === historySelection || row.linkedBooking === historySelection);
     const info = current ? '<p>' + es(current.table + ' · ' + current.label + ' · ' + current.party + ' guests') + '</p>' +
       (current.arrival ? '<p>Reservation arrival: ' + es(current.arrival) + '</p>' : '') +
       (current.mode === 'plan' ? '' : '<p>' + (current.seated ? 'Seated: ' + es(current.seated) :
@@ -946,7 +985,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
       percentage(now) + '%;--hour-gap:16.666%">' + head(dateText(day), more('Choose a date', 'calendar')) +
       (now >= left && now < right ? '<div class="dp-now-label"><span>Now ' + es(format(data.server_now)) + '</span></div>' : '') +
       '<div class="dp-hours"><span></span><div class="dp-hour-track">' + hours + '</div></div>' + entries.join('') +
-      '<div class="dp-key"><span>Upcoming reservation</span><span>Actual dining</span><span>Still dining</span><span>Time unknown</span></div>' +
+      '<div class="dp-key"><span>Upcoming reservation</span><span>Actual dining</span><span>Still dining</span></div>' + untimedList +
       '</section><aside class="dp-panel dp-detail">' + head('Table record') + info + '</aside></div>';
   }
 

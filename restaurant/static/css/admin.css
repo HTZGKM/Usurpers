@@ -7,7 +7,7 @@ main.admin-page {
 #dp-workspace {
   --base:#0d0e0c; --surface:#191916; --raised:#1b1b17; --rail:#131411; --rule:#37362e;
   --ink:#ede8d8; --muted:#b6b0a1; --gold:#e2c898; --quiet-gold:#d4b67f;
-  --sage:#b0cfbb; --amber:#e9bb77; --rose:#e3a9a0; --neutral:#c7c5b8;
+  --sage:#b0cfbb; --amber:#e9bb77; --rose:#e3a9a0; --neutral:#c7c5b8; --slate:#a8bdd3;
   --font:'IBM Plex Sans','Segoe UI',sans-serif;
   --title:"Palatino Linotype",Palatino,Georgia,serif;
   position:relative; width:100%; background:var(--base); color:var(--ink);
@@ -238,6 +238,7 @@ main.admin-page {
 #dp-workspace .dp-tag[data-tone="sage"] {color:var(--sage)}
 #dp-workspace .dp-tag[data-tone="amber"] {color:var(--amber)}
 #dp-workspace .dp-tag[data-tone="rose"] {color:var(--rose)}
+#dp-workspace .dp-tag[data-tone="slate"] {color:var(--slate)}
 #dp-workspace .dp-table-wrap {overflow:auto;min-width:0}
 #dp-workspace table {width:100%;border-collapse:collapse;text-align:left;font:inherit}
 #dp-workspace th {font-size:11px;color:var(--muted);font-weight:500;white-space:nowrap}
@@ -383,7 +384,8 @@ main.admin-page {
 #dp-workspace .dp-seat[aria-pressed="true"] {border-color:var(--gold);box-shadow:0 8px 17px #000e}
 #dp-workspace .dp-seat strong {font-weight:600;font-size:14px;letter-spacing:.03em}
 #dp-workspace .dp-seat .dp-tag,#dp-workspace .dp-seat small {font-size:11px}
-#dp-workspace .dp-seat small {color:var(--muted)}
+#dp-workspace .dp-seat .dp-tag {white-space:normal;line-height:1.25}
+#dp-workspace .dp-seat small {color:var(--muted);line-height:1.25;text-align:center}
 #dp-workspace .dp-chair {position:absolute;display:block;left:var(--chair-x);height:3px;width:11px;transform:translateX(-50%);border-radius:2px;background:#5b5849;color:inherit}
 #dp-workspace .dp-chair[data-side="top"] {top:-6px}
 #dp-workspace .dp-chair[data-side="bottom"] {bottom:-6px}
@@ -407,7 +409,6 @@ main.admin-page {
 #dp-workspace .dp-service-band[data-period="plan"] {background:#493b24;border-color:#796442}
 #dp-workspace .dp-service-band[data-period="closed"],
 #dp-workspace .dp-service-band[data-period="live"] {background:#344b3d;border-color:#6b8874}
-#dp-workspace .dp-service-band[data-period="unknown"] {background:#514f49;border-color:#a29c8c}
 #dp-workspace .dp-arrival-point {position:absolute;left:var(--point);top:4px;bottom:4px;width:2px;background:var(--gold);pointer-events:none}
 #dp-workspace .dp-service-continuation {position:absolute;left:var(--begin);right:0;top:6px;bottom:6px;border:1px dashed #627364;background:repeating-linear-gradient(135deg,transparent 0 6px,#82928324 6px 8px);pointer-events:none}
 #dp-workspace .dp-calendar {display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
@@ -420,6 +421,8 @@ main.admin-page {
 #dp-workspace .dp-booking-list li {padding-block:8px;border-top:1px solid var(--rule);font-size:12px}
 #dp-workspace .dp-booking-list li:first-child {border-top:0;padding-top:0}
 #dp-workspace .dp-booking-list button {color:var(--gold);padding:1px 0;border:0;background:none;text-align:left}
+#dp-workspace .dp-untimed-visits {margin-top:14px;padding-top:12px;border-top:1px solid var(--rule)}
+#dp-workspace .dp-untimed-visits .dp-booking-list {margin-top:8px}
 #dp-workspace .dp-queue {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.12fr);align-items:start;gap:14px}
 #dp-workspace .dp-queue-lane {--lane-accent:var(--amber)}
 #dp-workspace .dp-queue-lane[data-queue-lane="ready"] {--lane-accent:var(--sage)}
