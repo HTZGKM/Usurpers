@@ -2184,6 +2184,49 @@ main.menu-page {
   border-color: var(--ember-ink);
   color: var(--ember-base);
 }
+.booking .booking-times {
+  min-width: 0;
+  margin: 14px 0 22px;
+}
+.booking-times legend {
+  margin-bottom: 10px;
+  color: var(--ember-ink);
+  font-weight: 600;
+}
+.booking-time-group + .booking-time-group {
+  margin-top: 14px;
+}
+.booking-time-group p {
+  margin: 0 0 6px;
+  color: #bbb5a6;
+  font: 500 0.8125rem/1.35 var(--guest-control);
+}
+.booking-time-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 8px;
+}
+.guest-public .booking .booking-time-grid .choice {
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 7px 4px;
+  border: 1px solid #6b604b;
+  border-radius: 5px;
+  background: #1b1914;
+  color: #eee8da;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.guest-public .booking .booking-time-grid .choice:hover {
+  border-color: var(--guest-gold);
+}
+.guest-public .booking .booking-time-grid .choice[aria-pressed="true"] {
+  border-color: var(--guest-gold);
+  background: var(--guest-gold);
+  color: #21190f;
+}
 .booking-date-toggle {
   display: flex;
   align-items: center;

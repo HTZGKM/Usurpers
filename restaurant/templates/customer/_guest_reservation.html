@@ -35,9 +35,17 @@
       </select></label>
     </div>
     {% if reservation_flow %}
-    <label class="field">Arrival time
-      <select id="arrival-time" required><option value="">Choose an arrival time</option></select>
-    </label>
+    <fieldset class="booking-times" data-arrival-times>
+      <legend>Arrival time</legend>
+      <div class="booking-time-group" role="group" aria-labelledby="booking-lunch" data-arrival-group="lunch" hidden>
+        <p id="booking-lunch">Lunch</p>
+        <div class="booking-time-grid"></div>
+      </div>
+      <div class="booking-time-group" role="group" aria-labelledby="booking-dinner" data-arrival-group="dinner" hidden>
+        <p id="booking-dinner">Dinner</p>
+        <div class="booking-time-grid"></div>
+      </div>
+    </fieldset>
     {% else %}
     <fieldset><legend>Dining time</legend>
       {% for slot_id, slot in slots.items() %}<button type="button" class="choice" data-action="time:{{ slot_id }}" aria-pressed="false">{{ slot }}</button>{% endfor %}

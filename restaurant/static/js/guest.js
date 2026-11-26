@@ -354,17 +354,36 @@ function bookingView() {
   }
   syncDraft();
 }
+function renderArrivalTimes(picker, times) {
+  const signature = times.join(",");
+  if (picker.dataset.times === signature) return;
+  const focused = picker.contains(document.activeElement) ? document.activeElement.dataset.action : null;
+  picker.dataset.times = signature;
+  const groups = { lunch: [], dinner: [] };
+  for (const time of times) {
+    groups[time < "17:00" ? "lunch" : "dinner"].push(btn(time, "time:" + time, "choice", 'aria-pressed="false"'));
+  }
+  for (const group of picker.querySelectorAll("[data-arrival-group]")) {
+    const choices = groups[group.dataset.arrivalGroup];
+    group.hidden = !choices.length;
+    group.querySelector(".booking-time-grid").innerHTML = choices.join("");
+  }
+  if (focused) {
+    Array.from(picker.querySelectorAll("button")).find(button => button.dataset.action === focused)
+      ?.focus({ preventScroll: true });
+  }
+}
+
 function syncDraft() {
   const d = state.draft;
   syncAvailability();
   const ready = availabilityReady();
-  const timeSelect = app.querySelector("#arrival-time");
-  if (timeSelect && ready) {
-    const times = lastAvailability.times ?? [];
-    const options = '<option value="">Choose an arrival time</option>' +
-      times.map(time => '<option>' + esc(time) + '</option>').join("");
-    if (timeSelect.innerHTML !== options) timeSelect.innerHTML = options;
-    timeSelect.value = d.time;
+  const timePicker = app.querySelector("[data-arrival-times]");
+  const times = lastAvailability?.draft.date === d.date && lastAvailability?.draft.guests === d.guests
+    ? lastAvailability.times ?? [] : [];
+  if (timePicker) {
+    timePicker.setAttribute("aria-busy", String(availabilityLoading && !times.length));
+    renderArrivalTimes(timePicker, times);
   }
   const tableAvailable = ready && d.table && tables.some(t => t[0] === d.table && available(t, d));
   const invalidated = ready && d.table && !tableAvailable;
@@ -380,17 +399,17 @@ function syncDraft() {
     if (!b.disabled) availableCount++;
     b.setAttribute("aria-pressed", !b.disabled && t[0] === d.table);
   });
-  document
+  app
     .querySelectorAll('[data-action^="time:"]')
     .forEach((b) =>
       b.setAttribute("aria-pressed", b.dataset.action.slice(5) === d.time),
     );
   const selected = Boolean(tableAvailable);
   const summary = app.querySelector("#summary");
-  const noTimes = reservationFlow && ready && !lastAvailability.times?.length;
+  const noTimes = reservationFlow && ready && !times.length;
   const hint = availabilityLoading ? "Checking table availability…" : availabilityError ? "Could not check availability." :
     noTimes ? "No arrival times fit this date and party size." :
-    reservationFlow && !timeSelect.value ? "Choose an available arrival time first." :
+    reservationFlow && !times.includes(d.time) ? "Choose an arrival time first." :
     selected ? "Table " + d.table + " selected." : !availableCount ? "No tables available. Try another dining time or date." :
     invalidated ? "Your previous table is unavailable. Choose another table." :
     "Choose from " + availableCount + (availableCount === 1 ? " available table." : " available tables.");
@@ -1406,10 +1425,6 @@ document.addEventListener("change", (e) => {
   if (e.target.id === "date" || e.target.id === "guests") {
     state.draft[e.target.id] =
       e.target.id === "guests" ? +e.target.value : e.target.value;
-    syncDraft();
-  }
-  if (e.target.id === "arrival-time") {
-    state.draft.time = e.target.value;
     syncDraft();
   }
 });
