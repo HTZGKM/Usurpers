@@ -70,18 +70,10 @@ main.kitchen-page {
   font-size: 14px;
 }
 
-.kitchen-ticket-grid,
-.kitchen-menu-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 315px), 1fr));
-  gap: 16px;
-}
-
-.kitchen-ticket-grid { align-items: start; }
-.kitchen-handoff { border-top: 1px solid #3b392e; margin-top: 24px; padding-top: 18px; }
-.kitchen-handoff .kitchen-section-heading h3 { font-size: 18px; }
-.kitchen-stages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0 0 18px; }
-.kitchen-stages > div {
+.kitchen-lanes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.kitchen-lane { min-width: 0; }
+.kitchen-lane-tickets { display: grid; gap: 12px; margin-top: 12px; }
+.kitchen-stage {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -90,12 +82,15 @@ main.kitchen-page {
   border: 1px solid #3b392e;
   border-radius: 8px;
   background: #141510;
+  margin: 0;
+  font: 600 15px/1.3 system-ui, sans-serif;
 }
-.kitchen-stages dd { order: -1; margin: 0; font-size: 23px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.kitchen-stages [data-stage="waiting"] { color: #f6e6c4; border-color: #6b6045; }
-.kitchen-stages [data-stage="ready"], .kitchen-item[data-stage="ready"] .kitchen-item-stage { color: #bfd4a4; }
-.kitchen-stages [data-stage="cooking"], .kitchen-item[data-stage="cooking"] .kitchen-item-stage { color: #e2be81; }
+.kitchen-stage span { font-size: 23px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.kitchen-stage[data-stage="waiting"] { color: #f6e6c4; border-color: #6b6045; }
+.kitchen-stage[data-stage="ready"], .kitchen-item[data-stage="ready"] .kitchen-item-stage { color: #bfd4a4; }
+.kitchen-stage[data-stage="cooking"], .kitchen-item[data-stage="cooking"] .kitchen-item-stage { color: #e2be81; }
 .kitchen-ticket[data-stage="waiting"] { border-top-color: #e2be81; }
+.kitchen-ticket[data-stage="cooking"] { border-top-color: #967545; }
 .kitchen-ticket[data-stage="ready"] { border-top-color: #bfd4a4; }
 .kitchen-ticket-heading p { margin: 4px 0 0; font-size: 13px; color: #c2baa7; }
 .kitchen-item-stage { display: block; margin-top: 4px; color: #c2baa7; font-size: 13px; }
@@ -103,13 +98,14 @@ main.kitchen-page {
 .kitchen-item[data-stage="waiting"] .kitchen-action { background: #e2be81; border-color: #e2be81; color: #17150f; }
 .kitchen-item[data-stage="waiting"] .kitchen-action:hover:enabled { background: #f6e6c4; }
 .kitchen-item .kitchen-action[aria-disabled="true"] { opacity: 0.65; cursor: wait; }
-@media (max-width: 480px) {
-  .kitchen-stages { gap: 6px; }
-  .kitchen-stages > div { padding-inline: 8px; }
+@media (max-width: 840px) {
+  .kitchen-lanes { grid-template-columns: 1fr; }
 }
 
 .kitchen-menu-grid {
+  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
   align-items: start;
 }
 
