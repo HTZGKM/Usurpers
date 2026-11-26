@@ -205,6 +205,8 @@ main.admin-page {
 #dp-workspace .dp-segmented {display:flex;align-items:center;gap:2px;padding:2px;border:1px solid var(--rule);border-radius:5px}
 #dp-workspace .dp-segmented button {background:none;border:0;border-radius:3px;padding:4px 7px;color:var(--muted);font-size:11px;white-space:nowrap}
 #dp-workspace .dp-segmented button[aria-pressed="true"] {background:#30271b;color:var(--gold)}
+#dp-workspace .dp-chart-controls {display:flex;flex-wrap:wrap;gap:6px}
+#dp-workspace .dp-order-date-shortcuts {align-self:end;min-height:34px}
 #dp-workspace .dp-rose-scope {padding-bottom:6px}
 #dp-workspace .dp-rose-list {list-style:none;padding:0}
 #dp-workspace .dp-rose-list li {display:grid;grid-template-columns:15px minmax(0,1fr) auto;gap:6px;align-items:baseline;padding:4px 0;font-size:12px}

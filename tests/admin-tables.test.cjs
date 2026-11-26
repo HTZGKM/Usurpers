@@ -75,3 +75,59 @@ test('closed visits without a seating time stay on their recorded day and off th
   assert.match(originalDay, /Table closed: Thu 26 Nov · 08:42/);
   assert.doesNotMatch(originalDay, /dp-service-band/);
 });
+
+function adminSales(overrides) {
+  const context = vm.createContext({
+    serviceDate: '2026-11-26', serviceTime: '09:14',
+    serviceWindows: [['11:00','14:00'],['17:00','21:00']],
+    historyDays: ['2026-11-18','2026-11-19','2026-11-20','2026-11-21','2026-11-22',
+      '2026-11-23','2026-11-24','2026-11-25','2026-11-26'],
+    state: { salesDays:30, salesMetric:{ today:'revenue', history:'orders' }, rosePeriod:'history', roseLimit:5 },
+    orders: [], historyOrders: [], dishes: [],
+    head: (title, options) => title + options,
+    selected: current => ` aria-pressed="${current}"`,
+    es: value => value,
+    isPaid: order => order.payment === 'Paid',
+    lineCents: item => item.unit * item.qty * 100,
+    formatNumber: new Intl.NumberFormat('en'),
+    compactNumber: new Intl.NumberFormat('en', { notation:'compact' }),
+    popularDishMode: leaders => JSON.stringify(leaders),
+    ...overrides,
+  });
+  vm.runInContext([
+    section('const minute =', 'const bookingsOn ='),
+    section('const salesGroups =', 'function dishRankingRings('),
+    section('function popularDishes(', 'function popularDishMode('),
+  ].join('\n'), context);
+  return context;
+}
+
+const paidBurger = { day:'2026-11-18', time:'12:07', payment:'Paid', status:'Served',
+  items:[{ name:'Burger', qty:3, unit:10, category:'Burgers', status:'Served' }] };
+
+test('today sales keep service hours and distinguish empty and incomplete service', () => {
+  const view = adminSales({});
+  const initial = view.salesBuckets('today', 'revenue');
+  assert.equal(initial[0].label, '11:00');
+  assert.equal(initial.at(-1).label, '21:00');
+  assert.ok(initial.every(bucket => !bucket.visible));
+  assert.match(view.salesChart('today'), /No paid sales recorded today/);
+  assert.doesNotMatch(view.salesChart('today'), /class="dp-sales-node"/);
+
+  view.serviceTime = '12:35';
+  view.orders = [{ ...paidBurger, day:view.serviceDate }];
+  const current = view.salesBuckets('today', 'revenue');
+  assert.equal(current[1].label, '12:00');
+  assert.equal(current[1].amounts[0], 30);
+  assert.equal(current[2].visible, false);
+});
+
+test('historical sales and popular dishes retain past paid orders when today has no orders', () => {
+  const view = adminSales({ historyOrders:[paidBurger] });
+  assert.equal(view.salesBuckets('history', 'orders')[0].amounts[0], 1);
+  assert.match(view.popularDishes(), /\[\["Burger",3\]\]/);
+  view.state.rosePeriod = 'today';
+  assert.match(view.popularDishes(), /No portions sold today/);
+  view.state.salesDays = 7;
+  assert.ok(view.salesBuckets('history', 'orders').every(bucket => bucket.amounts[0] === 0));
+});

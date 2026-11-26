@@ -5,6 +5,7 @@ from restaurant.services.common import valid_date
 
 
 RESTAURANT_TIME = timezone(timedelta(hours=8))
+SALES_HISTORY_DAYS = 30
 
 
 def _order_rows(db, condition="", values=()):
@@ -56,7 +57,7 @@ def get_workspace():
     QueueManager.enqueue_due_preorders()
     now = datetime.now(RESTAURANT_TIME)
     today = now.date()
-    first_day = today - timedelta(days=6)
+    first_day = today - timedelta(days=SALES_HISTORY_DAYS - 1)
     with get_connection() as db:
         begin_read(db)
         orders = _order_rows(
@@ -96,6 +97,9 @@ def get_workspace():
     return {
         "service_date": today.isoformat(),
         "service_time": now.strftime("%H:%M"),
+        "service_windows": [[start.strftime("%H:%M"), end.strftime("%H:%M")]
+                            for start, end in allocation.SERVICE_WINDOWS],
+        "history_days": SALES_HISTORY_DAYS,
         "orders": orders,
         "order_days": days,
         "tables": tables,

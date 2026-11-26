@@ -16,8 +16,10 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
   let reservations = [];
   let occupancy = [];
   let orders = [];
-  let weekDays = [];
-  let weekOrders = [];
+  let historyDays = [];
+  let historyOrders = [];
+  let serviceWindows = [];
+  let latestOrderDay = '';
   let kitchenOrders = [];
   let ledgerOrders = [];
   let orderDays = new Set();
@@ -46,7 +48,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     Seated:'sage', Active:'sage', Cancelled:'rose', Unavailable:'rose' };
   const state = { view:'overview', date:'', calendarMonth:'', table:'', booking:'', order:'', orderDate:'',
     orderStatus:'', payment:'', orderLimit:100, role:'', account:'', accountEditing:false, category:'', dishStatus:'', dish:'', roseLimit:12,
-    salesMetric:{ today:'revenue', week:'orders' } };
+    salesMetric:{ today:'revenue', history:'orders' }, salesDays:30, rosePeriod:'history' };
   const es = (value) => String(value).replace(/[&<>"']/g, char =>
     ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[char]);
   const tone = (status) => tones[status] || 'neutral';
@@ -214,13 +216,16 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     const previousDate = serviceDate;
     serviceDate = data.service_date;
     serviceTime = data.service_time;
-    weekDays = Array.from({length:7}, (_,index) => shiftedDay(serviceDate,index - 6));
+    serviceWindows = data.service_windows;
+    historyDays = Array.from({length:data.history_days}, (_,index) =>
+      shiftedDay(serviceDate,index - data.history_days + 1));
     const all = normalizeOrders(data.orders);
     invalidWorkspaceDates = data.orders.length - all.length;
-    weekOrders = all.filter(order => order.day >= weekDays[0] && order.day <= serviceDate);
-    orders = weekOrders.filter(order => order.day === serviceDate);
+    historyOrders = all.filter(order => order.day >= historyDays[0] && order.day <= serviceDate);
+    orders = historyOrders.filter(order => order.day === serviceDate);
     kitchenOrders = all.filter(order => order.active);
     orderDays = new Set(data.order_days);
+    latestOrderDay = data.order_days[0] || serviceDate;
     floor = data.tables.map(row => {
       const position = layout.find(table => table[0] === tableName(row.table_id));
       return { id:tableName(row.table_id), seats:row.capacity, x:position?.[2], y:position?.[3],
@@ -231,9 +236,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
       state.date = serviceDate;
       state.calendarMonth = serviceDate.slice(0,7) + '-01';
     }
-    if (!loaded || (previousDate !== serviceDate && state.orderDate === previousDate)) {
-      state.orderDate = serviceDate;
-    }
+    if (!loaded) state.orderDate = latestOrderDay;
     if (!floor.some(table => table.id === state.table)) state.table = occupancy[0]?.table || floor[0]?.id || '';
     if (state.orderDate === serviceDate) {
       ledgerOrders = orders;
@@ -270,17 +273,20 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
   const shortDayFormat = new Intl.DateTimeFormat('en-GB', {day:'numeric', month:'short', timeZone:'UTC'});
   const shortDay = day => shortDayFormat.format(new Date(day + 'T00:00:00Z'));
   function salesBuckets(range, metric) {
-    const weekly = range === 'week';
-    const lastHour = Math.floor(minute(serviceTime) / 60);
-    const startHour = orders.reduce((hour, order) => Math.min(hour, Number(order.time.slice(0,2))),
-      Math.min(11, lastHour));
-    const keys = weekly ? weekDays : Array.from({length:lastHour - startHour + 1},
-      (_,index) => timeAt((startHour + index) * 60));
-    const buckets = keys.map(key => ({ label:weekly ? shortDay(key) : key, amounts:salesGroups.map(() => 0) }));
+    const daily = range === 'today';
+    const hourOf = time => Math.floor(minute(time) / 60);
+    const hours = orders.map(order => hourOf(order.time));
+    const firstHour = Math.min(hourOf(serviceWindows[0][0]), ...hours);
+    const lastHour = Math.max(hourOf(serviceWindows.at(-1)[1]), ...hours);
+    const keys = daily ? Array.from({length:lastHour - firstHour + 1},
+      (_,index) => timeAt((firstHour + index) * 60)) : historyDays.slice(-state.salesDays);
+    const buckets = keys.map(key => ({ label:daily ? key : shortDay(key),
+      visible:!daily || key <= serviceTime, amounts:salesGroups.map(() => 0) }));
     const byKey = new Map(keys.map((key,index) => [key,buckets[index].amounts]));
-    for (const order of weekly ? weekOrders : orders) {
+    for (const order of daily ? orders : historyOrders) {
       if (order.status === 'Cancelled' || (metric === 'revenue' && !isPaid(order))) continue;
-      const key = weekly ? order.day : order.time.slice(0,2) + ':00';
+      if (daily && order.time > serviceTime) continue;
+      const key = daily ? order.time.slice(0,2) + ':00' : order.day;
       const amounts = byKey.get(key);
       if (!amounts) continue;
       const touched = new Set();
@@ -298,18 +304,20 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     })) : buckets;
   }
   function salesChart(range) {
-    const weekly = range === 'week';
+    const daily = range === 'today';
     const metric = state.salesMetric[range];
     const revenue = metric === 'revenue';
     const buckets = salesBuckets(range, metric);
     const display = value => (revenue ? '¥' : '') + formatNumber.format(value);
-    const maximum = Math.max(1,...buckets.flatMap(bucket => bucket.amounts));
+    const amounts = buckets.flatMap(bucket => bucket.amounts);
+    const hasSales = amounts.some(value => value > 0);
+    const maximum = Math.max(1,...amounts);
     const roughStep = maximum / 4;
     const scale = Math.max(1, 10 ** Math.floor(Math.log10(roughStep)));
     const step = ([1,2,5,10].find(factor => factor * scale >= roughStep) || 10) * scale;
     const ticks = Math.ceil(maximum / step);
     const left = 54;
-    const width = weekly ? 710 : 470;
+    const width = daily ? 470 : 710;
     const edge = width - 26;
     const pitch = (edge - left) / Math.max(1, buckets.length - 1);
     const x = index => left + index * pitch;
@@ -320,8 +328,8 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
         '<text x="' + (left - 9) + '" y="' + (y(value) + 3) + '" text-anchor="end">' +
         (value >= 10000 ? (revenue ? '¥' : '') + compactNumber.format(value) : display(value)) + '</text>';
     }).join('');
-    const curves = salesGroups.map((group,seriesIndex) => {
-      const points = buckets.map((bucket,index) => [x(index),y(bucket.amounts[seriesIndex])]);
+    const curves = hasSales ? salesGroups.map((group,seriesIndex) => {
+      const points = buckets.flatMap((bucket,index) => bucket.visible ? [[x(index),y(bucket.amounts[seriesIndex])]] : []);
       // Using horizontal handles keeps each segment within its two measured values.
       const path = points.slice(1).map(([endX,endY],index) => {
         const [startX,startY] = points[index];
@@ -331,13 +339,14 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
       return '<path class="dp-sales-line" data-series="' + group.id + '" d="M ' + points[0].join(' ') + path + '"></path>' +
         points.map(([px,py]) => '<circle class="dp-sales-node" data-series="' + group.id + '" cx="' +
           px + '" cy="' + py + '" r="' + (seriesIndex === 2 ? 1.8 : 2.35) + '"></circle>').join('');
-    }).join('');
-    const labels = buckets.map((bucket,index) => weekly || index % 2 === 0 ? '<text x="' + x(index) +
+    }).join('') : '';
+    const labelStep = Math.max(1, Math.ceil((buckets.length - 1) / 6));
+    const labels = buckets.map((bucket,index) => index % labelStep === 0 || index === buckets.length - 1 ? '<text x="' + x(index) +
       '" y="148" text-anchor="middle">' + es(bucket.label) + '</text>' : '').join('');
     const hitAreas = buckets.map((bucket,index) => {
       const label = bucket.label + ' · ' + salesGroups.map((group,groupIndex) =>
         group.label + ' ' + display(bucket.amounts[groupIndex]) + (revenue ? '' : ' orders')).join(' · ');
-      return '<rect class="dp-sales-hit" x="' + (x(index) - pitch / 2) + '" y="10" width="' +
+      return !bucket.visible ? '' : '<rect class="dp-sales-hit" x="' + (x(index) - pitch / 2) + '" y="10" width="' +
         pitch + '" height="120"><title>' + es(label) + '</title></rect>';
     }).join('');
     const legend = salesGroups.map((group,index) => '<li data-series="' + group.id + '"><i aria-hidden="true"></i>' +
@@ -347,21 +356,28 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
       [['orders','Orders'],['revenue','Revenue']].map(([key,label]) =>
         '<button type="button" data-sales-range="' + range + '" data-sales-metric="' + key + '"' +
         selected(key === metric) + '>' + label + '</button>').join('') + '</div>';
-    const period = weekly ? shortDay(weekDays[0]) + '–' + shortDay(serviceDate) + ' · Last 7 days' :
-      'Today · ' + buckets[0].label + '–' + serviceTime + ' · Hourly';
-    const uncategorized = (weekly ? weekOrders : orders).some(order =>
+    const periods = daily ? '' : '<div class="dp-segmented" role="group" aria-label="Sales period">' +
+      [7,30].map(days => '<button type="button" data-sales-days="' + days + '"' +
+        selected(days === state.salesDays) + '>Last ' + days + ' days</button>').join('') + '</div>';
+    const period = daily ? 'Today · ' + serviceWindows.map(window => window.join('–')).join(' / ') + ' · Hourly' :
+      buckets[0].label + '–' + shortDay(serviceDate) + ' · Last ' + buckets.length + ' days';
+    const relevantOrders = daily ? orders : historyOrders.filter(order => order.day >= historyDays.at(-state.salesDays));
+    const uncategorized = relevantOrders.some(order =>
       order.status !== 'Cancelled' && (!revenue || isPaid(order)) &&
       order.items.some(item => item.status !== 'Cancelled' && !item.category));
     const description = (revenue ? 'Paid items at order prices · by order time.' :
       'Orders counted once per category. Cancelled orders excluded.') +
       (uncategorized ? ' Uncategorized items are excluded.' : '');
-    return '<section class="dp-panel dp-sales-panel' + (weekly ? ' dp-sales-week' : '') + '" data-sales-panel="' +
-      range + '">' + head(weekly ? 'Weekly sales by category' : 'Sales by category',toggles) +
+    return '<section class="dp-panel dp-sales-panel' + (daily ? '' : ' dp-sales-week') + '" data-sales-panel="' +
+      range + '">' + head(daily ? 'Sales by category today' : 'Sales history by category',
+        '<div class="dp-chart-controls">' + periods + toggles + '</div>') +
       '<p class="dp-caption dp-sales-range">' + period + ' · ' + (revenue ? 'CNY' : 'Order count') +
-      '</p><svg class="dp-plot" viewBox="0 0 ' + width + ' 156" role="img" aria-label="' +
+      '</p>' + (hasSales ? '<svg class="dp-plot" viewBox="0 0 ' + width + ' 156" role="img" aria-label="' +
       es((revenue ? 'Paid revenue in CNY' : 'Order count') + ' by category. ' + period) +
       '">' + grid + curves + labels + hitAreas + '</svg><ul class="dp-sales-legend" aria-label="Category totals">' +
-      legend + '</ul><p class="dp-caption">' + description + '</p></section>';
+      legend + '</ul>' : '<p class="dp-empty">' + (revenue ? 'No paid sales' : 'No orders') +
+      (daily ? ' recorded today.' : ' in this period.') + '</p>') +
+      '<p class="dp-caption">' + description + '</p></section>';
   }
   function dishRankingRings(leaders) {
     const center = 116;
@@ -399,7 +415,9 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
       'Concentric arcs share a scale of 0 to ' + limit + ', ranked from outermost to innermost.">' +
       rings + ticks + '</svg>';
   }
-  function popularDishes(paidOrders) {
+  function popularDishes() {
+    const today = state.rosePeriod === 'today';
+    const paidOrders = (today ? orders : historyOrders).filter(order => isPaid(order) && order.status !== 'Cancelled');
     const volumes = new Map();
     for (const { items } of paidOrders) {
       for (const item of items) {
@@ -408,12 +426,18 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     }
     const unavailable = dishes.filter(dish => dish.status === 'Unavailable');
     const ranked = [...volumes].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const periods = '<div class="dp-segmented" role="group" aria-label="Dish ranking period">' +
+      [['history','Last 30 days'],['today','Today']].map(([period,label]) =>
+        '<button type="button" data-rose-period="' + period + '"' + selected(period === state.rosePeriod) +
+        '>' + label + '</button>').join('') + '</div>';
     const options = '<div class="dp-segmented" role="group" aria-label="Number of dishes">' +
       [5,12].map(limit => '<button type="button" data-rose-limit="' + limit + '"' +
         selected(limit === state.roseLimit) + '>Top ' + limit + '</button>').join('') + '</div>';
-    const header = '<section class="dp-panel" data-rose-panel>' + head('Popular dishes',options) +
-      '<p class="dp-caption dp-rose-scope">Portions sold · paid orders today</p>';
-    if (!ranked.length) return header + '<p class="dp-empty">No portions sold today.</p>' +
+    const header = '<section class="dp-panel" data-rose-panel>' + head('Popular dishes',
+      '<div class="dp-chart-controls">' + periods + options + '</div>') +
+      '<p class="dp-caption dp-rose-scope">Portions sold · paid orders · ' + (today ? 'Today' : 'Last 30 days') + '</p>';
+    if (!ranked.length) return header + '<p class="dp-empty">No portions sold ' +
+      (today ? 'today.' : 'in the last 30 days.') + '</p>' +
       (unavailable.length ? '<p class="dp-menu-foot"><strong>Unavailable now</strong> · ' +
         unavailable.map(dish => es(dish.name)).join(', ') + '</p>' : '') + '</section>';
     const modes = [5,12].map(limit =>
@@ -519,10 +543,10 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
   }
   function recentOrdersPanel(rows) {
     if (!rows.length) return '<section class="dp-panel" data-recent-orders>' +
-      head('Recent orders', more('View all orders', 'orders', 'data-reset-orders')) +
+      head('Today’s orders', more('View order history', 'orders', 'data-reset-orders="history"')) +
       '<p class="dp-empty">No orders today.</p></section>';
     return '<section class="dp-panel" data-recent-orders>' +
-      head('Recent orders', more('View all orders', 'orders', 'data-reset-orders')) +
+      head('Today’s orders', more('View order history', 'orders', 'data-reset-orders="history"')) +
       '<div class="dp-table-wrap dp-recent-orders"><table>' + tableHead(['Table / Order','Placed','Status','Total']) +
       '<tbody>' + rows.map(order => '<tr><td><button type="button" class="dp-record" data-order="' + order.id +
         '"><strong>Table ' + order.table + '</strong><small>#' + order.id + '</small></button></td><td>' +
@@ -554,13 +578,13 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
         ' available now', 'Floor plan', 'floor') +
       stat('Items awaiting prep', queue, queuedOrders.length ? 'Oldest order placed ' + oldest + ' min ago' :
         'No orders in preparation', 'Kitchen queue', 'queue') +
-      stat('Orders today', orders.length, paidOrders.length + ' paid · ' + money(paidAmount), 'Orders', 'orders', 'data-reset-orders') +
+       stat('Orders today', orders.length, paidOrders.length + ' paid · ' + money(paidAmount), 'Orders', 'orders', 'data-reset-orders="today"') +
       stat('Guests in next hour', upcomingGuests, firstBooking
         ? upcoming.length + ' bookings · Next at ' + firstBooking.start : 'No upcoming bookings',
         'Reservation timeline', 'timeline', firstBooking ? 'data-booking="' + firstBooking.id + '"' : 'data-today') + '</section>' +
       '<div class="dp-overview-grid">' + diningRoomSummary(occupied, reserved, readyOrders, upcoming) +
       salesChart('today') + '</div><div class="dp-overview-grid dp-overview-lower">' +
-      recentOrdersPanel(orders.slice(0,5)) + popularDishes(paidOrders) + '</div>';
+       recentOrdersPanel(orders.slice(0,5)) + popularDishes() + '</div>';
   }
   function filteredOrders() {
     return ledgerOrders.filter(order => (!state.orderStatus || order.status === state.orderStatus) &&
@@ -576,7 +600,10 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     if (ledgerError) return '<p class="dp-empty" role="alert">' + es(ledgerError) +
       ' <button type="button" class="dp-link" data-retry-orders>Retry</button></p>';
     const notice = invalidLedgerDates ? '<p class="dp-caption">Orders with invalid placement dates are omitted.</p>' : '';
-    if (!rows.length) return notice + '<p class="dp-empty">No orders match these filters.</p>';
+    if (!rows.length) return notice + '<p class="dp-empty">' +
+      (!state.orderStatus && !state.payment && state.orderDate ?
+        'No orders on ' + orderDateText() + '. Select another date or choose All dates.' :
+        'No orders match these filters.') + '</p>';
     return notice + '<div class="dp-table-wrap dp-ledger dp-order-scroll"><table>' +
       tableHead(['Order','Table','Placed','Status','Payment','Total']) + '<tbody>' + rows.slice(0,state.orderLimit).map(order =>
       '<tr data-order-row="' + order.id + '"' + (state.order === order.id ? ' class="dp-selected"' : '') +
@@ -645,13 +672,17 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
   function ordersPage() {
     const rows = ledgerDate === state.orderDate ? filteredOrders() : [];
     const current = ledgerDate === state.orderDate && !ledgerError ? currentOrder(rows) : null;
-    return title(titles.orders) + salesChart('week') +
+    const dateShortcuts = '<div class="dp-segmented dp-order-date-shortcuts" role="group" aria-label="Order date shortcuts">' +
+      [[serviceDate,'Today'],['','All dates']].map(([day,label]) =>
+        '<button type="button" data-order-shortcut data-order-day="' + day + '"' + selected(day === state.orderDate) +
+        '>' + label + '</button>').join('') + '</div>';
+    return title(titles.orders) + salesChart('history') +
       '<div class="dp-split"><section class="dp-panel"><div class="dp-toolbar">' +
       '<div class="dp-order-date" data-order-date><span id="dp-order-date-label" class="dp-ledger-caption">Order date</span>' +
       '<button type="button" class="dp-order-date-toggle" data-order-date-toggle aria-expanded="false" aria-controls="dp-order-calendar"' +
       ' aria-labelledby="dp-order-date-label dp-order-date-value"><span id="dp-order-date-value" class="dp-number">' +
       orderDateText() + '</span><span class="dp-calendar-icon" aria-hidden="true"></span></button>' +
-      '<div id="dp-order-calendar" class="dp-order-calendar" role="group" aria-label="Order date picker" data-order-calendar hidden></div></div>' +
+       '<div id="dp-order-calendar" class="dp-order-calendar" role="group" aria-label="Order date picker" data-order-calendar hidden></div></div>' + dateShortcuts +
       toolbarSelect('orderStatus','Order status',['In queue','Ready','Served','Cancelled'],state.orderStatus,'All statuses') +
       toolbarSelect('payment','Payment',['Paid','Unpaid','Not required','Refunded','Partially refunded'],state.payment,'All payments') +
       '</div><div data-order-results>' + orderTable(rows) + '</div></section>' + orderDetail(current) + '</div>';
@@ -1359,12 +1390,15 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
       return;
     }
     if ('orderDay' in button.dataset) {
-      setOrderCalendarOpen(dateControl,false,true);
+      if (dateControl) setOrderCalendarOpen(dateControl,false,true);
       const day = button.dataset.orderDay;
       if (day === state.orderDate) return;
       state.orderDate = day;
       state.orderLimit = 100;
-      dateControl.querySelector('#dp-order-date-value').textContent = orderDateText();
+      main.querySelector('#dp-order-date-value').textContent = orderDateText();
+      for (const shortcut of main.querySelectorAll('[data-order-shortcut]')) {
+        shortcut.setAttribute('aria-pressed', String(shortcut.dataset.orderDay === day));
+      }
       loadLedger();
       return;
     }
@@ -1392,7 +1426,19 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
       const { salesRange, salesMetric } = button.dataset;
       state.salesMetric[salesRange] = salesMetric;
       main.querySelector('[data-sales-panel="' + salesRange + '"]').outerHTML = salesChart(salesRange);
-      main.querySelector('[data-sales-metric="' + salesMetric + '"]').focus({preventScroll:true});
+      main.querySelector('[data-sales-range="' + salesRange + '"][data-sales-metric="' + salesMetric + '"]').focus({preventScroll:true});
+      return;
+    }
+    if ('salesDays' in button.dataset) {
+      state.salesDays = Number(button.dataset.salesDays);
+      button.closest('[data-sales-panel]').outerHTML = salesChart('history');
+      main.querySelector('[data-sales-days="' + state.salesDays + '"]').focus({preventScroll:true});
+      return;
+    }
+    if ('rosePeriod' in button.dataset) {
+      state.rosePeriod = button.dataset.rosePeriod;
+      button.closest('[data-rose-panel]').outerHTML = popularDishes();
+      main.querySelector('[data-rose-period="' + state.rosePeriod + '"]').focus({preventScroll:true});
       return;
     }
     if ('roseLimit' in button.dataset) {
@@ -1525,7 +1571,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
       updateDishDetail(filteredDishes());
     } else if (view) {
       if ('resetOrders' in button.dataset) {
-        state.orderDate = serviceDate;
+        state.orderDate = button.dataset.resetOrders === 'today' ? serviceDate : '';
         state.orderStatus = '';
         state.payment = '';
         state.orderLimit = 100;
