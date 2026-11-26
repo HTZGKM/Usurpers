@@ -1,4 +1,4 @@
-from restaurant.db.database import begin_write, get_connection, insert_id
+from restaurant.db.database import begin_write, get_connection, insert_id, using_postgres
 from .common import ServiceError, date_time, order_items, positive_int
 
 
@@ -104,6 +104,37 @@ def pay_order(order_id, customer_phone=None):
             raise ServiceError("预点订单须到店后结账。",409,code="STATE_CONFLICT")
         db.execute("UPDATE orders SET payment_status='paid',paid_at=CURRENT_TIMESTAMP WHERE order_id=? AND payment_status='unpaid'",(oid,))
         return {"order_id":oid,"payment_status":"paid","already_paid":False}
+
+
+def pay_visit(visit_id, customer_phone, expected_ids, expected_cents):
+    with get_connection() as db:
+        begin_write(db)
+        suffix = " FOR UPDATE" if using_postgres() else ""
+        visit = db.execute("SELECT status FROM dining_sessions WHERE visit_id=? AND customer_phone=?" + suffix,
+                           (visit_id, customer_phone)).fetchone()
+        if not visit:
+            raise ServiceError("Dining visit not found.", 404, code="NOT_FOUND")
+
+        rows = db.execute("""SELECT o.order_id,o.payment_status,ROUND(COALESCE(SUM(i.total_price),0),2) AS total
+                            FROM orders o LEFT JOIN order_items i ON i.order_id=o.order_id AND i.status<>'cancelled'
+                            WHERE o.visit_id=? AND o.customer_phone=? AND o.status<>'cancelled'
+                            AND o.payment_status IN ('unpaid','paid') GROUP BY o.order_id""",
+                          (visit_id, customer_phone)).fetchall()
+        paid = {row["order_id"]: round(float(row["total"]) * 100) for row in rows if row["payment_status"] == "paid"}
+        due = {row["order_id"]: round(float(row["total"]) * 100) for row in rows if row["payment_status"] == "unpaid"}
+        result = {"order_ids": sorted(expected_ids), "total_cents": expected_cents, "payment_status": "paid"}
+        if expected_ids and expected_ids <= paid.keys() and sum(paid[oid] for oid in expected_ids) == expected_cents:
+            return dict(result, already_paid=True)
+        if visit["status"] != "seated" or not due or due.keys() != expected_ids or sum(due.values()) != expected_cents:
+            raise ServiceError("Your table bill changed. Review the updated total before paying.", 409, code="BILL_CHANGED")
+
+        placeholders = ",".join("?" for _ in due)
+        updated = db.execute(f"""UPDATE orders SET payment_status='paid',paid_at=CURRENT_TIMESTAMP
+                                 WHERE visit_id=? AND customer_phone=? AND payment_status='unpaid'
+                                 AND order_id IN ({placeholders})""", (visit_id, customer_phone, *due))
+        if updated.rowcount != len(due):
+            raise ServiceError("Your table bill changed. Review the updated total before paying.", 409, code="BILL_CHANGED")
+        return dict(result, already_paid=False)
 
 
 def _order_detail_items(db, order_id):

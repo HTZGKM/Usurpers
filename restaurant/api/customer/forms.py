@@ -74,6 +74,11 @@ class PaymentForm(FlaskForm):
     submit = SubmitField("Confirm Payment")
 
 
+class VisitPaymentForm(FlaskForm):
+    order_ids = StringField("Orders in this bill", validators=[InputRequired()])
+    total_cents = IntegerField("Bill amount", validators=[InputRequired(), NumberRange(min=0)])
+
+
 class PreorderForm(OrderForm):
     estimated_ready_at = StringField(
         "Requested preparation time",

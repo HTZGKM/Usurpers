@@ -67,7 +67,6 @@ const blank = () => ({
   },
   booking: null,
   bag: [],
-  bill: null,
   bookingHistory: [],
   orderHistory: [],
 });
@@ -633,16 +632,14 @@ function showDetail(k, lineId = null) {
   dishSheet.querySelector(".dish-description").textContent = dish.description;
   const action = dishSheet.querySelector(".primary");
   action.disabled = dish.sold;
-  action.dataset.action = !customer ? "customer-sign-in" : state.bill ? "Your table" : "add";
+  action.dataset.action = !customer ? "customer-sign-in" : "add";
   action.textContent = dish.sold
     ? "Sold out"
-    : state.bill
-      ? "View your order"
-      : editingLine ? "Save changes" : "Add to bag";
+    : editingLine ? "Save changes" : "Add to bag";
   const previewPrice = dishSheet.querySelector(".dish-preview-price");
   previewPrice.hidden = Boolean(customer) || dish.sold;
   previewPrice.textContent = "¥" + dish.price;
-  const canCustomize = Boolean(customer) && !dish.sold && !state.bill;
+  const canCustomize = Boolean(customer) && !dish.sold;
   dishSheet.querySelector(".dish-customization").hidden = !canCustomize;
   dishSheet.querySelector(".dish-options").hidden = !canCustomize;
   dishFeedback();
@@ -740,7 +737,6 @@ function customerPage() {
   return ["Book a table", "Your table", "My account"].includes(route());
 }
 
-let dismissedReceipt;
 let customerQueue = null;
 let resumeOrderHistory = null;
 let checkingVisit = false;
@@ -756,11 +752,8 @@ async function refreshCustomer({ background = false } = {}) {
     ]);
     const visit = (reservationFlow ? reservationData.visit : visits[0]) ?? null;
     const orders = orderData.orders;
-    const latest = orders.find(order => order.visit_id === visit?.visit_id && order.status !== "cancelled");
-    const detail = latest && latest.order_id !== dismissedReceipt
-      ? (await restaurantRequest("/orders/" + latest.order_id)).order : null;
     if (version !== customerRefreshVersion || (background && !visitUpdatesAllowed())) return;
-    const snapshot = background && JSON.stringify([customerVisit, customerQueue, state.bookingHistory, state.orderHistory, state.bill]);
+    const snapshot = background && JSON.stringify([customerVisit, customerQueue, state.bookingHistory, state.orderHistory]);
     customerVisit = visit;
     customerQueue = waitlist.queue;
     const reservations = reservationData.bookings.map(bookingRecord);
@@ -769,13 +762,8 @@ async function refreshCustomer({ background = false } = {}) {
       reservations.find(row => row.phase === "waiting_to_seat") ?? reservations.find(activeReservation) ?? null;
     state.bookingHistory = reservations;
     state.orderHistory = orders;
-    state.bill = detail ? {
-      id: detail.order_id, status: detail.status, paid: detail.payment_status === "paid",
-      lines: orderLines(detail).filter(line => !line.labels.includes("Cancelled")),
-      total: detail.total_amount,
-    } : null;
     customerLoaded = true;
-    if (background && snapshot === JSON.stringify([customerVisit, customerQueue, reservations, orders, state.bill])) return;
+    if (background && snapshot === JSON.stringify([customerVisit, customerQueue, reservations, orders])) return;
   } catch (error) {
     if (background) return;
     if (version === customerRefreshVersion) customerFeedback = error.message;
@@ -1110,31 +1098,42 @@ function preorderMarkup(blocked) {
     '</select></label><button type="submit" class="primary"' + (blocked ? ' disabled' : '') +
     '>Preorder from your bag</button></form>';
 }
+function currentVisitBill(visit, orders) {
+  if (!visit) return null;
+  const current = orders.filter(order => order.visit_id === visit.visit_id && order.status !== "cancelled");
+  const due = current.filter(restaurantCanPayOrder);
+  return {
+    hasOrders: current.length > 0,
+    orderIds: due.map(order => order.order_id),
+    totalCents: due.reduce((total, order) => total + Math.round(Number(order.total_amount) * 100), 0),
+  };
+}
+
+function visitBillMarkup(bill) {
+  if (!bill?.hasOrders) return "";
+  const amount = "¥" + (bill.totalCents / 100).toFixed(2);
+  const count = bill.orderIds.length;
+  return '<section class="visit-access visit-summary visit-bill" aria-labelledby="visit-bill-title">' +
+    '<div class="visit-summary-heading"><h3 id="visit-bill-title">Table bill</h3><strong>' + amount + '</strong></div>' +
+    (count ? '<p>' + count + (count === 1 ? ' unpaid order' : ' unpaid orders') + ' for this visit</p>' +
+      btn("Record " + amount + " payment", "pay-visit", "primary") : '<p>No balance due for this visit.</p>') + '</section>';
+}
+
 function visitView() {
   if (!customer) {
     mount("table");
     return;
   }
   const previousTotal = app.querySelector("[data-bag-total]");
-  const order = state.bill;
-  const lines = order?.lines ?? state.bag;
-  const value = order?.total ?? mealTotal(lines);
-  const blocked = !order && lines.some((line) => menu.get(line.key)?.sold);
-  let body = visitSummary();
+  const lines = state.bag;
+  const value = mealTotal(lines);
+  const blocked = lines.some((line) => menu.get(line.key)?.sold);
+  let body = visitSummary() + visitBillMarkup(currentVisitBill(customerVisit, state.orderHistory));
   if (lines.length) {
-    body += '<div id="lines">' + lines.map((line) => mealLineMarkup(line, !order)).join("") + "</div>";
-    body += order ? pair(order.paid ? "Paid" : "Total", "¥" + value) :
-      '<div class="pair"><span>Total</span><strong class="rolling-price" data-bag-total aria-live="polite" aria-atomic="true"></strong></div>';
+    body += '<div id="lines">' + lines.map((line) => mealLineMarkup(line, true)).join("") + "</div>";
+    body += '<div class="pair"><span>Bag total</span><strong class="rolling-price" data-bag-total aria-live="polite" aria-atomic="true"></strong></div>';
   }
-  if (order?.paid)
-    body +=
-      '<p class="notice" role="status"><span class="tick">✓</span>Payment recorded.</p>' +
-      btn("Start another order", "new-visit", "primary");
-  else if (order)
-    body +=
-      "<p>Order #" + order.id + " · " + esc(orderLabels[order.status]) + "</p>" +
-      btn("Record ¥" + value + " payment", "pay", "primary");
-  else if (!customerLoaded) {
+  if (!customerLoaded) {
     if (!customerFeedback) body += '<p role="status">Checking your visit…</p>';
   } else if (!customerVisit) {
     if (!state.booking && !customerQueue) {
@@ -1154,13 +1153,7 @@ function visitView() {
   }
   body += '<p class="statusline" role="status">' + esc(customerFeedback) + '</p>';
   mount("table");
-  app.querySelector(".panel h2").textContent = order?.paid
-    ? "Payment received"
-    : order
-      ? "Order received"
-      : lines.length
-        ? "Your bag"
-        : "Your visit";
+  app.querySelector(".panel h2").textContent = lines.length ? "Your bag" : "Your visit";
   app.querySelector("[data-details]").innerHTML = body;
   const total = app.querySelector("[data-bag-total]");
   if (total) {
@@ -1660,7 +1653,6 @@ document.addEventListener("click", (e) => {
     return;
   }
   if (a.startsWith("edit-line:") || a.startsWith("remove-line:")) {
-    if (state.bill) return;
     const [command, id] = a.split(":");
     const line = state.bag.find((item) => item.id === Number(id));
     if (!line) return;
@@ -1684,7 +1676,7 @@ document.addEventListener("click", (e) => {
       dishSheet
         .querySelector('[data-action="' + a + '"]:enabled')
         ?.focus({ preventScroll: true });
-    } else if (!state.bill) {
+    } else {
       const line = state.bag.find((item) => item.id === Number(k));
       if (!line) return;
       line.quantity = Math.min(99, Math.max(1, line.quantity + delta));
@@ -1693,34 +1685,40 @@ document.addEventListener("click", (e) => {
     }
     return;
   }
-  if (a === "add" && detailKey && !state.bill && !menu.get(detailKey).sold) {
+  if (a === "add" && detailKey && !menu.get(detailKey).sold) {
     saveDetailToBag();
     return;
   }
-  if (a === "order" && customerVisit && !state.bill && state.bag.length) {
+  if (a === "order" && customerVisit && state.bag.length) {
     if (state.bag.some((line) => menu.get(line.key)?.sold)) return;
     runCustomer(b, async () => {
       const { order } = await restaurantRequest("/visits/" + customerVisit.visit_id + "/orders",
         restaurantOrderFields(state.bag));
-      state.bill = { id: order.order_id, status: order.status, paid: false, lines: state.bag, total: order.total_amount };
       state.bag = [];
       persist();
+      customerFeedback = "Order #" + order.order_id + " sent to the kitchen.";
       await refreshCustomer();
     });
     return;
   }
-  if (a === "pay" && state.bill && !state.bill.paid) {
+  if (a === "pay-visit" && customerVisit) {
+    const bill = currentVisitBill(customerVisit, state.orderHistory);
+    if (!bill?.orderIds.length) return;
     runCustomer(b, async () => {
-      await restaurantRequest("/orders/" + state.bill.id + "/pay", {});
-      state.bill.paid = true;
+      try {
+        const { payment } = await restaurantRequest("/visits/" + customerVisit.visit_id + "/pay", {
+          order_ids: bill.orderIds.join(","), total_cents: bill.totalCents,
+        });
+        const count = payment.order_ids.length;
+        customerFeedback = payment.already_paid ? "Those orders are already paid." :
+          "Payment recorded for " + count + (count === 1 ? " order." : " orders.");
+      } catch (error) {
+        if (error.code === "BILL_CHANGED") await refreshCustomer();
+        throw error;
+      }
       await refreshCustomer();
     });
     return;
-  }
-  if (a === "new-visit" && state.bill?.paid) {
-    dismissedReceipt = state.bill.id;
-    state.bill = null;
-    go("Menu");
   }
 });
 window.addEventListener("hashchange", () => {
