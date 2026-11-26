@@ -26,7 +26,7 @@
 登录主管账号后进入 **Dishes**。
 
 - 点 **New dish**，填菜名、分类、价格和菜品资料后保存。
-- 点现有菜品，在右侧修改 **Price (¥)**，再点 **Save changes**。顾客刷新菜单后可看到新价。旧订单继续按下单时的单价显示。
+- 点现有菜品，在右侧修改 **Price (¥)**，再点 **Save dish**。顾客刷新菜单后可看到新价。旧订单继续按下单时的单价显示。
 - 厨房通过 **Availability** 管理供应状态，主管通过 **Dishes** 管理菜品资料和价格。
 
 [主管菜品表单](https://github.com/HTZGKM/Usurpers/blob/7a72cb4fd19abc8b760d7d3ad58aefd6ba86f65f/restaurant/static/js/admin.js#L1106) · [主管新增与修改接口](https://github.com/HTZGKM/Usurpers/blob/7a72cb4fd19abc8b760d7d3ad58aefd6ba86f65f/restaurant/api/admin/routes.py#L164)
@@ -35,4 +35,6 @@
 
 本轮 80 项 Python 测试和 25 项 JavaScript 测试全部通过。Python 回归覆盖临时 SQLite 和仅监听本机的 PostgreSQL 17。正式环境先应用 [数据库迁移 003](https://github.com/HTZGKM/Usurpers/blob/7a72cb4fd19abc8b760d7d3ad58aefd6ba86f65f/restaurant/db/migrations/003_order_consistency.sql#L1)，再部署应用。迁移会增加订单版本和提交记录，清理已有的逾时预点单，保留订单与菜品历史。
 
-正式站用于核对版本、迁移状态和角色入口。多人抢桌、故障注入和写入竞争在隔离库执行。组员可从 [Double Portion 正式站](https://doubleportion-usurpers.vercel.app) 开始演练。
+应用改动已通过 [PR #31](https://github.com/HTZGKM/Usurpers/pull/31) 合并，正式发布提交为 `a5121b5`。Vercel 部署成功，健康检查返回 200，顾客、前台、厨房及共用 API 脚本与发布代码一致。正式 Neon 已登记迁移 `002` 和 `003`，本次迁移取消了 1 笔逾时且未入座、未付款、未开工的预点单。
+
+正式站已用四个角色核对顾客订单、前台预约与自动刷新、厨房队列、主管新增与改价表单。多人抢桌、故障注入和写入竞争在隔离库执行。组员可从 [Double Portion 正式站](https://doubleportion-usurpers.vercel.app) 开始演练。
