@@ -2397,6 +2397,8 @@ main.menu-page {
 }
 .visit-summary .guest-facts dd { font-size: 1.1rem; }
 .visit-summary > p { margin-top: 10px; }
+.visit-bill .visit-summary-heading strong { font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+.visit-bill .primary { margin-top: 12px; }
 .visit-check-in {
   margin-top: 16px;
   padding-top: 14px;

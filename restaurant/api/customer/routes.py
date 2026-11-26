@@ -6,13 +6,14 @@ from .forms import (
     OrderForm,
     PaymentForm,
     PreorderForm,
+    VisitPaymentForm,
     WaitlistForm,
 )
 from restaurant.api.frontdesk.forms import StaffBookingForm
 from flask import Blueprint, jsonify, request, session
 from restaurant.route_utils import validated_data, require_api_role
 from restaurant.services import allocation, booking_service, order_service, menu_service
-from restaurant.services.common import ServiceError
+from restaurant.services.common import ServiceError, positive_int
 
 customer_bp = Blueprint("customer", __name__)
 
@@ -195,6 +196,17 @@ def pay_order(order_id):
         session["user"]["username"] if session["user"]["role"] == "customer" else None
     )
     return jsonify({"ok": True, "payment": order_service.pay_order(order_id, owner)})
+
+
+@customer_bp.post("/visits/<int:visit_id>/pay")
+def pay_visit(visit_id):
+    denied = require_api_role("customer")
+    if denied is not None:
+        return denied
+    data = validated_data(VisitPaymentForm)
+    order_ids = {positive_int(value, "order_ids") for value in data["order_ids"].split(",")}
+    payment = order_service.pay_visit(visit_id, session["user"]["username"], order_ids, data["total_cents"])
+    return jsonify(ok=True, payment=payment)
 
 
 @customer_bp.get("/orders")

@@ -71,6 +71,49 @@ class ServiceAndApiTests(RestaurantTestCase):
         with get_connection() as db:
             self.assertEqual(db.execute("SELECT count(*) FROM orders WHERE order_id=9001 AND paid_at IS NOT NULL").fetchone()[0],1)
 
+    def test_visit_payment_is_atomic_and_scoped_to_the_confirmed_balance(self):
+        from restaurant.db.database import insert_id
+        from restaurant.services.order_service import create_dine_in_order, get_order
+
+        owner_phone = "13900000001"
+        owner = self.signed_in(owner_phone)
+        other = self.signed_in("13900000002")
+        frontdesk = self.signed_in("frontdesk@shuangfen.local")
+        with get_connection() as db:
+            old_visit = insert_id(db, "INSERT INTO dining_sessions(customer_phone,party_size,table_id) VALUES(?,2,6)",
+                                  (owner_phone,), "visit_id")
+        line = {"dish_id": 1, "quantity": 1}
+        history = create_dine_in_order(old_visit, [line], owner_phone)
+        with get_connection() as db:
+            db.execute("UPDATE dining_sessions SET status='closed' WHERE visit_id=?", (old_visit,))
+            visit = insert_id(db, "INSERT INTO dining_sessions(customer_phone,party_size,table_id) VALUES(?,2,6)",
+                              (owner_phone,), "visit_id")
+        first = create_dine_in_order(visit, [line], owner_phone)
+        settled = create_dine_in_order(visit, [line], owner_phone)
+        pay_order(settled["order_id"])
+        cancelled = create_dine_in_order(visit, [line], owner_phone)
+        self.assertEqual(write(owner, f"/orders/{cancelled['order_id']}/cancel").status_code, 200)
+        second = create_dine_in_order(visit, [line], owner_phone)
+        endpoint = f"/visits/{visit}/pay"
+        quote = {"order_ids": str(first["order_id"]), "total_cents": round(first["total_amount"] * 100)}
+        self.assertEqual(write(other, endpoint, quote).status_code, 404)
+        self.assertEqual(write(frontdesk, endpoint, quote).status_code, 403)
+        stale = write(owner, endpoint, quote)
+        self.assertEqual((stale.status_code, stale.json["error"]), (409, "BILL_CHANGED"))
+        ids = [first["order_id"], second["order_id"]]
+        quote = {"order_ids": ",".join(map(str, ids)), "total_cents": round((first["total_amount"] + second["total_amount"]) * 100)}
+        self.assertEqual(write(owner, endpoint, {**quote, "total_cents": quote["total_cents"] - 1}).status_code, 409)
+        self.assertTrue(all(get_order(oid)["payment_status"] == "unpaid" for oid in ids))
+        payment = write(owner, endpoint, quote)
+        self.assertEqual(payment.status_code, 200)
+        self.assertEqual(payment.json["payment"]["order_ids"], ids)
+        self.assertTrue(all(get_order(oid)["payment_status"] == "paid" for oid in ids))
+        later = create_dine_in_order(visit, [line], owner_phone)
+        self.assertTrue(write(owner, endpoint, quote).json["payment"]["already_paid"])
+        self.assertEqual(get_order(later["order_id"])["payment_status"], "unpaid")
+        self.assertEqual(get_order(history["order_id"])["payment_status"], "unpaid")
+        self.assertEqual(get_order(cancelled["order_id"])["status"], "cancelled")
+
     def test_preorder_waits_until_ready_time(self):
         from restaurant.services.order_service import create_preorder
         from restaurant.services.queue_manager import QueueManager
