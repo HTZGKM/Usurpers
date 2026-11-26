@@ -90,3 +90,5 @@ Vercel 从根目录导入 `app.py` 中的 Flask 应用。项目的 Production �
 发布前检查同桌的有效旧时段、重复活动占桌、重复关联预约的堂食记录及有效叫号。GiST 排他约束与活动堂食唯一索引必须成功创建。切换后核对 `reservation_schema_versions` 的版本 2、Vercel 提交，以及顾客、前台、主管的实际页面。若已接受新时间点预约后需要回退，先将版本 2 的 `writes_enabled` 设为 false，保留现有数据并使用能读新结构的兼容版本，再修复后恢复写入。
 
 隔离验收使用一个名为 `usurpers_test` 的本机 PostgreSQL。把 `USURPERS_TEST_POSTGRES_URL` 指向它，运行 `python -m unittest discover -s tests`。每个集成用例使用独立临时 schema。
+
+发布订单防重和厨房开工版本校验前，先在已启用版本 2 的目标库执行 `restaurant/db/migrations/003_order_consistency.sql`。发布与验收说明见[并发与异步修复交接](docs/concurrency-async-handoff.md)。

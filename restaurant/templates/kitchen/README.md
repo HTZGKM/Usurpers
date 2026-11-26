@@ -4,7 +4,7 @@
 
 - **Queue** 按订单显示菜品、数量和备注。单项通过 **Start preparation** 进入制作，随后点 **Mark ready**。前台标记上菜后，该菜品从队列移出。
 - **Availability** 按菜单分类显示现有菜品的供应状态。可以切换 **Available** 和 **Unavailable**。
-- 队列定时刷新，也可点 **Refresh**。供应状态写入 SQLite，顾客重新进入或刷新菜单时读取更新。
+- 队列定时刷新，也可点 **Refresh**。供应状态写入应用数据库，顾客刷新菜单时读取更新。
 
 ## 接入接口
 
@@ -12,7 +12,7 @@
 
 | 方法与路径 | 后端提供的数据或动作 |
 | --- | --- |
-| `GET /kitchen/queue?status=waiting\|cooking\|ready` | 按状态读取订单号、明细 ID、菜品 ID、数量与备注。 |
-| `POST /kitchen/items/<order_item_id>/start`、`POST /kitchen/items/<order_item_id>/complete` | 开始制作和标记出餐就绪。上菜由前台确认。 |
+| `GET /kitchen/queue?status=active` | 一次返回三种厨房状态，含订单号、菜品数量、备注与 `order_version`。 |
+| `POST /kitchen/items/<order_item_id>/start`、`POST /kitchen/items/<order_item_id>/complete` | 开工提交 `expected_version`。旧卡片会收到 409，并刷新队列。做好后标记就绪，上菜由前台确认。 |
 | `GET /kitchen/menu` | 菜品 ID、菜名、分类和当前 `is_available`。 |
 | `POST /kitchen/menu/<dish_id>/availability` | 根据 `is_available` 更新对应菜品的供应状态。 |
