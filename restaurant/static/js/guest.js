@@ -780,6 +780,21 @@ async function runCustomer(control, work) {
     await work();
   } catch (error) {
     customerFeedback = error.message;
+    if (["PRICE_CHANGED", "DISH_UNAVAILABLE"].includes(error.code)) {
+      try {
+        const { items } = await restaurantRequest("/menu");
+        const current = new Map(items.map(item => [item.dish_id, item]));
+        for (const dish of dishes) {
+          const latest = current.get(dish.id);
+          dish.sold = !latest;
+          if (latest) dish.price = Number(latest.price);
+        }
+        state.bag = restoreMealBag(state.bag, menu);
+        persist();
+      } catch {
+        customerFeedback += " Use Refresh to load the current menu.";
+      }
+    }
     if (["TABLE_UNAVAILABLE", "CAPACITY_INSUFFICIENT"].includes(error.code) && app.querySelector("#reservation")) {
       syncAvailability(true);
     }
@@ -1015,7 +1030,7 @@ function renderSubmittedOrder(body, order) {
     }
     if (action === "edit-submitted-order") {
       const available = dishes.filter(dish => !dish.sold)
-        .map(dish => ({ dish_id: dish.id, dish_name: dish.name }));
+        .map(dish => ({ dish_id: dish.id, dish_name: dish.name, price: dish.price }));
       return restaurantOrderEditor(order, base + "/edit", available, async () => {
         customerFeedback = "Order updated.";
         resumeOrderHistory = order.order_id;
@@ -1439,13 +1454,14 @@ document.addEventListener("submit", (e) => {
       } else {
         const booking = state.bookingHistory.find(row => row.id === Number(fields.get("booking_id")));
         if (!booking || !state.bag.length) return;
-        const { order } = await restaurantRequest("/bookings/" + booking.id + "/preorders", {
+        const { order, recoveredPrevious } = await restaurantSubmitOnce("/bookings/" + booking.id + "/preorders", {
           ...restaurantOrderFields(state.bag),
-          estimated_ready_at: booking.date + "T" + (slots[booking.time] ?? booking.time).slice(0, 5) + ":00+08:00",
+          ...(!reservationFlow ? { estimated_ready_at: booking.date + "T" + slots[booking.time].slice(0, 5) + ":00+08:00" } : {}),
         });
-        state.bag = [];
+        if (!recoveredPrevious) state.bag = [];
         persist();
-        customerFeedback = "Preorder #" + order.order_id + " saved. It reaches the kitchen once you are seated and it is time to prepare it.";
+        customerFeedback = "Preorder #" + order.order_id + (recoveredPrevious ? " recovered. Review your current bag before ordering again." :
+          " saved. It reaches the kitchen once you are seated and it is time to prepare it.");
       }
       await refreshCustomer();
     });
@@ -1692,11 +1708,12 @@ document.addEventListener("click", (e) => {
   if (a === "order" && customerVisit && state.bag.length) {
     if (state.bag.some((line) => menu.get(line.key)?.sold)) return;
     runCustomer(b, async () => {
-      const { order } = await restaurantRequest("/visits/" + customerVisit.visit_id + "/orders",
+      const { order, recoveredPrevious } = await restaurantSubmitOnce("/visits/" + customerVisit.visit_id + "/orders",
         restaurantOrderFields(state.bag));
-      state.bag = [];
+      if (!recoveredPrevious) state.bag = [];
       persist();
-      customerFeedback = "Order #" + order.order_id + " sent to the kitchen.";
+      customerFeedback = "Order #" + order.order_id + (recoveredPrevious ? " recovered. Review your current bag before ordering again." :
+        " sent to the kitchen.");
       await refreshCustomer();
     });
     return;

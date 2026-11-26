@@ -1,5 +1,5 @@
 from restaurant.forms import ActionForm
-from .forms import FinishCookingForm, DishAvailabilityForm
+from .forms import FinishCookingForm, StartCookingForm, DishAvailabilityForm
 from flask import Blueprint, jsonify, request, session
 from restaurant.route_utils import validated_data, require_api_role
 from restaurant.services import order_service, kitchen_service, menu_service
@@ -46,8 +46,8 @@ def order_detail(order_id):
 
 @kitchen_bp.post("/items/<int:order_item_id>/start")
 def start_item(order_item_id):
-    data = validated_data(ActionForm)
-    return jsonify({"ok": True, "item": kitchen_service.start_item(order_item_id)})
+    data = validated_data(StartCookingForm)
+    return jsonify({"ok": True, "item": kitchen_service.start_item(order_item_id, data["expected_version"])})
 
 
 @kitchen_bp.post("/items/<int:order_item_id>/complete")

@@ -1,11 +1,12 @@
 """食材库存管理。只判断现存量，不做预留。"""
 from restaurant.db.database import begin_write, get_connection, insert_id
+from . import submission
 from .common import ServiceError, positive_int, required_text
 import math
 from datetime import date, datetime
 
 
-def adjust_stock(ingredient_id, quantity, movement_type="adjustment", reference=None):
+def adjust_stock(ingredient_id, quantity, movement_type="adjustment", reference=None, *, request_key=None, actor=None):
     iid=positive_int(ingredient_id,"ingredient_id")
     try: delta=float(quantity)
     except (TypeError,ValueError): raise ServiceError("quantity 必须是有效数字。",field="quantity")
@@ -15,11 +16,16 @@ def adjust_stock(ingredient_id, quantity, movement_type="adjustment", reference=
     reference=required_text(reference,"reference",limit=120) if reference is not None else None
     with get_connection() as db:
         begin_write(db)
+        payload = [iid, delta, movement_type, reference]
+        previous = submission.replay(db, "stock-adjustment", actor, request_key, payload)
+        if previous is not None:
+            return previous
         row=db.execute("SELECT on_hand FROM ingredients WHERE ingredient_id=?",(iid,)).fetchone()
         if not row: raise ServiceError("食材不存在。",404)
         if float(row[0])+delta < 0: raise ServiceError("调整后库存不能为负。",409,code="INVENTORY_CONFLICT")
         db.execute("UPDATE ingredients SET on_hand=on_hand+? WHERE ingredient_id=?",(delta,iid))
-        return dict(db.execute("SELECT * FROM ingredients WHERE ingredient_id=?",(iid,)).fetchone())
+        result = dict(db.execute("SELECT * FROM ingredients WHERE ingredient_id=?",(iid,)).fetchone())
+        return submission.record(db, "stock-adjustment", actor, request_key, payload, result)
 
 
 def create_ingredient(name, unit, on_hand, expires_at=None):

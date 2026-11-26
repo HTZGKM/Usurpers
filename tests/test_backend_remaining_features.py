@@ -41,18 +41,18 @@ class RemainingFeatureTests(RestaurantTestCase):
         visit = write(frontdesk, f"/frontdesk/waiting-queue/{ticket}/seat", {"table_id": 6}).json["visit"]["visit_id"]
         self.assertIsNone(customer.get("/waiting-queue/mine").json["queue"])
 
-        placed = write(customer, f"/visits/{visit}/orders", dish())
+        placed = write(customer, f"/visits/{visit}/orders", {**dish(), "idempotency_key": "fixture-dine-in"})
         self.assertEqual(placed.status_code, 201)
         order = placed.json["order"]["order_id"]
         original_item = get_order(order)["items"][0]["order_item_id"]
-        self.assertEqual(write(customer, f"/orders/{order}/edit", dish(quantity=2)).json["order"]["total_amount"], 76)
-        self.assertEqual(write(frontdesk, f"/frontdesk/orders/{order}/edit", dish(quantity=3)).json["order"]["total_amount"], 114)
+        self.assertEqual(write(customer, f"/orders/{order}/edit", {**dish(quantity=2), "expected_version": 1}).json["order"]["total_amount"], 76)
+        self.assertEqual(write(frontdesk, f"/frontdesk/orders/{order}/edit", {**dish(quantity=3), "expected_version": 2}).json["order"]["total_amount"], 114)
         self.assertEqual([row["order_item_id"] for row in get_order(order)["items"]], [original_item])
         items = [item for item in kitchen.get("/kitchen/queue?status=active").json["items"] if item["order_id"] == order]
         self.assertEqual(len(items), 1)
         item = items[0]["order_item_id"]
         self.assertEqual((item, items[0]["status"], items[0]["quantity"]), (original_item, "waiting", 3))
-        self.assertEqual(write(kitchen, f"/kitchen/items/{item}/start").status_code, 200)
+        self.assertEqual(write(kitchen, f"/kitchen/items/{item}/start", {"expected_version": 3}).status_code, 200)
         self.assertEqual(get_order(order)["items"][0]["kitchen_status"], "cooking")
         self.assertEqual(write(customer, f"/orders/{order}/cancel").status_code, 409)
         self.assertEqual(write(kitchen, f"/kitchen/items/{item}/complete").status_code, 200)
@@ -84,15 +84,15 @@ class RemainingFeatureTests(RestaurantTestCase):
         kitchen = self.signed_in("kitchen@shuangfen.local")
         booking = create_booking("Preorder fixture", "13900000001", "2026-12-20", 1, 2, "13900000001", 6)["booking_id"]
         response = write(customer, f"/bookings/{booking}/preorders",
-                         {**dish(), "estimated_ready_at": "2026-12-20T11:00:00+08:00"})
+                         {**dish(), "idempotency_key": "fixture-preorder", "estimated_ready_at": "2026-12-20T11:00:00+08:00"})
         self.assertEqual(response.status_code, 201)
         order = response.json["order"]["order_id"]
         original = get_order(order)["items"][0]
-        edited = write(customer, f"/orders/{order}/edit", dish(quantity=2))
+        edited = write(customer, f"/orders/{order}/edit", {**dish(quantity=2), "expected_version": 1})
         line = next(item for item in edited.json["order"]["items"] if item["status"] == "waiting")
         self.assertEqual([item["order_item_id"] for item in edited.json["order"]["items"]], [original["order_item_id"]])
         self.assertIsNone(line["kitchen_status"])
-        self.assertEqual(write(kitchen, f"/kitchen/items/{line['order_item_id']}/start").status_code, 409)
+        self.assertEqual(write(kitchen, f"/kitchen/items/{line['order_item_id']}/start", {"expected_version": 2}).status_code, 409)
         self.assertEqual(write(customer, f"/orders/{order}/pay").status_code, 409)
         self.assertEqual(QueueManager.enqueue_due_preorders("2026-12-20 04:00:00"), 0)
         update_booking(booking, "2026-12-21", 2, 2, "13900000001", 1, expected_version=1)
@@ -111,7 +111,7 @@ class RemainingFeatureTests(RestaurantTestCase):
         self.assertEqual(blocked.status_code, 409)
         self.assertEqual(blocked.json["error"], "VISIT_UNFINISHED_ITEMS")
         item = line["order_item_id"]
-        self.assertEqual(write(kitchen, f"/kitchen/items/{item}/start").status_code, 200)
+        self.assertEqual(write(kitchen, f"/kitchen/items/{item}/start", {"expected_version": 2}).status_code, 200)
         self.assertEqual(write(kitchen, f"/kitchen/items/{item}/complete").status_code, 200)
         self.assertEqual(write(desk, f"/frontdesk/orders/{order}/items/{item}/serve").status_code, 200)
         self.assertEqual(write(desk, f"/frontdesk/visits/{visit}/close").status_code, 200)

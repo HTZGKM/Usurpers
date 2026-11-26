@@ -114,6 +114,32 @@ class ServiceAndApiTests(RestaurantTestCase):
         self.assertEqual(get_order(history["order_id"])["payment_status"], "unpaid")
         self.assertEqual(get_order(cancelled["order_id"])["status"], "cancelled")
 
+    def test_frontdesk_order_retry_recovers_first_order_without_another_kitchen_line(self):
+        desk = self.signed_in("frontdesk@shuangfen.local")
+        with get_connection() as db:
+            visit = db.execute("INSERT INTO dining_sessions(party_size,table_id) VALUES(2,6) RETURNING visit_id").fetchone()[0]
+        fields = {"visit_id": visit, "items-0-dish_id": 1, "items-0-quantity": 1, "idempotency_key": "same-draft"}
+        first = write(desk, "/frontdesk/orders", fields)
+        second = write(desk, "/frontdesk/orders", fields)
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.json["order"]["order_id"], first.json["order"]["order_id"])
+        conflict = write(desk, "/frontdesk/orders", {**fields, "items-0-quantity": 2})
+        self.assertEqual((conflict.status_code, conflict.json["error"]), (409, "IDEMPOTENCY_KEY_REUSED"))
+        with get_connection() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM orders WHERE visit_id=?", (visit,)).fetchone()[0], 1)
+
+    def test_order_with_stale_price_or_excessive_quantity_keeps_database_unchanged(self):
+        desk = self.signed_in("frontdesk@shuangfen.local")
+        with get_connection() as db:
+            visit = db.execute("INSERT INTO dining_sessions(party_size,table_id) VALUES(2,6) RETURNING visit_id").fetchone()[0]
+        fields = {"visit_id": visit, "items-0-dish_id": 1, "items-0-quantity": 1,
+                  "items-0-quoted_unit_cents": 100, "idempotency_key": "fixture-stale-price"}
+        stale = write(desk, "/frontdesk/orders", fields)
+        self.assertEqual((stale.status_code, stale.json["error"]), (409, "PRICE_CHANGED"))
+        self.assertEqual(write(desk, "/frontdesk/orders", {**fields, "items-0-quantity": 100}).status_code, 400)
+        with get_connection() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM orders WHERE visit_id=?", (visit,)).fetchone()[0], 0)
+
     def test_preorder_waits_until_ready_time(self):
         from restaurant.services.order_service import create_preorder
         from restaurant.services.queue_manager import QueueManager

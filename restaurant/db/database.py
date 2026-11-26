@@ -147,7 +147,12 @@ def begin_write(connection, *, legacy_allocation=False):
         connection.execute("BEGIN IMMEDIATE")
     else:
         # Preserve SQLite's serial writer semantics for workflows that read before writing.
-        connection.execute("SELECT pg_advisory_xact_lock(731593001)")
+        connection.execute("""DO $$ BEGIN
+            IF current_setting('lock_timeout') = '0' THEN
+                PERFORM set_config('lock_timeout', '3s', true);
+            END IF;
+            PERFORM pg_advisory_xact_lock(731593001);
+        END $$""")
         if legacy_allocation:
             from restaurant.services.allocation import legacy_write_guard
 
@@ -253,6 +258,10 @@ def create_schema(connection: sqlite3.Connection) -> None:
             FOREIGN KEY(order_id) REFERENCES orders(order_id) ON DELETE CASCADE,
             FOREIGN KEY(dish_id) REFERENCES dishes(dish_id)
         );
+        CREATE TABLE IF NOT EXISTS mutation_requests (
+            scope TEXT NOT NULL, actor TEXT NOT NULL, request_key TEXT NOT NULL,
+            fingerprint TEXT NOT NULL, result TEXT NOT NULL, PRIMARY KEY(scope,actor,request_key)
+        );
         CREATE TABLE IF NOT EXISTS waiting_queue (
             queue_id INTEGER PRIMARY KEY AUTOINCREMENT, contact_name TEXT, phone_number TEXT,
             customer_phone TEXT, party_size INTEGER NOT NULL CHECK(party_size>0),
@@ -297,6 +306,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
         ("bookings", "customer_phone", "TEXT REFERENCES customers(customer_phone)"),
         ("bookings", "version", "INTEGER NOT NULL DEFAULT 1 CHECK(version > 0)"),
         ("orders", "booking_id", "INTEGER REFERENCES bookings(booking_id)"),
+        ("orders", "version", "INTEGER NOT NULL DEFAULT 1 CHECK(version > 0)"),
         ("staff", "is_active", "INTEGER NOT NULL DEFAULT 1"),
         ("customers", "is_active", "INTEGER NOT NULL DEFAULT 1"),
         ("dishes", "is_archived", "INTEGER NOT NULL DEFAULT 0"),

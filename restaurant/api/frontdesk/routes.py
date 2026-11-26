@@ -14,7 +14,7 @@ from .forms import (
     RemakeForm,
     RefundForm,
 )
-from restaurant.api.customer.forms import OrderForm
+from restaurant.api.customer.forms import OrderEditForm
 from flask import Blueprint, jsonify, request, session
 from restaurant.route_utils import validated_data, require_api_role
 from restaurant.services import (
@@ -158,7 +158,8 @@ def create_dine_in_order():
             {
                 "ok": True,
                 "order": order_service.create_dine_in_order(
-                    data.get("visit_id"), data.get("items")
+                    data.get("visit_id"), data.get("items"), request_key=data.get("idempotency_key"),
+                    actor=session["user"]["role"] + ":" + session["user"]["username"],
                 ),
             }
         ),
@@ -168,9 +169,9 @@ def create_dine_in_order():
 
 @frontdesk_bp.post("/orders/<int:order_id>/edit")
 def frontdesk_edit_order(order_id):
-    data = validated_data(OrderForm)
+    data = validated_data(OrderEditForm)
     return jsonify(
-        {"ok": True, "order": order_service.update_order(order_id, data.get("items"))}
+        {"ok": True, "order": order_service.update_order(order_id, data.get("items"), expected_version=data["expected_version"])}
     )
 
 

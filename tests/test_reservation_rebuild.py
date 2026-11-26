@@ -5,6 +5,7 @@ from unittest.mock import patch
 import unittest
 
 import test_postgres_booking_consistency as postgres
+from backend_test_helpers import csrf
 from restaurant.db.database import get_connection
 
 
@@ -70,6 +71,7 @@ class ReservationRebuildTests(unittest.TestCase):
             booking = self.reserve(guest).json["booking"]["booking_id"]
         path = f"{DESK}/bookings/{booking}"
         order = self.send(guest, f"/bookings/{booking}/preorders", {
+            "idempotency_key": "fixture-preorder",
             "estimated_ready_at": DAY + "T19:00:00+08:00", "items-0-dish_id": 1, "items-0-quantity": 1,
         })
         self.assertEqual(order.status_code, 201)
@@ -113,6 +115,29 @@ class ReservationRebuildTests(unittest.TestCase):
             self.assertEqual([row["status"] for row in db.execute("SELECT status FROM bookings ORDER BY booking_id")],
                              ["booked", "no_show"])
             self.assertEqual(db.execute("SELECT booking_id FROM table_holds").fetchone()[0], ids[0])
+
+    def test_no_show_closes_unseated_preorder_and_uses_server_schedule(self):
+        self.upgrade()
+        guest, desk = self.actor(), self.actor(staff=True)
+        with get_connection() as db:
+            db.execute("INSERT INTO dishes(dish_name,price) VALUES('Fixture dish',19)")
+        with clock(18):
+            booking = self.reserve(guest).json["booking"]["booking_id"]
+            response = self.send(guest, f"/bookings/{booking}/preorders", {
+                "idempotency_key": "fixture-missed-preorder",
+                "estimated_ready_at": DAY + "T20:00:00+08:00", "items-0-dish_id": 1, "items-0-quantity": 1,
+            })
+        self.assertEqual(response.status_code, 201)
+        order = response.json["order"]
+        self.assertEqual(order["estimated_ready_at"], DAY + " 11:00:00")
+        with clock(19, 10):
+            self.send(desk, DESK + "/snapshot", method="GET")
+            self.assertEqual(self.send(guest, f"/orders/{order['order_id']}", method="GET").json["order"]["status"], "active")
+        with clock(19, 10, 1):
+            history = self.send(guest, "/orders", method="GET").json["orders"]
+            self.assertEqual(history[0]["status"], "cancelled")
+        expired = self.send(guest, f"/orders/{order['order_id']}", method="GET").json["order"]
+        self.assertEqual((expired["status"], expired["total_amount"], expired["items"][0]["status"]), ("cancelled", 0, "cancelled"))
 
     def test_waitlist_wins_released_table_before_online_conflict_is_returned(self):
         self.upgrade()
@@ -297,6 +322,112 @@ class ReservationRebuildTests(unittest.TestCase):
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["status"], "closed")
         self.assertIsNotNone(records[0]["seated_at"])
+
+    def test_clearing_and_call_are_recovered_together_after_request_failure(self):
+        self.upgrade()
+        desk = self.actor(staff=True)
+        with clock(17):
+            visit = self.send(desk, DESK + "/walk-ins", {"party_size": 2, "table_id": 1}).json["visit"]
+            ticket = self.send(desk, DESK + "/tickets", {"party_size": 2}).json["queue"]["queue_id"]
+            self.assertEqual(self.send(desk, f"/frontdesk/visits/{visit['visit_id']}/close").status_code, 200)
+        with clock(17, 10):
+            with patch("restaurant.services.allocation._call_next", side_effect=RuntimeError("simulated interruption")):
+                self.assertEqual(self.send(desk, DESK + "/snapshot", method="GET").status_code, 500)
+            with get_connection() as db:
+                self.assertIsNone(db.execute("SELECT clearance_processed_at FROM dining_sessions").fetchone()[0])
+                self.assertEqual(db.execute("SELECT status FROM waiting_queue").fetchone()[0], "waiting")
+            from app import create_app
+
+            self.app = create_app()
+            desk = self.actor(staff=True)
+            for _ in range(2):
+                queue = self.send(desk, DESK + "/snapshot", method="GET").json["queue"]
+                self.assertEqual([(row["queue_id"], row["status"]) for row in queue], [(ticket, "called")])
+        with get_connection() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM table_holds WHERE queue_id=?", (ticket,)).fetchone()[0], 1)
+
+    def test_order_migration_recovers_missed_preorder_twice_without_touching_other_orders(self):
+        import psycopg
+
+        self.upgrade()
+        with get_connection() as db:
+            booking = db.execute("""INSERT INTO bookings(contact_name,phone_number,booking_date,time_slot,party_size,status)
+                VALUES('Missed','13910000000',?,'19:00-20:30',2,'no_show') RETURNING booking_id""", (DAY,)).fetchone()[0]
+            missed = db.execute("INSERT INTO orders(booking_id,order_type) VALUES(?,'preorder') RETURNING order_id",
+                                (booking,)).fetchone()[0]
+            other = db.execute("INSERT INTO orders DEFAULT VALUES RETURNING order_id").fetchone()[0]
+            db.execute("INSERT INTO dishes(dish_name,price) VALUES('Fixture dish',19)")
+            db.execute("INSERT INTO order_items(order_id,dish_id,quantity,unit_price) VALUES(?,1,1,19)", (missed,))
+        contents = (postgres.DB_SQL / "migrations" / "003_order_consistency.sql").read_text(encoding="utf-8")
+        with psycopg.connect(self.dsn, autocommit=True) as db:
+            for _ in range(2):
+                db.execute(contents)
+        with get_connection() as db:
+            states = {row["order_id"]: row["status"] for row in db.execute("SELECT order_id,status FROM orders")}
+            self.assertEqual(states, {missed: "cancelled", other: "active"})
+            self.assertEqual(db.execute("SELECT status FROM order_items WHERE order_id=?", (missed,)).fetchone()[0], "cancelled")
+            self.assertEqual(db.execute("SELECT count(*) FROM reservation_schema_versions WHERE version=3").fetchone()[0], 1)
+
+    def test_order_retry_and_stale_kitchen_card_share_the_same_database_state(self):
+        self.upgrade()
+        first_desk, second_desk = self.actor(staff=True), self.actor(staff=True)
+        with get_connection() as db:
+            db.execute("INSERT INTO dishes(dish_name,price) VALUES('Fixture dish',19)")
+            db.execute("""INSERT INTO staff(name,role,phone,email,password_hash)
+                          VALUES ('Kitchen','kitchen','13910000001','kitchen@example.test','unused')""")
+        client = self.app.test_client()
+        with client.session_transaction() as session:
+            session["account"] = {"staff_id": 2}
+        kitchen = client, csrf(client)
+        with clock(17):
+            visit = self.send(first_desk, DESK + "/walk-ins", {"party_size": 2, "table_id": 1}).json["visit"]
+        items = {"items-0-dish_id": 1, "items-0-quantity": 1, "items-0-quoted_unit_cents": 1900}
+        fields = {**items, "visit_id": visit["visit_id"], "idempotency_key": "desk-order-key"}
+        barrier = Barrier(2)
+
+        def submit(desk):
+            barrier.wait(timeout=6)
+            return self.send(desk, "/frontdesk/orders", fields)
+
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            placed = list(workers.map(submit, (first_desk, second_desk)))
+        self.assertEqual([result.status_code for result in placed], [201, 201])
+        ids = {result.json["order"]["order_id"] for result in placed}
+        self.assertEqual(len(ids), 1)
+        order_id = ids.pop()
+        queue = self.send(kitchen, "/kitchen/queue?status=active", method="GET").json["items"]
+        self.assertEqual(len(queue), 1)
+        line = queue[0]
+        edit = f"/frontdesk/orders/{order_id}/edit"
+        start = f"/kitchen/items/{line['order_item_id']}/start"
+        stale_version = line["order_version"]
+        self.assertEqual(self.send(first_desk, edit, {**items, "items-0-quantity": 2, "expected_version": stale_version}).status_code, 200)
+        self.assertEqual(self.send(second_desk, edit, {**items, "expected_version": stale_version}).json["error"], "ORDER_CHANGED")
+        self.assertEqual(self.send(kitchen, start, {"expected_version": stale_version}).json["error"], "ORDER_CHANGED")
+        updated = self.send(kitchen, "/kitchen/queue?status=active", method="GET").json["items"][0]
+        self.assertEqual(updated["quantity"], 2)
+        version = updated["order_version"]
+        self.assertEqual(self.send(kitchen, start, {"expected_version": version}).status_code, 200)
+        self.assertEqual(self.send(kitchen, start, {"expected_version": version}).status_code, 409)
+        self.assertEqual(self.send(first_desk, edit, {**items, "expected_version": version}).status_code, 409)
+
+        new_order = self.send(first_desk, "/frontdesk/orders", {**fields, "idempotency_key": "another-order"}).json["order"]
+        current = next(row for row in self.send(kitchen, "/kitchen/queue?status=active", method="GET").json["items"]
+                       if row["order_id"] == new_order["order_id"])
+        version = current["order_version"]
+        gate = Barrier(2)
+
+        def compete(actor, path, data):
+            gate.wait(timeout=6)
+            return self.send(actor, path, data)
+
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            saved = workers.submit(compete, first_desk, f"/frontdesk/orders/{new_order['order_id']}/edit",
+                                   {**items, "items-0-quantity": 2, "expected_version": version})
+            started = workers.submit(compete, kitchen, f"/kitchen/items/{current['order_item_id']}/start",
+                                     {"expected_version": version})
+            pair = saved.result(timeout=10).status_code, started.result(timeout=10).status_code
+        self.assertIn(pair, ((200, 409), (409, 200)))
 
     def test_database_rejects_overlapping_holds_and_double_seating_without_api(self):
         from psycopg.errors import ExclusionViolation, UniqueViolation

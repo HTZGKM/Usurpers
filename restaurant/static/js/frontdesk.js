@@ -183,8 +183,9 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
   function renderDraft() {
     find("[data-service-draft]").innerHTML = draft.map((line, index) =>
       '<li><span>' + line.quantity + ' × ' + esc(line.name) + (line.note ? ' · ' + esc(line.note) : '') +
+      (Number.isFinite(line.unitPrice) ? ' · ¥' + (line.quantity * line.unitPrice).toFixed(2) : ' · Unavailable') +
       '</span>' + deskButton("Remove", 'data-draft-remove="' + index + '"') + '</li>').join("");
-    find("[data-place-desk-order]").disabled = !draft.length;
+    find("[data-place-desk-order]").disabled = !draft.length || draft.some(line => !Number.isFinite(line.unitPrice));
   }
 
   function renderWaitlist(background = false) {
@@ -552,8 +553,9 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
     });
     if (form === serviceForm) {
       const dish = serviceForm.elements.dish.selectedOptions[0];
+      const current = serviceMenu.find(item => item.dish_id === Number(fields.dish));
       draft.push({ dishId: Number(fields.dish), quantity: Number(fields.quantity), note: fields.note ?? "",
-        name: dish.textContent.split(" · ¥")[0] });
+        name: dish.textContent.split(" · ¥")[0], unitPrice: Number(current?.price) });
       serviceForm.elements.note.value = "";
       renderDraft();
       return;
@@ -564,7 +566,9 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
       if (editBooking) fields.expected_version = editBooking.version;
       let booking;
       try {
-        ({ booking } = await restaurantRequest(path, fields));
+        const result = await (!editBooking && reservationFlow ? restaurantSubmitOnce(path, fields) : restaurantRequest(path, fields));
+        booking = result.booking;
+        if (result.recoveredPrevious) return "Previous reservation #" + booking.booking_id + " recovered. Review this draft before sending it.";
       } catch (error) {
         if (error.code !== "BOOKING_CHANGED") throw error;
         await loadEditConflict();
@@ -723,10 +727,24 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
       return;
     }
     if (button.matches("[data-place-desk-order]")) return update(async () => {
-      const { order } = await restaurantRequest("/frontdesk/orders", { visit_id: visitId, ...restaurantOrderFields(draft) });
-      draft = [];
+      let result;
+      try {
+        result = await restaurantSubmitOnce("/frontdesk/orders", { visit_id: visitId, ...restaurantOrderFields(draft) });
+      } catch (error) {
+        if (["PRICE_CHANGED", "DISH_UNAVAILABLE"].includes(error.code)) {
+          const { items } = await restaurantRequest("/frontdesk/menu");
+          for (const line of draft) {
+            const dish = items.find(item => item.dish_id === line.dishId);
+            line.unitPrice = dish ? Number(dish.price) : NaN;
+          }
+          renderDraft();
+        }
+        throw error;
+      }
+      if (!result.recoveredPrevious) draft = [];
       renderDraft();
-      return "Order #" + order.order_id + " sent to the kitchen.";
+      return "Order #" + result.order.order_id + (result.recoveredPrevious ? " recovered. Review the current draft before sending it." :
+        " sent to the kitchen.");
     });
     if (data.deskWrite) return update(async () => {
       const table = tableLabel(chosenVisit()?.table_id);
