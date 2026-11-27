@@ -104,12 +104,8 @@ def create_app() -> Flask:
     def http_error(error: HTTPException):
         response = error.get_response()
         status = response.status_code
-        data = {
-            "ok": False, "success": False,
-            "error": error.name.upper().replace(" ", "_"),
-            "message": "An internal server error occurred." if status >= 500 else error.description,
-        }
-        return error_response(status, data, response)
+        message = "An internal server error occurred." if status >= 500 else error.description
+        return error_response(status, ServiceError(message, status).as_dict(), response)
 
     @app.errorhandler(Exception)
     def unexpected_error(error: Exception):

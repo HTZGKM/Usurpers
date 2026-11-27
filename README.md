@@ -92,3 +92,5 @@ Vercel 从根目录导入 `app.py` 中的 Flask 应用。项目的 Production �
 隔离验收使用一个名为 `usurpers_test` 的本机 PostgreSQL。把 `USURPERS_TEST_POSTGRES_URL` 指向它，运行 `python -m unittest discover -s tests`。每个集成用例使用独立临时 schema。
 
 发布订单防重和厨房开工版本校验前，先在已启用版本 2 的目标库执行 `restaurant/db/migrations/003_order_consistency.sql`。发布与验收说明见[并发与异步修复交接](docs/concurrency-async-handoff.md)。
+
+发布菜品版本校验前，在已应用 003 的库执行 `restaurant/db/migrations/004_dish_versions.sql`。迁移只增加 `dishes.version`，已有菜品从版本 1 开始。前台新版取号、前台代订和库存调整均要求 `idempotency_key`。主管修改已有菜品须提交 `expected_version`，版本冲突返回 `409 DISH_CHANGED`。

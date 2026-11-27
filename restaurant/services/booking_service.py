@@ -6,6 +6,7 @@ from psycopg.errors import UniqueViolation
 
 from restaurant.business_time import MEAL_SLOTS, current_table_window, utc_clock
 from restaurant.db.database import begin_write, get_connection, insert_id
+from . import submission
 from .common import ServiceError, phone_number, positive_int, required_text, valid_date
 
 
@@ -101,17 +102,22 @@ def _booking_write(work):
 
 
 def create_booking(contact_name, phone, booking_date, time_slot, party_size, customer_phone=None, table_id=None,
-                   *, idempotency_key=None):
+                   *, idempotency_key=None, actor=None):
     name = required_text(contact_name, "contact_name", limit=100)
     phone = phone_number(phone)
     date = valid_date(booking_date)
     slot = _normalize_time_slot(time_slot)
     size = positive_int(party_size, "party_size")
     tid = positive_int(table_id, "table_id") if table_id is not None else None
-    request_key = required_text(idempotency_key, "idempotency_key", limit=80) if idempotency_key is not None else None
+    request_key = required_text(idempotency_key, "idempotency_key", limit=80) if actor or idempotency_key is not None else None
     request_fields = json.dumps([date, slot, size, tid], separators=(",", ":"))
+    staff_payload = [date, slot, size, tid, name, phone]
     with get_connection() as db:
         begin_write(db)
+        if actor:
+            previous = submission.replay(db, "staff-booking-legacy", actor, request_key, staff_payload)
+            if previous is not None:
+                return previous
         if request_key and customer_phone:
             previous = db.execute("""SELECT request_fields,booking_id,initial_table_id FROM booking_create_requests
                 WHERE customer_phone=? AND request_key=?""", (customer_phone, request_key)).fetchone()
@@ -134,7 +140,8 @@ def create_booking(contact_name, phone, booking_date, time_slot, party_size, cus
             db.execute("""INSERT INTO booking_create_requests
                 (customer_phone,request_key,request_fields,booking_id,initial_table_id) VALUES(?,?,?,?,?)""",
                 (customer_phone, request_key, request_fields, booking_id, table_id_final))
-        return {"booking_id": booking_id, "table_id": table_id_final, "status": "booked", "version": 1}
+        result = {"booking_id": booking_id, "table_id": table_id_final, "status": "booked", "version": 1}
+        return submission.record(db, "staff-booking-legacy", actor, request_key, staff_payload, result) if actor else result
 
 
 def update_booking(booking_id, booking_date, time_slot, party_size, customer_phone=None, table_id=None,

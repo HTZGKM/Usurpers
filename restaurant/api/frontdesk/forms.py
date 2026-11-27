@@ -14,6 +14,7 @@ from ..customer.forms import BookingEditForm, BookingForm, OrderCreateForm
 
 
 class StaffBookingForm(BookingForm):
+    idempotency_key = StringField("Reservation submission ID", validators=[InputRequired(), Length(max=80)])
     contact_name = StringField(
         "Contact name",
         filters=[lambda value: (value or "").strip()],

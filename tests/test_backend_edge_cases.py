@@ -24,7 +24,7 @@ class BackendEdgeCaseTests(RestaurantTestCase):
     def test_duplicate_dish_name_edit_is_conflict_without_partial_write(self):
         """MENU-002: duplicate names should be a clean 409 and leave the dish unchanged."""
         self.assertEqual(login(self.client, "admin@shuangfen.local").status_code, 303)
-        response = write(self.client, "/admin/dishes/2/edit", {"name":"House Cheeseburger", "price":47})
+        response = write(self.client, "/admin/dishes/2/edit", {"name":"House Cheeseburger", "price":47, "expected_version":1})
         self.assertEqual(response.status_code, 409)
         self.assertTrue(response.is_json)
         with get_connection() as db:

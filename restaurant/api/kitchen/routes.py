@@ -71,12 +71,12 @@ def kitchen_remakes():
 
 @kitchen_bp.post("/remakes/<int:remake_id>/start")
 def start_remake(remake_id):
-    return jsonify({"ok": False, "error": "补做功能已移除。"}), 501
+    raise ServiceError("The remake feature has been removed.", 501)
 
 
 @kitchen_bp.post("/remakes/<int:remake_id>/complete")
 def complete_remake(remake_id):
-    return jsonify({"ok": False, "error": "补做功能已移除。"}), 501
+    raise ServiceError("The remake feature has been removed.", 501)
 
 
 @kitchen_bp.post("/menu/<int:dish_id>/availability")

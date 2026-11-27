@@ -122,6 +122,7 @@ class DishForm(FlaskForm):
 
 
 class EditDishForm(FlaskForm):
+    expected_version = IntegerField("Dish version", validators=[InputRequired(), NumberRange(min=1)])
     name = StringField("Dish name", validators=[Optional(), Length(max=100)])
     price = DecimalField("Price", places=None, validators=[Optional(), monetary_amount])
     category = dish_category_field()
@@ -154,7 +155,7 @@ class IngredientForm(FlaskForm):
 
 
 class StockAdjustmentForm(FlaskForm):
-    idempotency_key = StringField("Stock adjustment submission ID", validators=[Optional(), Length(max=80)])
+    idempotency_key = StringField("Stock adjustment submission ID", validators=[InputRequired(), Length(max=80)])
     quantity = DecimalField(
         "Quantity change", places=None, validators=[InputRequired(), nonzero_number]
     )

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from threading import Barrier
 from unittest.mock import patch
 import unittest
+from uuid import uuid4
 
 import test_postgres_booking_consistency as postgres
 from backend_test_helpers import csrf
@@ -33,9 +34,14 @@ class ReservationRebuildTests(unittest.TestCase):
         })
 
     def call_party(self, desk, table=1, count=2):
-        ticket = self.send(desk, DESK + "/tickets", {"party_size": count}).json["queue"]["queue_id"]
+        ticket = self.issue_ticket(desk, count)
         self.assertEqual(self.send(desk, f"{DESK}/tables/{table}/call").json["queue"]["queue_id"], ticket)
         return ticket
+
+    def issue_ticket(self, desk, count=2):
+        return self.send(desk, DESK + "/tickets", {
+            "party_size": count, "idempotency_key": uuid4().hex,
+        }).json["queue"]["queue_id"]
 
     def upgrade(self):
         import psycopg
@@ -147,7 +153,7 @@ class ReservationRebuildTests(unittest.TestCase):
         with clock(18, 50):
             protected = self.send(desk, DESK + "/walk-ins", {"table_id": 1, "party_size": 2})
             self.assertEqual(protected.json["error"], "TABLE_UNAVAILABLE")
-            ticket = self.send(desk, DESK + "/tickets", {"party_size": 2}).json["queue"]["queue_id"]
+            ticket = self.issue_ticket(desk)
             self.assertEqual(self.send(guest, "/waiting-queue", {"party_size": 2}).status_code, 403)
         with clock(19, 10, 1):
             conflict = self.reserve(guest, "19:45", key="after-release")
@@ -165,7 +171,7 @@ class ReservationRebuildTests(unittest.TestCase):
         desk = self.actor(staff=True)
         with clock(17):
             first = self.call_party(desk)
-            second = self.send(desk, DESK + "/tickets", {"party_size": 2}).json["queue"]["queue_id"]
+            second = self.issue_ticket(desk)
         with clock(17, 1, 1):
             denied = self.send(desk, f"{DESK}/tickets/{first}/seat", {"table_id": 1})
             self.assertEqual((denied.status_code, denied.json["error"]), (409, "WAITLIST_CHANGED"))
@@ -280,7 +286,7 @@ class ReservationRebuildTests(unittest.TestCase):
         with clock(18, 50):
             reported = self.send(desk, f"{DESK}/bookings/{reservation}/arrive")
             self.assertEqual(reported.json["booking"]["phase"], "waiting_to_seat")
-            ticket = self.send(desk, DESK + "/tickets", {"party_size": 2}).json["queue"]["queue_id"]
+            ticket = self.issue_ticket(desk)
             self.assertIsNone(self.send(desk, f"{DESK}/tables/2/call").json["queue"])
             snapshot = self.send(desk, DESK + "/snapshot", method="GET").json
         self.assertEqual(snapshot["tables"][1]["replacement_for"], reservation)
@@ -328,7 +334,7 @@ class ReservationRebuildTests(unittest.TestCase):
         desk = self.actor(staff=True)
         with clock(17):
             visit = self.send(desk, DESK + "/walk-ins", {"party_size": 2, "table_id": 1}).json["visit"]
-            ticket = self.send(desk, DESK + "/tickets", {"party_size": 2}).json["queue"]["queue_id"]
+            ticket = self.issue_ticket(desk)
             self.assertEqual(self.send(desk, f"/frontdesk/visits/{visit['visit_id']}/close").status_code, 200)
         with clock(17, 10):
             with patch("restaurant.services.allocation._call_next", side_effect=RuntimeError("simulated interruption")):

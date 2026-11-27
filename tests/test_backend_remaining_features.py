@@ -162,7 +162,9 @@ class RemainingFeatureTests(RestaurantTestCase):
         response = write(admin, "/admin/inventory/ingredients", {"name": "Test cheese", "unit": "g", "on_hand": 100})
         self.assertEqual(response.status_code, 201)
         ingredient = response.json["ingredient"]["ingredient_id"]
-        self.assertEqual(write(admin, f"/admin/inventory/ingredients/{ingredient}/adjust", {"quantity": -5}).status_code, 200)
+        self.assertEqual(write(admin, f"/admin/inventory/ingredients/{ingredient}/adjust", {
+            "quantity": -5, "idempotency_key": "inventory-1",
+        }).status_code, 200)
         path = "/admin/dishes/1/recipe"
         fields = {"ingredients-0-ingredient_id": ingredient, "ingredients-0-quantity_per_dish": 12.5}
         self.assertEqual(write(admin, path, fields, "PUT").status_code, 200)

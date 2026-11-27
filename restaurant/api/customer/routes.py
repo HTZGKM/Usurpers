@@ -63,6 +63,7 @@ def create_booking():
                     customer_phone,
                     data.get("table_id"),
                     idempotency_key=data.get("idempotency_key") or None,
+                    actor=None if customer_phone else user["role"] + ":" + user["username"],
                 ),
             }
         ),

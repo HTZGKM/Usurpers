@@ -52,13 +52,15 @@ def create_item(name, price, ingredients="", prep_time_minutes=10, image_url=Non
 
 def update_item(
     dish_id, name=None, price=None, is_available=None, *, category=None,
-    ingredients=None, prep_time_minutes=None,
+    ingredients=None, prep_time_minutes=None, expected_version=None,
 ):
     did=positive_int(dish_id,"dish_id")
     with get_connection() as db:
         begin_write(db)
         existing=db.execute("SELECT * FROM dishes WHERE dish_id=?",(did,)).fetchone()
         if not existing: raise ServiceError("菜品不存在。",404,"dish_id","NOT_FOUND")
+        if expected_version is not None and existing["version"] != expected_version:
+            raise ServiceError("This dish has changed. Load the latest details before saving.", 409, code="DISH_CHANGED")
         if name is not None: name=required_text(name,"name",limit=100)
         if price is not None: price=str(money(price))
         if is_available is not None and is_available not in (True,False,0,1): raise ServiceError("供应状态不合法。",field="is_available")
@@ -75,6 +77,8 @@ def update_item(
         if prep_time_minutes is not None:
             prep = positive_int(prep_time_minutes, "prep_time_minutes")
             db.execute("UPDATE dishes SET prep_time_minutes=? WHERE dish_id=?", (prep, did))
+        if any(value is not None for value in (name, price, category, ingredients, prep_time_minutes)):
+            db.execute("UPDATE dishes SET version=version+1 WHERE dish_id=?", (did,))
         return dict(db.execute("SELECT * FROM dishes WHERE dish_id=?",(did,)).fetchone())
 
 

@@ -90,9 +90,11 @@ def walk_in():
 
 @reservation_bp.post(DESK + "/tickets")
 def join():
+    user = session["user"]
     return jsonify(ok=True, queue=allocation.join_waitlist(
         request.form.get("party_size"), request.form.get("contact_name"), request.form.get("phone_number"),
-        request.form.get("table_type"))), 201
+        request.form.get("table_type"), actor=user["role"] + ":" + user["username"],
+        request_key=request.form.get("idempotency_key"))), 201
 
 
 @reservation_bp.post(DESK + "/tables/<int:table_id>/call")

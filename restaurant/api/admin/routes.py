@@ -204,6 +204,7 @@ def edit_dish(dish_id):
                 category=data.get("category") if "category" in request.form else None,
                 ingredients=data.get("ingredients"),
                 prep_time_minutes=data.get("prep_time_minutes"),
+                expected_version=data["expected_version"],
             ),
         }
     )

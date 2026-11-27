@@ -179,8 +179,10 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     if (!response.ok || !data.ok) {
       if (response.status === 401) throw new Error('Your session has ended. Sign in again to continue.');
       if (data.errors?.csrf_token) throw new Error('Your form has expired. Refresh the page and try again.');
-      throw new Error(Object.values(data.errors || {}).flat().join(' ') ||
+      const error = new Error(Object.values(data.errors || {}).flat().join(' ') ||
         data.message || 'The request could not be completed.');
+      error.code = data.error;
+      throw error;
     }
     return data;
   }
@@ -189,6 +191,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     const data = await request(root.dataset.dishesUrl);
     dishes = data.dishes.map(row => ({
       id:String(row.dish_id), name:row.dish_name, price:row.price,
+      version:row.version,
       category:categories[categoryKey(row.category, row.dish_name)] || 'Uncategorized',
       prep:row.prep_time_minutes, ingredients:row.ingredients,
       status:row.is_archived ? 'Archived' : row.is_available ? 'Available' : 'Unavailable',
@@ -1105,7 +1108,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
   }
   function dishForm(dish) {
     return head(dish ? 'Edit dish' : 'New dish') + '<form class="dp-form" data-admin-dish-form>' +
-      (dish ? tag(dish.status) : '') +
+      (dish ? tag(dish.status) + '<input type="hidden" name="expected_version" value="' + es(dish.version) + '">' : '') +
       '<label>Dish name<input name="name" value="' + es(dish?.name || '') + '" maxlength="100" required autocomplete="off"></label>' +
       '<label>Category<select name="category"><option value="">Uncategorized</option>' +
       Object.entries(categories).map(([key,label]) => '<option value="' + key + '"' +
@@ -1117,6 +1120,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
       '<label>Ingredients<textarea name="ingredients" maxlength="1000" rows="2">' +
       es(dish?.ingredients || '') + '</textarea></label><p data-action-feedback role="alert" hidden></p>' +
       '<div class="dp-account-actions"><button type="submit" class="dp-button dp-primary">Save dish</button>' +
+      (dish ? '<button type="button" class="dp-button" data-reload-dish hidden>Load latest dish</button>' : '') +
       (dish && dish.status !== 'Archived' ?
         '<button type="button" class="dp-button dp-danger" data-archive-dish>Archive dish</button>' : '') + '</div></form>';
   }
@@ -1331,6 +1335,36 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     } catch (error) {
       errorOutput.textContent = error.message;
       errorOutput.hidden = false;
+      const reload = container.querySelector('[data-reload-dish]');
+      if (error.code === 'DISH_CHANGED' && reload) reload.hidden = false;
+    } finally {
+      button.disabled = container.querySelector('[data-reload-dish]:not([hidden])') !== null;
+    }
+  }
+
+  async function reloadDishForm(button) {
+    const form = button.form;
+    const edits = new Map();
+    for (const field of form.querySelectorAll('input:not([type=hidden]), select, textarea')) {
+      const original = field.tagName === 'SELECT'
+        ? Array.from(field.options).find(option => option.defaultSelected)?.value ?? ''
+        : field.defaultValue;
+      if (field.value !== original) edits.set(field.name, field.value);
+    }
+    button.disabled = true;
+    try {
+      await refreshDishes();
+      if (!form.isConnected) return;
+      state.category = '';
+      state.dishStatus = '';
+      show('dishes');
+      const latest = main.querySelector('[data-admin-dish-form]');
+      if (!latest) return;
+      for (const [name, value] of edits) latest.elements[name].value = value;
+      latest.querySelector('[type=submit]').focus();
+      setFeedback('Latest dish loaded. Review your edits alongside the latest values before saving.');
+    } catch (error) {
+      form.querySelector('[data-action-feedback]').textContent = error.message;
     } finally {
       button.disabled = false;
     }
@@ -1401,6 +1435,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
       if (row) selectOrder(row.dataset.orderRow);
       return;
     }
+    if ('reloadDish' in button.dataset) return reloadDishForm(button);
     if ('orderDateToggle' in button.dataset) {
       setOrderCalendarOpen(dateControl,button.getAttribute('aria-expanded') !== 'true',true);
       return;

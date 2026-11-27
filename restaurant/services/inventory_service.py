@@ -7,6 +7,7 @@ from datetime import date, datetime
 
 
 def adjust_stock(ingredient_id, quantity, movement_type="adjustment", reference=None, *, request_key=None, actor=None):
+    request_key = required_text(request_key, "idempotency_key", limit=80)
     iid=positive_int(ingredient_id,"ingredient_id")
     try: delta=float(quantity)
     except (TypeError,ValueError): raise ServiceError("quantity 必须是有效数字。",field="quantity")

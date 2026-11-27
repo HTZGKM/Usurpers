@@ -337,8 +337,7 @@ def create_booking(fields, user):
     size = positive_int(fields.get("party_size"), "party_size")
     table_id = positive_int(fields["table_id"], "table_id") if fields.get("table_id") else None
     arrival = fields.get("arrival_time")
-    raw_key = fields.get("idempotency_key")
-    request_key = required_text(raw_key, "idempotency_key", limit=80) if online or raw_key else None
+    request_key = required_text(fields.get("idempotency_key"), "idempotency_key", limit=80)
     request_fields = json.dumps([date, arrival or _legacy_slot(fields), size, table_id], separators=(",", ":"))
     name = user["name"] if online else required_text(fields.get("contact_name"), "contact_name", limit=100)
     phone = owner if online else phone_number(fields.get("phone_number"))
@@ -587,13 +586,18 @@ def walk_in(table_id, size, name=None, phone=None, visit_id=None):
     return visit
 
 
-def join_waitlist(size, name=None, phone=None, table_type=None):
+def join_waitlist(size, name=None, phone=None, table_type=None, *, actor, request_key):
+    request_key = required_text(request_key, "idempotency_key", limit=80)
     count = positive_int(size, "party_size")
     preference = positive_int(table_type, "table_type") if table_type else None
     contact_name = required_text(name, "contact_name", limit=100) if name else None
     contact_phone = phone_number(phone) if phone else None
+    payload = [count, contact_name, contact_phone, preference]
 
     def join(db, now):
+        recovered = submission.replay(db, "staff-waitlist", actor, request_key, payload)
+        if recovered is not None:
+            return recovered
         if not db.execute("SELECT 1 FROM dining_tables WHERE capacity>=? AND NOT is_disabled",
                           (max(count, preference or 0),)).fetchone():
             raise conflict("capacity")
@@ -605,7 +609,8 @@ def join_waitlist(size, name=None, phone=None, table_type=None):
         ticket = insert_id(db, """INSERT INTO waiting_queue(party_size,contact_name,phone_number,customer_phone,
             table_type,queue_position) VALUES(?,?,?,?,?,?)""",
             (count, contact_name, contact_phone, account[0] if account else None, preference, position), "queue_id")
-        return dict(queue_id=ticket, status="waiting")
+        result = dict(queue_id=ticket, status="waiting")
+        return submission.record(db, "staff-waitlist", actor, request_key, payload, result)
 
     return _run(join)
 
