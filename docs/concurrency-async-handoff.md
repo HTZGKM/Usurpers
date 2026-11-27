@@ -1,5 +1,7 @@
 # Double Portion 并发与异步修复交接
 
+> 历史验收记录：本文记录 PR #31 时的实现与验证，不是当前接口规范。后续 PR #35 已把查询与任务分离，查询不再触发逾时处理或叫号；工作台使用 `POST /operations/refresh`，独立调度入口为 `restaurant/scheduler.py`。当前部署与入口以根 README 和代码为准。
+
 本轮处理会造成重复下单、旧页面覆盖、预点单悬挂或桌位分配异常的场景。面向顾客、前台、厨房和主管四个角色。代码链接固定到应用提交 [`7a72cb4`](https://github.com/HTZGKM/Usurpers/blob/7a72cb4fd19abc8b760d7d3ad58aefd6ba86f65f/README.md)，便于之后对照。
 
 ## 预点单与订单
