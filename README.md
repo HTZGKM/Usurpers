@@ -1,96 +1,35 @@
-# Usurpers
+# Double Portion 双份
 
-COMP3019J 小组餐厅网站项目（Topic 2 — Restaurant Booking and Ordering Website）。
+Usurpers 团队的 COMP3019J 课程项目 · Topic 2 — Restaurant Booking and Ordering Website
 
-「双份」前端由 Flask 提供：页面在 [`restaurant/templates/customer/`](restaurant/templates/customer/)，样式、脚本和素材在 [`restaurant/static/`](restaurant/static/)。
+Double Portion 是一个单店餐厅预约与点餐系统。顾客、前台、厨房和主管共享预约、堂食与订单记录，从订桌到关桌可以在正式站走完一轮。
 
-顾客端的新对话请先读 [顾客前端交接与验收路径](restaurant/templates/customer/README.md)。当前首页由 Jinja 渲染，预览、修改和提交均以本仓库为准。
+## 使用正式站
 
-## 本地启动
+[打开 Double Portion](https://doubleportion-usurpers.vercel.app/) · [检查服务状态](https://doubleportion-usurpers.vercel.app/health)
 
-在包含 `app.py` 的 `Usurpers` 目录执行。使用 Python 3.12，Windows 可先运行 `python --version` 核对版本。首次启动先在该目录创建虚拟环境并安装依赖。
+顾客可浏览菜单，从 **My account** 注册或登录。员工使用小组提供的账号登录，进入对应工作台。同时演示多个角色时，请用独立的浏览器配置文件，避免标签页共用登录会话。
 
-Windows PowerShell
+| 角色 | 主要操作 |
+| --- | --- |
+| 顾客 | 在 **Book a table** 选日期、人数、到店时间和桌位，可改约或取消。确认预约后可预点单，在 **Your visit** 查看入座进度、订单和本次桌账。 |
+| 前台 | 在 **Reservations** 代订、登记到店、确认备桌和安排入座。现场客人由前台取号、叫号及安排入座。在 **Table service** 代客加单、确认上菜、记录付款和关桌。 |
+| 厨房 | 在 **Queue** 分别处理待制作、制作中和待上菜的菜品。在 **Availability** 更新售罄和供应状态。 |
+| 主管 | 在 **Orders** 查当天和历史订单，在 **Tables** 查桌况、时间轴和日历。在 **Dishes** 新增菜品或改价，也可管理库存和账号。 |
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe app.py
-```
+## 堂食演示流程
 
-macOS / Linux
+1. 顾客线上订桌并预点单。
+2. 前台在预约签到窗口内登记到店，确认备桌后安排入座。
+3. 顾客实际入座且已到制作时间，预点单才进入厨房。厨房按菜品标记开始制作和备妥，前台确认上菜。
+4. 顾客核对本次桌账并记录模拟付款。前台处理完所有菜品和账单后关桌，主管可以按桌号和订单查看本次记录。
 
-```bash
-python3.12 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python app.py
-```
+线上预约使用北京时间，以 15 分钟为到店时间间隔，至少提前 30 分钟。预约宽限为 10 分钟，现场叫号保留 1 分钟。
 
-后续启动时执行最后一行即可。终端显示 Flask 正在运行后，打开 [餐厅首页](http://127.0.0.1:5000/)。服务直接使用 `restaurant/data/shuangfen.db`，首次运行自动建表并写入初始数据，后续继续使用这个文件。四个角色共用此库。
+## 正式部署与维护
 
-顾客、前台、厨房和主管可以走通选桌预约、签到、下单、制作、上菜、记账付款和关桌。顾客的未提交购物袋保存在当前标签页。
+- **Vercel** 托管 Flask 和 Jinja 应用。GitHub `main` 是正式发布分支，PR 合并后由 Vercel 构建和部署。
+- **Neon PostgreSQL** 保存预约、等位、堂食、订单、菜单和库存。正式环境在 Vercel 配置 `DATABASE_URL`、`USURPERS_SECRET_KEY` 和 `USURPERS_HTTPS=1`。
+- 数据库结构变更通过 [增量迁移](restaurant/db/migrations/) 单独应用。当前正式库已应用菜品版本迁移 [004](restaurant/db/migrations/004_dish_versions.sql)。发布前根据变更核对 PR 检查、迁移及合并顺序，发布后检查正式站。
 
-### 顾客账号联调
-
-1. 打开 `/#account`，选择 **Register**，使用新的 11 位测试手机号注册。
-2. 在 **Sign in** 先输入错误密码检查提示，再用正确密码登录。刷新页面，访问 `/auth/me` 可看到当前顾客。
-3. 在账户页点击 **Sign out**，再次访问 `/auth/me` 应返回 HTTP 401。也可以从 `/auth/register` 和 `/auth/login` 直接测试原生 Jinja 表单。
-
-### 堂食联调
-
-1. 顾客在 **Book a table** 选时段和桌位，或在 **Your visit** 取等位号。已有预约时，可把购物袋作为预点单提交。
-2. 前台在 **Reservations** 确认到店，或在 **Walk-in waitlist** 叫号和安排入座。顾客刷新 **Your visit** 后可以提交堂食订单。预点单在签到且到预约时间后进入厨房。未开始制作且未结账的订单可以改单或取消。
-3. 厨房在 **Queue** 开始制作并标记 **Ready**。前台在 **Table service** 标记上菜，可提前记录付款。所有订单结清、所有菜已上菜或取消后，才可释放桌位。主管在 **Overview** 或 **Orders** 查看同一笔订单。
-4. 主管在 **Inventory** 新增食材、手动调整库存和保存配方，在 **Accounts** 管理员工及顾客账号。
-
-需要并行登录不同角色时，可用独立浏览器配置或无痕窗口分开保存 Flask 会话。
-
-### 队友操作速查
-
-从首页左上角菜单进入 **My account → Sign in**。下列本地演示账号的密码均为 `123456`。员工登录后自动进入各自的工作台。
-
-| 角色 | 演示账号 | 操作 |
-| --- | --- | --- |
-| 顾客 | `13900000001` 测预约或等位；`13900000002` 初始已入座 A2，可直接看订单 | **Book a table** 预约、改约或取消；**Your visit** 取号、查叫号和取消等位；**Menu** 把菜加入购物袋。有预约可预点菜，入座后可下单，或展开订单查看、修改和取消未开做且未付款的订单。 |
-| 前台 | `frontdesk@shuangfen.local` | **Reservations** 代订和签到；**Walk-in waitlist** 选桌、叫号和入座；**Table service** 代客下单、改单、点 **Mark served**、记录付款及放桌；**Billing records** 查账单。 |
-| 厨房 | `kitchen@shuangfen.local` | **Queue** 按订单查看菜和备注，依次点 **Start preparation → Mark ready**；由前台确认上菜。**Availability** 可更新菜品是否供应。 |
-| 主管 | `admin@shuangfen.local` | **Overview / Orders** 查营业数据和订单；**Tables / Kitchen queue** 查桌况和出餐；**Dishes** 管菜品；**Inventory** 管食材、配方和手动库存；**Accounts** 管账号。 |
-
-## 启动排错
-
-- 若找不到 `app.py`，先切到里面的 `Usurpers` 目录。
-- 若提示 5000 端口已占用，先检查该地址是否已经打开本项目。需要重新启动时，先在原来启动项目的终端按 `Ctrl+C`。
-- 若提示 `The SQLite database uses the old schema`，说明本机留有早期版本创建的 `restaurant/data/shuangfen.db`。这个文件不随 Git 提交，新克隆不需要处理。若要用新版初始数据，先关闭 Flask 和所有使用该库的 SQLite 工具，再将旧库及可能存在的同名 `-wal`、`-shm`、`-journal` 文件一起移到仓库外备份。重新运行上面的启动命令，新库会在默认路径自动生成。旧记录仍在备份里，新库不会自动导入它们。
-- 若 PowerShell 中曾手动设置 `USURPERS_DB_PATH`，运行 `Remove-Item Env:USURPERS_DB_PATH` 清除当前终端的覆盖设置，再按默认方式启动。
-
-公开部署使用 HTTPS，并设置 `USURPERS_HTTPS=1` 和私有的 `USURPERS_SECRET_KEY`。配置后的会话 Cookie 使用 Secure、HttpOnly 和 SameSite=Lax。前端和接口以同源方式运行。
-
-## Vercel 部署
-
-Vercel 从根目录导入 `app.py` 中的 Flask 应用。项目的 Production 环境需要配置 `DATABASE_URL`、`USURPERS_SECRET_KEY` 和 `USURPERS_HTTPS=1`。`DATABASE_URL` 使用 Neon 的 PostgreSQL 连接串。`vercel.json` 中的构建步骤会把样式、脚本、字体和图片发布到原有的 `/static/` 地址。
-
-首次上线前，从有原 SQLite 数据的电脑将数据导入一个空的 PostgreSQL 库。先在本机终端设置目标 `DATABASE_URL`，再运行以下命令。启动 Flask 和更新页面时直接使用已准备好的云数据库。
-
-```powershell
-.\.venv\Scripts\python.exe -m restaurant.db.migrate --source restaurant/data/shuangfen.db --credentials-file ..\local-runtime\vercel-accounts.tsv
-```
-
-迁移会只读打开源库并保留记录 ID。仍在使用公开演示密码的账号会在目标库获得新密码，登录信息只写到上面指定的本机文件。导入命令会拒绝已有业务数据的目标库。
-
-在已连接 Vercel 项目的目录中发布组员要测试的版本时，运行 `vercel deploy --prod`。部署成功后继续分享该项目的公开网址。更新前后端代码用日常 Git 分支和 PR 流程。修改表结构时单独执行对应的数据库迁移。
-
-已有 PostgreSQL 库升级到预约版本号和提交恢复功能前，先执行 `restaurant/db/migrations/001_booking_consistency.sql`，再发布应用。迁移可重复执行，保留已有预约。
-
-## PostgreSQL 到店预约和桌位分配
-
-时间点预约使用北京时间和 15 分钟粒度。线上至少提前 30 分钟。后端按人数计入用餐保护，并加上 10 分钟预约宽限和 10 分钟清台。现场叫号保留 1 分钟。前台分别登记到店、确认备桌和安排入座。
-
-正式切换先发布支持两种结构的代码，再在目标 Neon 执行 `restaurant/db/migrations/002_reservation_allocation.sql`。迁移在数据库事务中写入版本 2，启用时间点预约，并保留旧时段预约、旧等位票及订单关联。全新 PostgreSQL 可先执行 `restaurant/db/postgres.sql` 再执行 002。SQLite 仍走旧预约流程。
-
-发布前检查同桌的有效旧时段、重复活动占桌、重复关联预约的堂食记录及有效叫号。GiST 排他约束与活动堂食唯一索引必须成功创建。切换后核对 `reservation_schema_versions` 的版本 2、Vercel 提交，以及顾客、前台、主管的实际页面。若已接受新时间点预约后需要回退，先将版本 2 的 `writes_enabled` 设为 false，保留现有数据并使用能读新结构的兼容版本，再修复后恢复写入。
-
-隔离验收使用一个名为 `usurpers_test` 的本机 PostgreSQL。把 `USURPERS_TEST_POSTGRES_URL` 指向它，运行 `python -m unittest discover -s tests`。每个集成用例使用独立临时 schema。
-
-发布订单防重和厨房开工版本校验前，先在已启用版本 2 的目标库执行 `restaurant/db/migrations/003_order_consistency.sql`。发布与验收说明见[并发与异步修复交接](docs/concurrency-async-handoff.md)。
-
-发布菜品版本校验前，在已应用 003 的库执行 `restaurant/db/migrations/004_dish_versions.sql`。迁移只增加 `dishes.version`，已有菜品从版本 1 开始。前台新版取号、前台代订和库存调整均要求 `idempotency_key`。主管修改已有菜品须提交 `expected_version`，版本冲突返回 `409 DISH_CHANGED`。
+并发处理和验收证据见 [组员交接记录](docs/concurrency-async-handoff.md) 和 [最新接口修复 PR](https://github.com/HTZGKM/Usurpers/pull/33)。
