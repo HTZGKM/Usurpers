@@ -190,6 +190,34 @@ class RemainingFeatureTests(RestaurantTestCase):
         self.assertEqual(write(admin, "/admin/staff/2/reset-password", {"password": "TestReset-2026"}).status_code, 200)
         self.signed_in("frontdesk@shuangfen.local", "TestReset-2026")
 
+    def test_logout_revokes_copied_session_and_password_reset_revokes_other_sessions(self):
+        first = self.signed_in("frontdesk@shuangfen.local")
+        second = self.signed_in("frontdesk@shuangfen.local")
+        copied = self.app.test_client()
+        copied.set_cookie("session", first.get_cookie("session").value)
+        self.assertEqual(copied.get("/auth/me").status_code, 200)
+        self.assertEqual(write(first, "/auth/logout").status_code, 303)
+        self.assertEqual(copied.get("/auth/me").status_code, 401)
+        self.assertEqual(second.get("/auth/me").status_code, 200)
+        admin = self.signed_in("admin@shuangfen.local")
+        reset = write(admin, "/admin/staff/2/reset-password", {"password": "Different-fixture-password"})
+        self.assertEqual(reset.status_code, 200)
+        self.assertEqual(second.get("/auth/me").status_code, 401)
+        self.signed_in("frontdesk@shuangfen.local", "Different-fixture-password")
+
+    def test_kitchen_reads_only_preparation_fields_and_refresh_requires_csrf(self):
+        kitchen = self.signed_in("kitchen@shuangfen.local")
+        detail = kitchen.get("/kitchen/orders/9001")
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.headers["Cache-Control"], "no-store")
+        self.assertEqual(set(detail.json["order"]), {"order_id", "table_id", "order_type", "status", "version", "items"})
+        for item in detail.json["order"]["items"]:
+            self.assertEqual(set(item), {"order_item_id", "dish_id", "dish_name", "quantity", "note", "status", "kitchen_status"})
+        self.assertEqual(kitchen.get("/operations/refresh").status_code, 405)
+        self.assertEqual(kitchen.post("/operations/refresh").status_code, 400)
+        self.assertEqual(write(self.client, "/operations/refresh").status_code, 401)
+        self.assertEqual(write(kitchen, "/operations/refresh").status_code, 200)
+
     def test_seed_does_not_add_future_payments_or_kitchen_tasks(self):
         for now in (
             datetime(2026, 11, 24, 1, tzinfo=timezone.utc),

@@ -30,6 +30,20 @@ Double Portion 是一个单店餐厅预约与点餐系统。顾客、前台、�
 
 - **Vercel** 托管 Flask 和 Jinja 应用。GitHub `main` 是正式发布分支，PR 合并后由 Vercel 构建和部署。
 - **Neon PostgreSQL** 保存预约、等位、堂食、订单、菜单和库存。正式环境在 Vercel 配置 `DATABASE_URL`、`USURPERS_SECRET_KEY` 和 `USURPERS_HTTPS=1`。
-- 数据库结构变更通过 [增量迁移](restaurant/db/migrations/) 单独应用。当前正式库已应用菜品版本迁移 [004](restaurant/db/migrations/004_dish_versions.sql)。发布前根据变更核对 PR 检查、迁移及合并顺序，发布后检查正式站。
+- 数据库结构变更通过 [增量迁移](restaurant/db/migrations/) 单独应用。启用可撤销会话前，在正式库应用 [005](restaurant/db/migrations/005_web_sessions.sql)。旧版登录会话在切换后需重新登录。
+- PR 的 [自动测试](.github/workflows/ci.yml) 使用隔离 PostgreSQL 运行 Python 回归，并执行 JavaScript 测试。
+- 查询接口只读。工作台通过独立的、需要登录和 CSRF 验证的任务请求推进叫号、逾时和预点单。需要无人访问时持续推进，可以让单独的服务进程运行 `python -m restaurant.scheduler`，或由外部调度器运行 `python -m restaurant.scheduler --once`。
 
 并发处理和验收证据见 [组员交接记录](docs/concurrency-async-handoff.md) 和 [最新接口修复 PR](https://github.com/HTZGKM/Usurpers/pull/33)。
+
+## 项目结构
+
+| 位置 | 职责 |
+| --- | --- |
+| `app.py` | Vercel 启动入口，导出 Flask 应用。 |
+| `restaurant/application.py` | 创建 Flask 应用，注册各角色接口和全局错误处理。 |
+| `restaurant/api/` | 接收请求、校验表单和权限。 |
+| `restaurant/services/` | 处理预约、订单、厨房、会话等规则与事务。 |
+| `restaurant/db/` | 数据库连接、SQL 表结构和迁移。 |
+| `restaurant/templates/`、`restaurant/static/` | Jinja 页面、浏览器脚本、样式和素材。 |
+| `restaurant/scheduler.py`、`tests/` | 后台任务入口和回归测试。 |

@@ -6,9 +6,10 @@ expiration and preorder promotion use conditional updates/unique queue keys.
 from __future__ import annotations
 
 import argparse
+import logging
 import time
 
-from restaurant.db.database import ensure_database, get_connection
+from restaurant.db.database import ensure_database, get_connection, using_postgres
 from restaurant.services.queue_manager import QueueManager
 from restaurant.services.common import ServiceError
 
@@ -17,7 +18,7 @@ def run_scheduled_tasks(now=None):
     from restaurant.services import allocation
 
     if allocation.enabled():
-        allocation.desk_snapshot()
+        allocation.advance_service()
         return {"promoted_preorders": QueueManager.enqueue_due_preorders(now)}
     expired=QueueManager.expire_called()
     promoted=QueueManager.enqueue_due_preorders(now)
@@ -36,11 +37,19 @@ def run_scheduled_tasks(now=None):
 def main():
     parser=argparse.ArgumentParser(description="Run the Usurpers backend background scheduler")
     parser.add_argument("--interval",type=int,default=15,help="poll interval in seconds")
+    parser.add_argument("--once", action="store_true", help="run one task cycle and exit")
     args=parser.parse_args()
     if args.interval < 1: parser.error("--interval must be positive")
-    ensure_database()
-    while True:
+    if not using_postgres():
+        ensure_database()
+    if args.once:
         run_scheduled_tasks()
+        return
+    while True:
+        try:
+            run_scheduled_tasks()
+        except Exception:
+            logging.exception("Scheduled cycle failed.")
         time.sleep(args.interval)
 
 

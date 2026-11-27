@@ -52,9 +52,7 @@ def _service_day_sql(column):
 
 def get_workspace():
     from restaurant.services import allocation
-    from restaurant.services.queue_manager import QueueManager
 
-    QueueManager.enqueue_due_preorders()
     now = datetime.now(RESTAURANT_TIME)
     today = now.date()
     first_day = today - timedelta(days=SALES_HISTORY_DAYS - 1)

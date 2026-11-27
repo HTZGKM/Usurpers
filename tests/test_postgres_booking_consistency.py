@@ -15,7 +15,7 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.errors import UniqueViolation
 
-from backend_test_helpers import csrf
+from backend_test_helpers import bind_test_session, csrf
 from restaurant.db.database import begin_write, get_connection
 from restaurant.services.common import ServiceError
 from restaurant.services.dining_service import require_seatable_table
@@ -63,8 +63,8 @@ class PostgresBookingConsistencyTests(unittest.TestCase):
 
     def actor(self, *, index=0, staff=False):
         client = self.app.test_client()
-        with client.session_transaction() as session:
-            session["account"] = {"staff_id": 1} if staff else {"customer_phone": self.phone(index)}
+        identity = {"staff_id": 1} if staff else {"customer_phone": self.phone(index)}
+        bind_test_session(client, **identity)
         return client, csrf(client)
 
     @staticmethod

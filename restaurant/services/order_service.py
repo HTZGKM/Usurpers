@@ -195,10 +195,6 @@ def get_order(order_id, customer_phone=None):
 
 def get_customer_orders(customer_phone):
     with get_connection() as db:
-        if using_postgres():
-            from .allocation import reconcile_customer_order_deadlines
-
-            reconcile_customer_order_deadlines(db, customer_phone)
         rows = db.execute("""
             SELECT o.*, ROUND(COALESCE(SUM(i.total_price), 0), 2) AS total_amount
             FROM orders o

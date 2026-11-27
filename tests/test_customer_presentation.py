@@ -14,6 +14,8 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urljoin, urlsplit
 
+from backend_test_helpers import bind_test_session
+
 
 class PageMarkup(HTMLParser):
     def __init__(self, html):
@@ -75,8 +77,7 @@ class CustomerPresentationTests(unittest.TestCase):
     def page(self, identity=None):
         client = self.app.test_client()
         if identity:
-            with client.session_transaction() as session:
-                session["account"] = identity
+            bind_test_session(client, **identity)
         response = client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, "text/html")
@@ -206,7 +207,7 @@ class CustomerPresentationTests(unittest.TestCase):
         guest = self.app.test_client()
         kitchen, _ = self.page({"staff_id": 3})
         internal_message = "isolated fixture error details"
-        with patch("app.restaurant_view", side_effect=RuntimeError(internal_message)):
+        with patch("restaurant.application.restaurant_view", side_effect=RuntimeError(internal_message)):
             with self.assertLogs(self.app.logger.name, level="ERROR"):
                 failed_page = guest.get("/", headers={"Accept": "text/html"})
         self.assertEqual((failed_page.status_code, failed_page.mimetype), (500, "text/html"))

@@ -1,12 +1,12 @@
 from restaurant.route_utils import require_form_request
 
 from contextlib import closing
-from hmac import compare_digest
 from sqlite3 import IntegrityError
 from psycopg import IntegrityError as PostgresIntegrityError
 from flask import (
     Blueprint,
     flash,
+    g,
     jsonify,
     redirect,
     render_template,
@@ -14,82 +14,25 @@ from flask import (
     session,
     url_for,
 )
-from werkzeug.security import check_password_hash, generate_password_hash
-from restaurant.db.database import get_connection, hash_password
+from werkzeug.security import generate_password_hash
+from restaurant.db.database import get_connection
+from restaurant.services import session_service
 from restaurant.services.common import ServiceError
 from .forms import LoginForm, LogoutForm, RegisterForm
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 
-def _is_active_staff(member):
-    return member is not None and (
-        "is_active" not in member.keys() or member["is_active"] == 1
-    )
-
-
-def _authenticate(account, password):
-    with closing(get_connection()) as connection, connection:
-        if "@" in account:
-            member = connection.execute(
-                "SELECT * FROM staff WHERE email = ?", (account.lower(),)
-            ).fetchone()
-            if not _is_active_staff(member):
-                return None
-            identity = {"staff_id": member["staff_id"]}
-            update_password = (
-                "UPDATE staff SET password_hash = ? WHERE staff_id = ? AND password_hash = ?"
-            )
-            key = member["staff_id"]
-        else:
-            member = connection.execute(
-                "SELECT customer_phone, password_hash FROM customers WHERE customer_phone = ? AND is_active = 1",
-                (account,),
-            ).fetchone()
-            identity = {"customer_phone": account}
-            update_password = "UPDATE customers SET password_hash = ? WHERE customer_phone = ? AND password_hash = ?"
-            key = account
-        if member is None:
-            return None
-        stored_password = member["password_hash"]
-        if "$" in stored_password:
-            return identity if check_password_hash(stored_password, password) else None
-        if not compare_digest(stored_password, hash_password(password)):
-            return None
-        connection.execute(
-            update_password, (generate_password_hash(password), key, stored_password)
-        )
-        return identity
-
-
 def current_account():
-    identity = session.get("account")
-    if not identity:
-        return None
-    with closing(get_connection()) as connection:
-        if "staff_id" in identity:
-            member = connection.execute(
-                "SELECT * FROM staff WHERE staff_id = ?", (identity["staff_id"],)
-            ).fetchone()
-            if _is_active_staff(member):
-                return {
-                    "username": member["email"],
-                    "name": member["name"],
-                    "role": member["role"],
-                }
-        else:
-            customer = connection.execute(
-                "SELECT customer_phone, name FROM customers WHERE customer_phone = ? AND is_active = 1",
-                (identity["customer_phone"],),
-            ).fetchone()
-            if customer:
-                return {
-                    "username": customer["customer_phone"],
-                    "name": customer["name"],
-                    "role": "customer",
-                }
-    session.pop("account", None)
-    return None
+    if "account" not in g:
+        account = session_service.session_account(session.get("session_token"))
+        g.account_inactive = account is not None and not account.pop("is_active")
+        g.account = None if g.account_inactive else account
+        if g.account is None:
+            session.pop("session_token", None)
+            session.pop("account", None)
+            session.pop("user", None)
+    return g.account
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
@@ -98,13 +41,12 @@ def login():
         require_form_request()
     form = LoginForm()
     if form.validate_on_submit():
-        identity = _authenticate(form.account.data, form.password.data)
-        if identity is not None:
+        token = session_service.sign_in(form.account.data, form.password.data, session.get("session_token"))
+        if token:
             session.clear()
-            session["account"] = identity
+            session["session_token"] = token
             user = current_account()
             if user:
-                session["user"] = user
                 section = "account" if user["role"] == "customer" else "workspace"
                 return redirect(url_for("home", _anchor=section), code=303)
         form.account.errors.append("Invalid account or password.")
@@ -146,18 +88,7 @@ def register():
 def me():
     user = current_account()
     if user is None:
-        session.pop("user", None)
         raise ServiceError("You are not logged in.", 401)
-    if user["role"] == "customer":
-        with closing(get_connection()) as connection:
-            row = connection.execute(
-                "SELECT is_active FROM customers WHERE customer_phone=?",
-                (user["username"],),
-            ).fetchone()
-        if not row or not row["is_active"]:
-            session.clear()
-            raise ServiceError("The customer account is inactive.", 403)
-    session["user"] = user
     return jsonify(ok=True, user=user)
 
 
@@ -167,5 +98,6 @@ def logout():
     form = LogoutForm()
     if not form.validate_on_submit():
         return ("Invalid logout request.", 400)
+    session_service.revoke_session(session.get("session_token"))
     session.clear()
     return redirect(url_for("auth.login"), code=303)

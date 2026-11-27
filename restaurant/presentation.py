@@ -30,9 +30,9 @@ def seating_view(account):
     return dining_service.get_frontdesk_visits()
 
 
-def restaurant_view(root):
+def restaurant_view():
     service_day = datetime.now(RESTAURANT_TIME).date().isoformat()
-    with (Path(root) / "restaurant/api/customer/catalog.json").open(encoding="utf-8") as source:
+    with (Path(__file__).with_name("api") / "customer/catalog.json").open(encoding="utf-8") as source:
         editorial = {item["name"].casefold(): item for item in json.load(source)}
     categories = {"burgers": "burger", "pizzas": "pizza", "sides": "sides", "drinks": "drinks"}
     catalog = []

@@ -1,6 +1,6 @@
 """Time-point reservation API, enabled by the PostgreSQL migration."""
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, g, jsonify, request
 
 from restaurant.forms import ActionForm
 from restaurant.route_utils import require_api_role, validated_data
@@ -33,38 +33,38 @@ def available():
     edit_id = request.args.get("booking_id")
     return jsonify(ok=True, **allocation.available_tables(
         request.args.get("date"), request.args.get("arrival_time"), request.args.get("party_size"),
-        session["user"], positive_int(edit_id, "booking_id") if edit_id else None))
+        g.account, positive_int(edit_id, "booking_id") if edit_id else None))
 
 
 @reservation_bp.post(GUEST + "/bookings")
 @reservation_bp.post(DESK + "/bookings")
 def create():
-    return jsonify(ok=True, booking=allocation.create_booking(request.form, session["user"])), 201
+    return jsonify(ok=True, booking=allocation.create_booking(request.form, g.account)), 201
 
 
 @reservation_bp.get(GUEST + "/bookings")
 def bookings():
-    return jsonify(ok=True, **allocation.customer_bookings(session["user"]["username"]))
+    return jsonify(ok=True, **allocation.customer_bookings(g.account["username"]))
 
 
 @reservation_bp.get(GUEST + "/bookings/<int:booking_id>")
 @reservation_bp.get(DESK + "/bookings/<int:booking_id>")
 def booking(booking_id):
-    owner = session["user"]["username"] if session["user"]["role"] == "customer" else None
+    owner = g.account["username"] if g.account["role"] == "customer" else None
     return jsonify(ok=True, booking=allocation.customer_bookings(owner, booking_id))
 
 
 @reservation_bp.post(GUEST + "/bookings/<int:booking_id>/edit")
 @reservation_bp.post(DESK + "/bookings/<int:booking_id>/edit")
 def edit(booking_id):
-    owner = session["user"]["username"] if session["user"]["role"] == "customer" else None
+    owner = g.account["username"] if g.account["role"] == "customer" else None
     return jsonify(ok=True, booking=allocation.update_booking(booking_id, request.form, owner))
 
 
 @reservation_bp.post(GUEST + "/bookings/<int:booking_id>/cancel")
 @reservation_bp.post(DESK + "/bookings/<int:booking_id>/cancel")
 def cancel(booking_id):
-    owner = session["user"]["username"] if session["user"]["role"] == "customer" else None
+    owner = g.account["username"] if g.account["role"] == "customer" else None
     return jsonify(ok=True, booking=allocation.cancel_booking(booking_id, owner))
 
 
@@ -90,7 +90,7 @@ def walk_in():
 
 @reservation_bp.post(DESK + "/tickets")
 def join():
-    user = session["user"]
+    user = g.account
     return jsonify(ok=True, queue=allocation.join_waitlist(
         request.form.get("party_size"), request.form.get("contact_name"), request.form.get("phone_number"),
         request.form.get("table_type"), actor=user["role"] + ":" + user["username"],

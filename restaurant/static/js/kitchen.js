@@ -103,6 +103,7 @@ function mountKitchenWorkspace(workspace) {
   async function refresh() {
     const current = ++revision;
     try {
+      if (view === "queue") await restaurantRefreshOperations();
       const [menu, queue] = await Promise.all([
         restaurantRequest("/kitchen/menu"),
         view === "queue" ? restaurantRequest("/kitchen/queue?status=active") : null,

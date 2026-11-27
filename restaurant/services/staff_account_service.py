@@ -45,6 +45,9 @@ def set_staff_active(staff_id,is_active):
     with get_connection() as db:
         begin_write(db)
         _require_managed_staff(db, sid)
+        if is_active:
+            db.execute("""DELETE FROM web_sessions WHERE staff_id=?
+                          AND EXISTS (SELECT 1 FROM staff WHERE staff_id=? AND is_active=0)""", (sid, sid))
         db.execute("UPDATE staff SET is_active=? WHERE staff_id=?",(int(is_active),sid))
         return {"staff_id":sid,"is_active":bool(is_active)}
 
@@ -55,6 +58,7 @@ def reset_staff_password(staff_id,password="123456"):
         begin_write(db)
         _require_managed_staff(db, sid)
         db.execute("UPDATE staff SET password_hash=? WHERE staff_id=?",(generate_password_hash(password),sid))
+        db.execute("DELETE FROM web_sessions WHERE staff_id=?", (sid,))
         return {"staff_id":sid,"reset":True}
 
 

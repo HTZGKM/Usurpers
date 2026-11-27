@@ -746,6 +746,7 @@ const visitUpdatesAllowed = () => route() === "Your table" && !document.hidden &
 async function refreshCustomer({ background = false } = {}) {
   const version = ++customerRefreshVersion;
   try {
+    if (reservationFlow) await restaurantRefreshOperations();
     const [reservationData, orderData, visits, waitlist] = await Promise.all([
       restaurantRequest(reservationBase), restaurantRequest("/orders"), reservationFlow ? [] : restaurantSeating(),
       reservationFlow ? { queue: null } : restaurantRequest("/waiting-queue/mine"),

@@ -1,11 +1,15 @@
 from restaurant.forms import ActionForm
 from .forms import FinishCookingForm, StartCookingForm, DishAvailabilityForm
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, request
 from restaurant.route_utils import validated_data, require_api_role
-from restaurant.services import order_service, kitchen_service, menu_service
+from restaurant.services import kitchen_service, menu_service
 from restaurant.services.common import ServiceError
 
 kitchen_bp = Blueprint("kitchen", __name__, url_prefix="/kitchen")
+
+
+def _availability_item(item):
+    return {key: item[key] for key in ("dish_id", "dish_name", "category", "is_available", "is_archived")}
 
 
 @kitchen_bp.before_request
@@ -36,12 +40,12 @@ def menu():
         items = [
             item for item in items if item["is_available"] and (not item["is_archived"])
         ]
-    return jsonify({"ok": True, "items": items})
+    return jsonify({"ok": True, "items": [_availability_item(item) for item in items]})
 
 
 @kitchen_bp.get("/orders/<int:order_id>")
 def order_detail(order_id):
-    return jsonify({"ok": True, "order": order_service.get_order(order_id)})
+    return jsonify({"ok": True, "order": kitchen_service.get_order_details(order_id)})
 
 
 @kitchen_bp.post("/items/<int:order_item_id>/start")
@@ -98,4 +102,4 @@ def kitchen_availability(dish_id):
         raise ServiceError(
             "Archived dishes cannot be made available.", 409, code="STATE_CONFLICT"
         )
-    return jsonify({"ok": True, "item": item})
+    return jsonify({"ok": True, "item": _availability_item(item)})
