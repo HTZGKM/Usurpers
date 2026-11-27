@@ -1,24 +1,18 @@
-# 双份 · 餐厅前端
+# Double Portion 应用目录
 
-Flask 在 `/` 渲染 Double Portion 的英文界面。页面和登录接口由同一个 Flask 服务提供。
+`application.py` 创建 Flask 应用并注册蓝图，根目录 `app.py` 提供启动入口。部署、本地启动和回归命令见 [仓库说明](../README.md)。
 
-## 启动
-
-在 `Usurpers` 根目录按 [仓库启动说明](../README.md#本地启动) 安装和启动，再打开 [餐厅首页](http://127.0.0.1:5000/)。页面验收见 [顾客端交接](templates/customer/README.md)。
-
-## 文件结构
-
-| 路径 | 用途 |
+| 目录或文件 | 职责 |
 | --- | --- |
-| `templates/customer/` | 当前顾客端 Jinja 模板、设计简报和交接 |
-| `templates/frontdesk/`、`templates/kitchen/`、`templates/admin/` | 各角色工作台模板和接口交接 |
-| `static/css/guest.css`、`static/css/guest-type.css` | 页面样式和字体 |
-| `static/js/guest.js`、`static/js/guest-motion.js` | 页面交互和切页动效 |
-| `static/images/atelier/` | 当前页面、菜单和后续编辑内容使用的照片 |
-| `api/customer/catalog.json` | 菜品照片和描述。实际菜名、价格和供应状态来自 SQLite。 |
+| `api/` | 各角色接口与表单；`reservation_routes.py` 提供 PostgreSQL 预约流程 |
+| `services/` | 业务规则、事务、会话与提交重试 |
+| `db/` | SQLite 本地运行支持、PostgreSQL 连接、表结构与迁移 |
+| `presentation.py` | 首页菜单、桌位与到店记录的模板数据 |
+| `templates/`、`static/` | Jinja、JavaScript、CSS、图片与字体 |
+| `scheduler.py` | 独立任务入口；不会随 Web 应用启动常驻 worker |
 
-## 数据和后续页面
+正式站使用 Vercel 和 Neon PostgreSQL。未配置 `DATABASE_URL` 时使用本地 SQLite；两种环境的预约流程并不完全相同。正式预约与并发行为需要隔离 PostgreSQL 验证。
 
-账号登录、注册和退出使用 Flask-WTF 与 SQLite。顾客的预约和已提交订单与 [前台](templates/frontdesk/README.md)、[厨房](templates/kitchen/README.md) 及 [主管](templates/admin/README.md) 工作台共用 `restaurant/data/shuangfen.db`。未提交的购物袋保存在当前标签页。
+菜名、价格、供应状态和业务记录来自数据库。`api/customer/catalog.json` 补充菜品照片与描述；浏览器保存未提交的草稿。
 
-旧前端移除的路由和文件见[删除清单](templates/customer/README.md#旧前端删除清单)。
+页面维护入口：[顾客](templates/customer/README.md)、[前台](templates/frontdesk/README.md)、[厨房](templates/kitchen/README.md)、[主管](templates/admin/README.md)。
