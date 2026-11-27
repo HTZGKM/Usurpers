@@ -299,6 +299,7 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
 
   async function refresh(background = false) {
     const current = ++revision;
+    if (view !== "billing") await restaurantRefreshOperations();
     if (view === "reservations" && reservationFlow) {
       const requestedDate = dateFilter.value;
       const [snapshot, seating] = await Promise.all([

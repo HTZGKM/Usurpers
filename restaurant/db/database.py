@@ -197,6 +197,17 @@ def create_schema(connection: sqlite3.Connection) -> None:
             is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1))
         );
 
+        CREATE TABLE IF NOT EXISTS web_sessions (
+            token_hash TEXT PRIMARY KEY,
+            staff_id INTEGER REFERENCES staff(staff_id) ON DELETE CASCADE,
+            customer_phone TEXT REFERENCES customers(customer_phone) ON DELETE CASCADE,
+            expires_at INTEGER NOT NULL,
+            CHECK ((staff_id IS NULL) <> (customer_phone IS NULL))
+        );
+        CREATE INDEX IF NOT EXISTS idx_web_sessions_staff ON web_sessions(staff_id);
+        CREATE INDEX IF NOT EXISTS idx_web_sessions_customer ON web_sessions(customer_phone);
+        CREATE INDEX IF NOT EXISTS idx_web_sessions_expiry ON web_sessions(expires_at);
+
         CREATE TABLE IF NOT EXISTS dining_tables (
             table_id INTEGER PRIMARY KEY,
             capacity INTEGER NOT NULL CHECK (capacity > 0)

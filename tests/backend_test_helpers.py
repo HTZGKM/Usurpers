@@ -6,6 +6,15 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from restaurant.business_time import current_table_window
+from restaurant.db.database import get_connection
+from restaurant.services.session_service import create_session
+
+
+def bind_test_session(client, **identity):
+    with get_connection() as db:
+        token = create_session(db, **identity)
+    with client.session_transaction() as state:
+        state["session_token"] = token
 
 
 def restaurant_date_in(days):

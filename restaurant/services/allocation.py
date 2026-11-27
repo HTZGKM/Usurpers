@@ -842,16 +842,23 @@ def customer_bookings(owner, booking_id=None):
     return dict(bookings=rows, server_now=now.isoformat(), visit=dict(visit) if visit else None)
 
 
-def reconcile_customer_order_deadlines(db, owner):
-    if not enabled(db):
-        return
-    deadlines = db.execute("""SELECT b.arrival_deadline FROM orders o JOIN bookings b USING(booking_id)
-        WHERE o.customer_phone=? AND o.visit_id IS NULL AND o.order_type='preorder' AND o.status='active'
-        AND b.status='booked' AND b.checked_in_at IS NULL AND b.arrival_deadline IS NOT NULL""", (owner,)).fetchall()
-    if deadlines:
+def advance_service():
+    _run(lambda db, now: None, write=False)
+
+
+def advance_customer_deadlines(owner):
+    with get_connection() as db:
+        if not enabled(db):
+            return
+        deadlines = db.execute("""SELECT b.arrival_deadline FROM orders o JOIN bookings b USING(booking_id)
+            WHERE o.customer_phone=? AND o.visit_id IS NULL AND o.order_type='preorder' AND o.status='active'
+            AND b.status='booked' AND b.checked_in_at IS NULL AND b.arrival_deadline IS NOT NULL""", (owner,)).fetchall()
+        if not deadlines:
+            return
         now = database_now(db)
-        if any(timestamp(row[0]) < now for row in deadlines):
-            _run(lambda connection, tick: None, write=False)
+        due = any(timestamp(row[0]) < now for row in deadlines)
+    if due:
+        advance_service()
 
 
 def table_projection(db, now):
@@ -884,7 +891,6 @@ def table_projection(db, now):
 
 
 def desk_snapshot(day=None):
-    _run(lambda db, now: None, write=False)
     with get_connection() as db:
         begin_read(db)
         now = database_now(db)

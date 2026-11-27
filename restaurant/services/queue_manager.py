@@ -42,12 +42,10 @@ class QueueManager:
 
     @staticmethod
     def list_waiting():
-        QueueManager.expire_called()
         with get_connection() as db: return [dict(r) for r in db.execute("SELECT * FROM waiting_queue WHERE status IN ('waiting','called') ORDER BY queue_position")]
 
     @staticmethod
     def get_customer_entry(customer_phone):
-        QueueManager.expire_called()
         with get_connection() as db:
             row=db.execute("""SELECT q.*, (SELECT COUNT(*) FROM waiting_queue ahead
                 WHERE ahead.status IN ('waiting','called') AND ahead.queue_position<q.queue_position) AS parties_ahead

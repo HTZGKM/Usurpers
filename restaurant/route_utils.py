@@ -1,4 +1,4 @@
-from flask import jsonify, request, session
+from flask import g, jsonify, request
 
 from datetime import date
 from decimal import Decimal
@@ -50,11 +50,9 @@ def validated_data(form_class):
 def require_api_role(*roles):
     from restaurant.api.auth.routes import current_account
 
-    previous_user = session.get("user")
     account = current_account()
     if account is None:
-        session.pop("user", None)
-        if previous_user:
+        if g.account_inactive:
             return (
                 jsonify(
                     ok=False,
@@ -73,7 +71,6 @@ def require_api_role(*roles):
             ),
             401,
         )
-    session["user"] = account
     if account["role"] not in roles:
         return (
             jsonify(

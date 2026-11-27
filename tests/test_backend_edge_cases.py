@@ -106,6 +106,7 @@ class BackendEdgeCaseTests(RestaurantTestCase):
         self.assertEqual(tables - {"sqlite_sequence"}, {
             "staff", "customers", "dining_tables", "dishes", "bookings", "booking_create_requests", "dining_sessions",
             "orders", "order_items", "mutation_requests", "waiting_queue", "kitchen_queue", "ingredients", "dish_ingredients",
+            "web_sessions",
         })
 
 

@@ -11,7 +11,7 @@ from .forms import (
     StockAdjustmentForm,
     RecipeForm,
 )
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, g, jsonify, request
 from restaurant.route_utils import validated_data, require_api_role
 from restaurant.services import (
     admin_workspace_service,
@@ -257,7 +257,7 @@ def admin_adjust_ingredient(ingredient_id):
                 data.get("quantity"),
                 data.get("movement_type", "adjustment"),
                 data.get("reference"),
-                request_key=data.get("idempotency_key"), actor=session["user"]["username"],
+                request_key=data.get("idempotency_key"), actor=g.account["username"],
             ),
         }
     )

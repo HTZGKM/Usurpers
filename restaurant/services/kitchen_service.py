@@ -1,10 +1,8 @@
-from restaurant.db.database import begin_write, get_connection
+from restaurant.db.database import begin_read, begin_write, get_connection
 from .common import ServiceError, positive_int
 
 
 def get_waiting_items():
-    from .queue_manager import QueueManager
-    QueueManager.enqueue_due_preorders()
     return _queue_items("waiting", "q.priority DESC, COALESCE(q.estimated_ready_at, q.created_at)")
 
 
@@ -17,9 +15,6 @@ def get_ready_items():
 
 
 def get_active_items():
-    from .queue_manager import QueueManager
-
-    QueueManager.enqueue_due_preorders()
     return _queue_items(None, """
         CASE WHEN q.status='waiting' THEN q.priority ELSE 0 END DESC,
         CASE q.status WHEN 'waiting' THEN COALESCE(q.estimated_ready_at, q.created_at)
@@ -32,7 +27,9 @@ def _queue_items(status, sort):
     params = (status,) if status else ()
     with get_connection() as db:
         rows = db.execute(f"""
-            SELECT q.*, i.note, i.status AS item_status, o.table_id, o.order_type, o.version AS order_version
+            SELECT q.queue_id,q.order_id,q.order_item_id,q.dish_id,q.quantity,q.status,
+                   q.created_at,q.started_at,q.completed_at,q.estimated_ready_at,
+                   i.note,i.status AS item_status,o.table_id,o.order_type,o.version AS order_version
             FROM kitchen_queue q
             JOIN order_items i USING (order_item_id)
             JOIN orders o ON o.order_id=q.order_id
@@ -40,6 +37,23 @@ def _queue_items(status, sort):
             ORDER BY {sort}, q.queue_id
         """, params)
         return [dict(row) for row in rows]
+
+
+def get_order_details(order_id):
+    oid = positive_int(order_id, "order_id")
+    with get_connection() as db:
+        begin_read(db)
+        order = db.execute(
+            "SELECT order_id,table_id,order_type,status,version FROM orders WHERE order_id=?", (oid,)
+        ).fetchone()
+        if not order:
+            raise ServiceError("Order not found.", 404, "order_id")
+        items = db.execute("""SELECT i.order_item_id,i.dish_id,d.dish_name,i.quantity,i.note,i.status,
+                q.status AS kitchen_status
+            FROM order_items i JOIN dishes d USING(dish_id)
+            LEFT JOIN kitchen_queue q USING(order_item_id)
+            WHERE i.order_id=? ORDER BY i.order_item_id""", (oid,))
+        return {**dict(order), "items": [dict(item) for item in items]}
 
 
 def _transition(item_id, expected, target, expected_version=None):

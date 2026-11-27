@@ -215,6 +215,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
   }
 
   async function refreshWorkspace() {
+    await restaurantRefreshOperations();
     const data = await request(root.dataset.workspaceUrl);
     const previousDate = serviceDate;
     serviceDate = data.service_date;

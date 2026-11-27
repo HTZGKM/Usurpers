@@ -15,7 +15,7 @@ from .forms import (
     RefundForm,
 )
 from restaurant.api.customer.forms import OrderEditForm
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, g, jsonify, request
 from restaurant.route_utils import validated_data, require_api_role
 from restaurant.services import (
     allocation,
@@ -38,7 +38,7 @@ def require_frontdesk_role():
 @frontdesk_bp.post("/bookings")
 def create_booking():
     data = validated_data(StaffBookingForm)
-    user = session.get("user", {})
+    user = g.account
     customer_phone = user.get("username") if user.get("role") == "customer" else None
     contact_name = (
         user.get("name")
@@ -161,7 +161,7 @@ def create_dine_in_order():
                 "ok": True,
                 "order": order_service.create_dine_in_order(
                     data.get("visit_id"), data.get("items"), request_key=data.get("idempotency_key"),
-                    actor=session["user"]["role"] + ":" + session["user"]["username"],
+                    actor=g.account["role"] + ":" + g.account["username"],
                 ),
             }
         ),
@@ -266,7 +266,7 @@ def _current_staff_id():
         (
             entry
             for entry in get_staff_accounts()
-            if entry["email"] == session["user"]["username"]
+            if entry["email"] == g.account["username"]
         ),
         None,
     )

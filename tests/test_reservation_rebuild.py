@@ -6,8 +6,9 @@ import unittest
 from uuid import uuid4
 
 import test_postgres_booking_consistency as postgres
-from backend_test_helpers import csrf
+from backend_test_helpers import bind_test_session, csrf
 from restaurant.db.database import get_connection
+from restaurant.scheduler import run_scheduled_tasks
 
 
 GUEST = "/reservation-api"
@@ -61,6 +62,7 @@ class ReservationRebuildTests(unittest.TestCase):
             arrived = self.send(desk, f"/frontdesk/reservation-api/bookings/{booking_id}/arrive")
         self.assertEqual(arrived.status_code, 200)
         with clock(19, 11):
+            self.assertEqual(self.send(desk, "/operations/refresh").status_code, 200)
             self.assertEqual(self.send(desk, "/frontdesk/reservation-api/snapshot", method="GET").status_code, 200)
             state = self.send(guest, "/reservation-api/bookings", method="GET").json["bookings"][0]
         self.assertEqual(state["phase"], "waiting_to_seat")
@@ -91,9 +93,11 @@ class ReservationRebuildTests(unittest.TestCase):
             self.assertEqual(seated.status_code, 201)
             visit = seated.json["visit"]["visit_id"]
             self.assertEqual(self.send(guest, GUEST + "/bookings", method="GET").json["visit"]["visit_id"], visit)
-        from restaurant.services.queue_manager import QueueManager
-        self.assertEqual(QueueManager.enqueue_due_preorders(DAY + "T18:59:00+08:00"), 0)
-        self.assertEqual(QueueManager.enqueue_due_preorders(DAY + "T19:00:00+08:00"), 1)
+        with clock(18, 59):
+            self.assertEqual(run_scheduled_tasks(DAY + "T18:59:00+08:00")["promoted_preorders"], 0)
+        with clock(19):
+            self.assertEqual(run_scheduled_tasks(DAY + "T19:00:00+08:00")["promoted_preorders"], 1)
+            self.assertEqual(run_scheduled_tasks(DAY + "T19:00:00+08:00")["promoted_preorders"], 0)
         with get_connection() as db:
             self.assertIsNotNone(db.execute("SELECT seated_at FROM dining_sessions WHERE visit_id=?", (visit,)).fetchone()[0])
             self.assertEqual(db.execute("SELECT visit_id FROM orders WHERE order_id=?", (order_id,)).fetchone()[0], visit)
@@ -111,7 +115,7 @@ class ReservationRebuildTests(unittest.TestCase):
 
             with ThreadPoolExecutor(max_workers=2) as pool:
                 arrive = pool.submit(request, self.actor(staff=True), f"{DESK}/bookings/{ids[0]}/arrive", "POST")
-                sweep = pool.submit(request, self.actor(staff=True), DESK + "/snapshot", "GET")
+                sweep = pool.submit(request, self.actor(staff=True), "/operations/refresh", "POST")
                 self.assertEqual(arrive.result(timeout=10).status_code, 200)
                 self.assertEqual(sweep.result(timeout=10).status_code, 200)
         with clock(19, 10, 1):
@@ -140,6 +144,9 @@ class ReservationRebuildTests(unittest.TestCase):
             self.send(desk, DESK + "/snapshot", method="GET")
             self.assertEqual(self.send(guest, f"/orders/{order['order_id']}", method="GET").json["order"]["status"], "active")
         with clock(19, 10, 1):
+            history = self.send(guest, "/orders", method="GET").json["orders"]
+            self.assertEqual(history[0]["status"], "active")
+            self.assertEqual(self.send(guest, "/operations/refresh").status_code, 200)
             history = self.send(guest, "/orders", method="GET").json["orders"]
             self.assertEqual(history[0]["status"], "cancelled")
         expired = self.send(guest, f"/orders/{order['order_id']}", method="GET").json["order"]
@@ -338,7 +345,8 @@ class ReservationRebuildTests(unittest.TestCase):
             self.assertEqual(self.send(desk, f"/frontdesk/visits/{visit['visit_id']}/close").status_code, 200)
         with clock(17, 10):
             with patch("restaurant.services.allocation._call_next", side_effect=RuntimeError("simulated interruption")):
-                self.assertEqual(self.send(desk, DESK + "/snapshot", method="GET").status_code, 500)
+                self.assertEqual(self.send(desk, DESK + "/snapshot", method="GET").status_code, 200)
+                self.assertEqual(self.send(desk, "/operations/refresh").status_code, 500)
             with get_connection() as db:
                 self.assertIsNone(db.execute("SELECT clearance_processed_at FROM dining_sessions").fetchone()[0])
                 self.assertEqual(db.execute("SELECT status FROM waiting_queue").fetchone()[0], "waiting")
@@ -347,6 +355,7 @@ class ReservationRebuildTests(unittest.TestCase):
             self.app = create_app()
             desk = self.actor(staff=True)
             for _ in range(2):
+                self.assertEqual(self.send(desk, "/operations/refresh").status_code, 200)
                 queue = self.send(desk, DESK + "/snapshot", method="GET").json["queue"]
                 self.assertEqual([(row["queue_id"], row["status"]) for row in queue], [(ticket, "called")])
         with get_connection() as db:
@@ -382,8 +391,7 @@ class ReservationRebuildTests(unittest.TestCase):
             db.execute("""INSERT INTO staff(name,role,phone,email,password_hash)
                           VALUES ('Kitchen','kitchen','13910000001','kitchen@example.test','unused')""")
         client = self.app.test_client()
-        with client.session_transaction() as session:
-            session["account"] = {"staff_id": 2}
+        bind_test_session(client, staff_id=2)
         kitchen = client, csrf(client)
         with clock(17):
             visit = self.send(first_desk, DESK + "/walk-ins", {"party_size": 2, "table_id": 1}).json["visit"]

@@ -58,6 +58,14 @@ async function restaurantSeating() {
   return JSON.parse(payload.textContent);
 }
 
+async function restaurantRefreshOperations() {
+  try {
+    await restaurantRequest("/operations/refresh", {});
+  } catch (error) {
+    if (error.code !== "DATABASE_BUSY") throw error;
+  }
+}
+
 const pendingRestaurantSubmissions = new Map();
 
 async function restaurantSubmitOnce(path, fields) {

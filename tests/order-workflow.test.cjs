@@ -22,6 +22,7 @@ test('one kitchen order can show different dishes in all three lanes', async () 
   const context = vm.createContext({
     document:{ activeElement:null, addEventListener() {} }, setInterval() {},
     esc:value => value, tableLabel:() => 'A1',
+    restaurantRefreshOperations:async () => { routes.push('POST /operations/refresh'); },
     restaurantRequest:async url => {
       routes.push(url);
       return { items:url === '/kitchen/menu' ? [] : rows };
@@ -30,7 +31,7 @@ test('one kitchen order can show different dishes in all three lanes', async () 
   vm.runInContext(script('kitchen.js'), context);
   context.mountKitchenWorkspace(workspace)('queue', false);
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(routes, ['/kitchen/menu', '/kitchen/queue?status=active']);
+  assert.deepEqual(routes, ['POST /operations/refresh', '/kitchen/menu', '/kitchen/queue?status=active']);
   for (const [index, stage] of ['waiting','cooking','ready'].entries()) {
     const lane = element(`[data-kitchen-lane="${stage}"]`).innerHTML;
     assert.match(lane, /Preorder #9005/);

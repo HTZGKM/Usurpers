@@ -11,7 +11,7 @@ from .forms import (
     WaitlistForm,
 )
 from restaurant.api.frontdesk.forms import StaffBookingForm
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, g, jsonify, request
 from restaurant.route_utils import validated_data, require_api_role
 from restaurant.services import allocation, booking_service, order_service, menu_service
 from restaurant.services.common import ServiceError, positive_int
@@ -38,9 +38,9 @@ def menu():
 @customer_bp.post("/bookings")
 def create_booking():
     data = validated_data(
-        BookingForm if session["user"]["role"] == "customer" else StaffBookingForm
+        BookingForm if g.account["role"] == "customer" else StaffBookingForm
     )
-    user = session.get("user", {})
+    user = g.account
     if allocation.enabled():
         return jsonify(ok=True, booking=allocation.create_booking(data, user)), 201
     customer_phone = user.get("username") if user.get("role") == "customer" else None
@@ -77,7 +77,7 @@ def bookings():
         {
             "ok": True,
             "bookings": booking_service.get_customer_bookings(
-                session["user"]["username"]
+                g.account["username"]
             ),
         }
     )
@@ -86,7 +86,7 @@ def bookings():
 @customer_bp.post("/bookings/<int:booking_id>/preorders")
 def preorder(booking_id):
     data = validated_data(PreorderForm)
-    user = session.get("user", {})
+    user = g.account
     return (
         jsonify(
             {
@@ -124,7 +124,7 @@ def edit_booking(booking_id):
         return _booking_details(booking_id)
     data = validated_data(BookingEditForm)
     owner = (
-        session["user"]["username"] if session["user"]["role"] == "customer" else None
+        g.account["username"] if g.account["role"] == "customer" else None
     )
     return jsonify(
         {
@@ -146,7 +146,7 @@ def edit_booking(booking_id):
 def cancel_booking(booking_id):
     data = validated_data(CancelBookingForm)
     owner = (
-        session["user"]["username"] if session["user"]["role"] == "customer" else None
+        g.account["username"] if g.account["role"] == "customer" else None
     )
     return jsonify(
         {"ok": True, "booking": booking_service.cancel_booking(booking_id, owner)}
@@ -156,7 +156,7 @@ def cancel_booking(booking_id):
 @customer_bp.post("/visits/<int:visit_id>/orders")
 def create_visit_order(visit_id):
     data = validated_data(OrderCreateForm)
-    user = session.get("user", {})
+    user = g.account
     owner = user.get("username") if user.get("role") == "customer" else None
     return (
         jsonify(
@@ -164,7 +164,7 @@ def create_visit_order(visit_id):
                 "ok": True,
                 "order": order_service.create_dine_in_order(
                     visit_id, data.get("items"), owner, request_key=data.get("idempotency_key"),
-                    actor=session["user"]["role"] + ":" + session["user"]["username"],
+                    actor=g.account["role"] + ":" + g.account["username"],
                 ),
             }
         ),
@@ -176,7 +176,7 @@ def create_visit_order(visit_id):
 def confirm_order():
     data = validated_data(OrderCreateForm)
 
-    user = session["user"]
+    user = g.account
     return (
         jsonify(
             {
@@ -196,7 +196,7 @@ def confirm_order():
 def pay_order(order_id):
     data = validated_data(PaymentForm)
     owner = (
-        session["user"]["username"] if session["user"]["role"] == "customer" else None
+        g.account["username"] if g.account["role"] == "customer" else None
     )
     return jsonify({"ok": True, "payment": order_service.pay_order(order_id, owner)})
 
@@ -208,15 +208,15 @@ def pay_visit(visit_id):
         return denied
     data = validated_data(VisitPaymentForm)
     order_ids = {positive_int(value, "order_ids") for value in data["order_ids"].split(",")}
-    payment = order_service.pay_visit(visit_id, session["user"]["username"], order_ids, data["total_cents"])
+    payment = order_service.pay_visit(visit_id, g.account["username"], order_ids, data["total_cents"])
     return jsonify(ok=True, payment=payment)
 
 
 @customer_bp.get("/orders")
 def orders():
-    role = session["user"]["role"]
+    role = g.account["role"]
     if role == "customer":
-        rows = order_service.get_customer_orders(session["user"]["username"])
+        rows = order_service.get_customer_orders(g.account["username"])
     else:
         rows = order_service.get_orders(
             phone=request.args.get("phone_number"),
@@ -228,7 +228,7 @@ def orders():
 @customer_bp.get("/orders/<int:order_id>")
 def order_status(order_id):
     owner = (
-        session["user"]["username"] if session["user"]["role"] == "customer" else None
+        g.account["username"] if g.account["role"] == "customer" else None
     )
     return jsonify({"ok": True, "order": order_service.get_order(order_id, owner)})
 
@@ -237,7 +237,7 @@ def order_status(order_id):
 def cancel_order(order_id):
     data = validated_data(ActionForm)
     owner = (
-        session["user"]["username"] if session["user"]["role"] == "customer" else None
+        g.account["username"] if g.account["role"] == "customer" else None
     )
     return jsonify({"ok": True, "order": order_service.cancel_order(order_id, owner)})
 
@@ -246,7 +246,7 @@ def cancel_order(order_id):
 def edit_order(order_id):
     data = validated_data(OrderEditForm)
     owner = (
-        session["user"]["username"] if session["user"]["role"] == "customer" else None
+        g.account["username"] if g.account["role"] == "customer" else None
     )
     return jsonify(
         {
@@ -260,7 +260,7 @@ def edit_order(order_id):
 def cancel_item(order_id, item_id):
     data = validated_data(ActionForm)
     owner = (
-        session["user"]["username"] if session["user"]["role"] == "customer" else None
+        g.account["username"] if g.account["role"] == "customer" else None
     )
     return jsonify(
         {"ok": True, "item": order_service.cancel_order_item(order_id, item_id, owner)}
@@ -274,7 +274,7 @@ def join_waitlist():
     data = validated_data(WaitlistForm)
     from restaurant.services.queue_manager import QueueManager
 
-    user = session.get("user", {})
+    user = g.account
     phone = (
         data.get("phone_number")
         if user.get("role") != "customer"
@@ -304,7 +304,7 @@ def leave_waitlist(queue_id):
     data = validated_data(ActionForm)
     from restaurant.services.queue_manager import QueueManager
 
-    user = session.get("user", {})
+    user = g.account
     owner = user.get("username") if user.get("role") == "customer" else None
     return jsonify({"ok": True, "queue": QueueManager.cancel(queue_id, owner)})
 
@@ -318,13 +318,13 @@ def my_waitlist():
     return jsonify(
         {
             "ok": True,
-            "queue": QueueManager.get_customer_entry(session["user"]["username"]),
+            "queue": QueueManager.get_customer_entry(g.account["username"]),
         }
     )
 
 
 def _booking_details(booking_id):
-    user = session["user"]
+    user = g.account
     bookings = (
         booking_service.get_customer_bookings(user["username"])
         if user["role"] == "customer"
