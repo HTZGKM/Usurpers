@@ -1,6 +1,6 @@
 from restaurant.forms import ActionForm
-from .forms import FinishCookingForm, StartCookingForm, DishAvailabilityForm
-from flask import Blueprint, jsonify, request
+from .forms import FinishCookingForm, StartCookingForm, DishAvailabilityForm, CapacityForm, SupplyIssueForm
+from flask import Blueprint, g, jsonify, request
 from restaurant.route_utils import validated_data, require_api_role
 from restaurant.services import kitchen_service, menu_service
 from restaurant.services.common import ServiceError
@@ -63,8 +63,7 @@ def finish_item(order_item_id):
 
 @kitchen_bp.post("/items/<int:order_item_id>/serve")
 def serve_item(order_item_id):
-    data = validated_data(ActionForm)
-    return jsonify({"ok": True, "item": kitchen_service.serve_item(order_item_id)})
+    raise ServiceError("Only the front desk or supervisor can confirm whole-order service.",403,code="FORBIDDEN")
 
 
 @kitchen_bp.get("/remakes")
@@ -103,3 +102,20 @@ def kitchen_availability(dish_id):
             "Archived dishes cannot be made available.", 409, code="STATE_CONFLICT"
         )
     return jsonify({"ok": True, "item": _availability_item(item)})
+
+
+@kitchen_bp.route("/settings",methods=["GET","POST"])
+def settings():
+    if request.method=="GET":return jsonify(ok=True,settings=kitchen_service.get_settings())
+    data=validated_data(CapacityForm)
+    return jsonify(ok=True,settings=kitchen_service.update_settings(data["max_active_orders"],data["expected_version"],g.account["username"]))
+
+@kitchen_bp.post("/orders/<int:order_id>/start")
+def start_order(order_id):
+    data=validated_data(StartCookingForm)
+    return jsonify(ok=True,order=kitchen_service.start_order(order_id,data["expected_version"]))
+
+@kitchen_bp.post("/items/<int:item_id>/unavailable")
+def supply_issue(item_id):
+    data=validated_data(SupplyIssueForm)
+    return jsonify(ok=True,item=kitchen_service.report_unavailable(item_id,data["reason"],g.account["username"],data["expected_version"]))

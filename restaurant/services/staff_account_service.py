@@ -3,6 +3,8 @@ from werkzeug.security import generate_password_hash
 
 from restaurant.db.database import begin_write, get_connection, insert_id
 from .common import ServiceError, positive_int, required_text
+from .phone_identity import normalize_phone
+from .account_recovery import validate_new_password
 
 STAFF_ROLES={"frontdesk","kitchen"}
 
@@ -13,12 +15,12 @@ def get_staff_accounts(role=None):
         return [dict(r) for r in db.execute(sql,(role,) if role else ())]
 
 def create_staff_account(name,phone,email,password,role):
-    name=required_text(name,"name",limit=100); phone=required_text(phone,"phone_number",limit=20)
+    name=required_text(name,"name",limit=100); phone=normalize_phone(phone)
     email=required_text(email,"email",limit=254).lower(); role=required_text(role,"role",limit=20)
     if role not in STAFF_ROLES: raise ServiceError("只能创建前台或厨房账号。",field="role")
     if not re.fullmatch(r"\+?[0-9 -]{7,20}",phone): raise ServiceError("手机号格式不正确。",field="phone_number")
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",email): raise ServiceError("邮箱格式不正确。",field="email")
-    if not isinstance(password,str) or len(password)<6: raise ServiceError("密码至少需要6位。",field="password")
+    password=validate_new_password(password)
     with get_connection() as db:
         begin_write(db)
         if db.execute("SELECT 1 FROM staff WHERE phone=? OR email=?",(phone,email)).fetchone(): raise ServiceError("手机号或邮箱已存在。",409,"email","DUPLICATE")
@@ -28,7 +30,7 @@ def create_staff_account(name,phone,email,password,role):
 
 def update_staff_account(staff_id,name,phone,email,role):
     sid=positive_int(staff_id,"staff_id"); name=required_text(name,"name",limit=100)
-    phone=required_text(phone,"phone_number",limit=20); email=required_text(email,"email",limit=254).lower()
+    phone=normalize_phone(phone); email=required_text(email,"email",limit=254).lower()
     if role not in STAFF_ROLES: raise ServiceError("员工角色不合法。",field="role")
     if not re.fullmatch(r"\+?[0-9 -]{7,20}",phone): raise ServiceError("手机号格式不正确。",field="phone_number")
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",email): raise ServiceError("邮箱格式不正确。",field="email")
@@ -53,7 +55,7 @@ def set_staff_active(staff_id,is_active):
 
 def reset_staff_password(staff_id,password="123456"):
     sid=positive_int(staff_id,"staff_id")
-    if not isinstance(password,str) or len(password)<6: raise ServiceError("密码至少需要6位。",field="password")
+    password=validate_new_password(password)
     with get_connection() as db:
         begin_write(db)
         _require_managed_staff(db, sid)

@@ -1,4 +1,5 @@
 from flask_wtf import FlaskForm
+from restaurant.api.auth.forms import phone_identity
 from wtforms import (
     DecimalField,
     EmailField,
@@ -50,9 +51,7 @@ class EditStaffForm(FlaskForm):
         filters=[lambda value: (value or "").strip()],
         validators=[
             DataRequired("Enter a phone number."),
-            Regexp(
-                r"\+?[0-9]+\Z", message="Enter digits only, with an optional leading +."
-            ),
+            phone_identity,
         ],
     )
     email = EmailField(

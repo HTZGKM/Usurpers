@@ -132,3 +132,55 @@ CREATE INDEX IF NOT EXISTS idx_orders_service_day ON orders(created_at);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_kitchen_queue_order ON kitchen_queue(status, priority, estimated_ready_at, created_at);
 CREATE INDEX IF NOT EXISTS idx_waiting_queue_order ON waiting_queue(status, queue_position);
+
+-- Shared business fields for fresh databases; production upgrades use 006-008.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS queue_id INTEGER REFERENCES waiting_queue(queue_id);
+ALTER TABLE waiting_queue ADD COLUMN IF NOT EXISTS source_booking_id INTEGER REFERENCES bookings(booking_id);
+ALTER TABLE waiting_queue ADD COLUMN IF NOT EXISTS service_ends_at TIMESTAMPTZ;
+ALTER TABLE waiting_queue ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS dish_name_snapshot TEXT;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS category_snapshot TEXT;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS supply_issue TEXT;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS issue_reported_by TEXT;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS issue_reported_at TIMESTAMP;
+-- Legacy snapshots use the best currently available menu metadata; past renames cannot be reconstructed.
+UPDATE order_items i SET dish_name_snapshot=d.dish_name,category_snapshot=d.category FROM dishes d
+WHERE d.dish_id=i.dish_id AND i.dish_name_snapshot IS NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS replaces_item_id INTEGER REFERENCES order_items(order_item_id);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS served_by TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS served_at TIMESTAMP;
+CREATE TABLE IF NOT EXISTS kitchen_settings(id INTEGER PRIMARY KEY CHECK(id=1),max_active_orders INTEGER NOT NULL CHECK(max_active_orders BETWEEN 1 AND 100),version INTEGER NOT NULL DEFAULT 1);
+INSERT INTO kitchen_settings(id,max_active_orders) VALUES(1,5) ON CONFLICT(id) DO NOTHING;
+CREATE TABLE IF NOT EXISTS kitchen_settings_audit(id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,actor TEXT NOT NULL,old_limit INTEGER NOT NULL,new_limit INTEGER NOT NULL,changed_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'));
+CREATE TABLE IF NOT EXISTS order_resolution_audit(id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,order_item_id INTEGER NOT NULL REFERENCES order_items,action TEXT NOT NULL CHECK(action IN ('cancel','replace')),reason TEXT NOT NULL,actor TEXT NOT NULL,replacement_order_id INTEGER REFERENCES orders,created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'));
+
+
+CREATE TABLE IF NOT EXISTS customer_recovery (
+    customer_phone TEXT PRIMARY KEY REFERENCES customers(customer_phone),
+    email TEXT NOT NULL, verified_at BIGINT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS account_tokens (
+    token_hash TEXT PRIMARY KEY,
+    customer_phone TEXT NOT NULL REFERENCES customers(customer_phone),
+    purpose TEXT NOT NULL CHECK(purpose IN ('verify_email','reset_password')),
+    email TEXT NOT NULL, password_fingerprint TEXT NOT NULL,
+    created_at BIGINT NOT NULL, expires_at BIGINT NOT NULL, consumed_at BIGINT
+);
+CREATE INDEX IF NOT EXISTS idx_account_tokens_owner ON account_tokens(customer_phone,purpose);
+CREATE TABLE IF NOT EXISTS account_mail_limits (
+    limit_key TEXT PRIMARY KEY, last_attempt_at BIGINT NOT NULL,
+    window_started_at BIGINT NOT NULL, attempts INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS account_link_requests (
+    link_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    target_type TEXT NOT NULL CHECK(target_type IN ('booking','visit','queue')),
+    target_id INTEGER NOT NULL,
+    candidate_phone TEXT NOT NULL REFERENCES customers(customer_phone),
+    requested_by TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','confirmed','declined','expired')),
+    created_at BIGINT NOT NULL, expires_at BIGINT NOT NULL, resolved_at BIGINT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_account_link_pending
+    ON account_link_requests(target_type,target_id,candidate_phone) WHERE status='pending';

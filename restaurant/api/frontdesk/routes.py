@@ -13,6 +13,7 @@ from .forms import (
     ServeItemForm,
     RemakeForm,
     RefundForm,
+    ResolveSupplyForm,
 )
 from restaurant.api.customer.forms import OrderEditForm
 from flask import Blueprint, g, jsonify, request
@@ -192,15 +193,13 @@ def order_detail(order_id):
 def cancel_order_item(order_id, order_item_id):
     data = validated_data(CancelOrderItemForm)
     return jsonify(
-        {"ok": True, "item": order_service.cancel_order_item(order_id, order_item_id)}
+        {"ok": True, "item": order_service.cancel_order_item(order_id, order_item_id, expected_version=data["expected_version"])}
     )
 
 
 @frontdesk_bp.post("/orders/<int:order_id>/items/<int:order_item_id>/serve")
 def serve_item(order_id, order_item_id):
-    data = validated_data(ServeItemForm)
-    _order_item(order_id, order_item_id)
-    return jsonify({"ok": True, "item": kitchen_service.serve_item(order_item_id)})
+    raise ServiceError("Confirm serving for the whole order.",409,code="WHOLE_ORDER_REQUIRED")
 
 
 @frontdesk_bp.get("/waiting-queue")
@@ -328,3 +327,14 @@ def orders():
             ),
         }
     )
+
+
+@frontdesk_bp.post("/orders/<int:order_id>/serve")
+def serve_order(order_id):
+    data=validated_data(ServeItemForm)
+    return jsonify(ok=True,order=kitchen_service.serve_order(order_id,data["expected_version"],g.account["username"]))
+
+@frontdesk_bp.post("/orders/<int:order_id>/items/<int:item_id>/resolve")
+def resolve_supply(order_id,item_id):
+    data=validated_data(ResolveSupplyForm)
+    return jsonify(ok=True,resolution=order_service.resolve_supply_issue(order_id,item_id,data["action"],data["reason"],g.account["username"],data["expected_version"],data["customer_agreed"],data["items"],data["idempotency_key"]))

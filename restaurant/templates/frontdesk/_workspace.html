@@ -11,7 +11,7 @@
   <p class="desk-floor-feedback" data-desk-live-notice role="status"></p>
 
   <div class="desk-tasks" data-desk-tasks role="group" aria-label="Front desk tasks">
-    <button type="button" data-desk-task="ready" disabled><strong>—</strong><span>Dishes ready to serve</span><small data-desk-ready-tables></small></button>
+    <button type="button" data-desk-task="ready" disabled><strong>—</strong><span>Orders ready to serve</span><small data-desk-ready-tables></small></button>
     <button type="button" data-desk-task="arrivals" disabled><strong>—</strong><span>Awaiting check-in today</span></button>
     <button type="button" data-desk-task="waitlist" disabled><strong>—</strong><span>On the waitlist</span></button>
   </div>
@@ -25,14 +25,14 @@
       {{ floor_map(tables, staff=true, show_capacity=true) }}
       <ul class="desk-legend" aria-label="Table statuses">
         <li><span data-tone="available"></span>Available</li>
-        <li><span data-tone="reserved"></span>Reserved</li>
+        <li><span data-tone="reserved"></span>Protected / held / clearing</li>
         <li><span data-tone="occupied"></span>Occupied</li>
       </ul>
       <div class="desk-floor-tools">
         <p class="desk-floor-feedback" data-desk-floor-feedback role="status"></p>
         <button type="button" class="desk-subtle" data-desk-open="walk-in" hidden>Seat walk-in</button>
         <button type="button" class="desk-subtle" data-desk-open="service" hidden>Open table service</button>
-        {% if reservation_flow %}<button type="button" class="desk-subtle" data-desk-disable-table hidden>Disable table</button>{% endif %}
+        {% if reservation_flow %}<button type="button" class="desk-subtle" data-desk-disable-table hidden>Disable table</button><button type="button" class="desk-confirm" data-desk-clear-table hidden>Confirm table cleared</button>{% endif %}
       </div>
     </section>
 
@@ -75,9 +75,11 @@
         </div>
         {% endif %}
         <div class="desk-arrival-actions" data-desk-booking-actions hidden>
+          {% if reservation_flow %}<button type="button" class="desk-subtle" data-desk-party-size>Change party size</button>{% endif %}
           <button type="button" class="desk-subtle" data-desk-open="edit">Edit booking</button>
           <button type="button" class="desk-subtle desk-danger" data-desk-open="cancel">Cancel booking</button>
         </div>
+        <button type="button" class="desk-subtle" data-link-request="booking" hidden>Request account link</button>
         <p class="desk-arrival-feedback" data-desk-arrival-feedback role="status" hidden></p>
       </section>
     </section>
@@ -113,15 +115,17 @@
     <div class="desk-panel-heading">
       <h2 id="desk-service-title" tabindex="-1">Table details</h2>
       <span data-service-visit></span>
+      <button type="button" class="desk-subtle" data-link-request="visit">Request account link</button>
     </div>
     <div class="desk-service-grid">
       <div class="desk-service-section">
         <h3>Orders and payment</h3>
         <div data-service-orders></div>
         <p class="desk-floor-feedback" id="desk-release-status" data-service-feedback role="status"></p>
+        <button type="button" class="desk-confirm" data-pay-table>Review table payment</button>
         <button type="button" class="desk-subtle" data-close-desk-visit aria-describedby="desk-release-status" disabled>Close visit</button>
         <div class="desk-arrival-actions" data-confirm-desk-close hidden>
-          <span>Release this table?</span>
+          <span>End this visit and begin clearing?</span>
           <button type="button" class="desk-subtle" data-keep-desk-visit>Keep open</button>
           <button type="button" class="desk-confirm" data-release-desk-table disabled>{{ 'Confirm table closed' if reservation_flow else 'Release table' }}</button>
         </div>
@@ -190,6 +194,21 @@
     <form class="desk-editor" data-desk-cancellation hidden>
       <p class="desk-form-error" role="alert" hidden></p>
       <button type="submit" class="desk-confirm desk-destructive">Confirm cancellation</button>
+    </form>
+  </dialog>
+  <dialog class="restaurant-order-dialog" data-account-link-dialog aria-labelledby="desk-link-title">
+    <h2 id="desk-link-title">Request account link</h2>
+    <p data-account-link-record></p>
+    <p>The guest must sign in and confirm this request in their account. Sending a request does not link the record or share its details.</p>
+    <form class="desk-editor" data-account-link-form>
+      <input type="hidden" name="target_type">
+      <input type="hidden" name="target_id">
+      <label>Guest account phone number <input type="tel" name="candidate_phone" autocomplete="off" maxlength="24" required></label>
+      <p role="status" data-account-link-feedback></p>
+      <div class="desk-arrival-actions">
+        <button type="button" class="desk-subtle" data-account-link-close>Close</button>
+        <button type="submit" class="desk-confirm">Send request</button>
+      </div>
     </form>
   </dialog>
 </div>

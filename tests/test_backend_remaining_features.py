@@ -54,28 +54,26 @@ class RemainingFeatureTests(RestaurantTestCase):
         self.assertEqual((item, items[0]["status"], items[0]["quantity"]), (original_item, "waiting", 3))
         self.assertEqual(write(kitchen, f"/kitchen/items/{item}/start", {"expected_version": 3}).status_code, 200)
         self.assertEqual(get_order(order)["items"][0]["kitchen_status"], "cooking")
-        self.assertEqual(write(customer, f"/orders/{order}/cancel").status_code, 409)
+        self.assertEqual(write(customer, f"/orders/{order}/cancel", {"expected_version":get_order(order)["version"]}).status_code, 409)
         self.assertEqual(write(kitchen, f"/kitchen/items/{item}/complete").status_code, 200)
-        self.assertEqual(write(frontdesk, f"/frontdesk/orders/{order}/items/{item}/serve").status_code, 200)
+        self.assertEqual(write(frontdesk, f"/frontdesk/orders/{order}/serve", {"expected_version":get_order(order)["version"]}).status_code, 200)
         self.assertEqual(write(frontdesk, f"/frontdesk/visits/{visit}/close").status_code, 409)
-        self.assertEqual(write(frontdesk, f"/frontdesk/orders/{order}/pay").status_code, 200)
+        bill=frontdesk.get(f"/visits/{visit}/bill").json['bill']
+        self.assertEqual(write(frontdesk,f"/visits/{visit}/pay",{'order_ids':','.join(map(str,bill['order_ids'])),'total_cents':bill['total_cents'],'idempotency_key':'flow-pay'}).status_code,200)
         self.assertEqual(write(frontdesk, f"/frontdesk/visits/{visit}/close").status_code, 200)
         self.assertEqual(admin.get(f"/admin/orders/{order}").json["order"]["payment_status"], "paid")
         database.ensure_database()
         self.assertEqual(get_order(order)["total_amount"], 114)
 
-    def test_closed_unpaid_order_can_be_paid_by_owner_or_frontdesk_once(self):
-        owner = self.signed_in("13900000002")
-        other = self.signed_in("13900000001")
-        desk = self.signed_in("frontdesk@shuangfen.local")
+    def test_closed_unpaid_order_cannot_bypass_table_bill(self):
+        owner=self.signed_in("13900000002")
+        desk=self.signed_in("frontdesk@shuangfen.local")
         with database.get_connection() as db:
-            db.execute("""UPDATE dining_sessions SET status='closed'
-                          WHERE visit_id=(SELECT visit_id FROM orders WHERE order_id=9001)""")
-        self.assertEqual(write(other, "/orders/9001/pay").status_code, 404)
-        paid = write(owner, "/orders/9001/pay")
-        self.assertEqual(paid.status_code, 200)
-        self.assertFalse(paid.json["payment"]["already_paid"])
-        self.assertTrue(write(desk, "/frontdesk/orders/9001/pay").json["payment"]["already_paid"])
+            db.execute("UPDATE dining_sessions SET status='closed' WHERE visit_id=1")
+        for client,path in ((owner,"/orders/9001/pay"),(desk,"/frontdesk/orders/9001/pay")):
+            result=write(client,path)
+            self.assertEqual((result.status_code,result.json['error']),(409,'TABLE_BILL_REQUIRED'))
+        self.assertFalse(desk.get('/visits/1/bill').json['bill']['can_pay'])
 
     @patch("restaurant.services.booking_service.current_table_window", return_value=("2026-12-20", None))
     def test_preorder_edit_and_promotion_follow_visit(self, _restaurant_clock):
@@ -106,14 +104,16 @@ class RemainingFeatureTests(RestaurantTestCase):
         self.assertEqual(run_scheduled_tasks("2026-12-21 09:00:00")["promoted_preorders"], 1)
         self.assertEqual(run_scheduled_tasks("2026-12-21 09:00:00")["promoted_preorders"], 0)
         self.assertEqual(write(desk, f"/frontdesk/visits/{visit}/close").status_code, 409)
-        self.assertEqual(write(desk, f"/frontdesk/orders/{order}/pay").status_code, 200)
+        self.assertEqual(write(desk, f"/frontdesk/orders/{order}/pay").status_code, 409)
         blocked = write(desk, f"/frontdesk/visits/{visit}/close")
         self.assertEqual(blocked.status_code, 409)
-        self.assertEqual(blocked.json["error"], "VISIT_UNFINISHED_ITEMS")
+        self.assertFalse(desk.get(f"/visits/{visit}/bill").json["bill"]["can_pay"])
         item = line["order_item_id"]
         self.assertEqual(write(kitchen, f"/kitchen/items/{item}/start", {"expected_version": 2}).status_code, 200)
         self.assertEqual(write(kitchen, f"/kitchen/items/{item}/complete").status_code, 200)
-        self.assertEqual(write(desk, f"/frontdesk/orders/{order}/items/{item}/serve").status_code, 200)
+        self.assertEqual(write(desk, f"/frontdesk/orders/{order}/serve", {"expected_version":get_order(order)["version"]}).status_code, 200)
+        bill=desk.get(f"/visits/{visit}/bill").json['bill']
+        self.assertEqual(write(desk,f"/visits/{visit}/pay",{'order_ids':','.join(map(str,bill['order_ids'])),'total_cents':bill['total_cents'],'idempotency_key':'preorder-pay'}).status_code,200)
         self.assertEqual(write(desk, f"/frontdesk/visits/{visit}/close").status_code, 200)
 
     def test_reserved_table_rules_use_current_window_and_release_is_atomic(self):
@@ -210,9 +210,9 @@ class RemainingFeatureTests(RestaurantTestCase):
         detail = kitchen.get("/kitchen/orders/9001")
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail.headers["Cache-Control"], "no-store")
-        self.assertEqual(set(detail.json["order"]), {"order_id", "table_id", "order_type", "status", "version", "items"})
+        self.assertEqual(set(detail.json["order"]), {"order_id", "table_id", "order_type", "status", "version", "items", "kitchen_stage"})
         for item in detail.json["order"]["items"]:
-            self.assertEqual(set(item), {"order_item_id", "dish_id", "dish_name", "quantity", "note", "status", "kitchen_status"})
+            self.assertEqual(set(item), {"order_item_id", "dish_id", "dish_name", "quantity", "note", "status", "kitchen_status", "supply_issue"})
         self.assertEqual(kitchen.get("/operations/refresh").status_code, 405)
         self.assertEqual(kitchen.post("/operations/refresh").status_code, 400)
         self.assertEqual(write(self.client, "/operations/refresh").status_code, 401)

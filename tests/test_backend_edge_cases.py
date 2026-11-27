@@ -6,7 +6,7 @@ from backend_test_helpers import RestaurantTestCase, login, restaurant_date_in, 
 from restaurant.db.database import ensure_database, get_connection
 from restaurant.services.booking_service import create_booking, update_booking
 from restaurant.services.common import ServiceError
-from restaurant.services.order_service import create_dine_in_order, pay_order
+from restaurant.services.order_service import create_dine_in_order, get_visit_bill, pay_visit
 from restaurant.services.queue_manager import QueueManager
 
 
@@ -69,9 +69,11 @@ class BackendEdgeCaseTests(RestaurantTestCase):
     def test_payment_update_failure_does_not_record_payment(self):
         """PAY-004: payment status and timestamp stay unchanged on an aborted update."""
         with get_connection() as db:
+            db.execute("UPDATE order_items SET status='served' WHERE order_id IN (SELECT order_id FROM orders WHERE visit_id=1)")
             db.execute("CREATE TRIGGER fail_mark_paid BEFORE UPDATE OF payment_status ON orders WHEN NEW.payment_status='paid' BEGIN SELECT RAISE(ABORT,'injected payment outage'); END")
+        bill=get_visit_bill(1)
         with self.assertRaises(sqlite3.IntegrityError):
-            pay_order(9001)
+            pay_visit(1,None,bill['order_ids'],bill['total_cents'],request_key='abort-payment',actor='desk')
         with get_connection() as db:
             self.assertEqual(db.execute("SELECT count(*) FROM orders WHERE order_id=9001 AND paid_at IS NOT NULL").fetchone()[0],0)
             self.assertEqual(db.execute("SELECT payment_status FROM orders WHERE order_id=9001").fetchone()[0],"unpaid")
@@ -106,7 +108,8 @@ class BackendEdgeCaseTests(RestaurantTestCase):
         self.assertEqual(tables - {"sqlite_sequence"}, {
             "staff", "customers", "dining_tables", "dishes", "bookings", "booking_create_requests", "dining_sessions",
             "orders", "order_items", "mutation_requests", "waiting_queue", "kitchen_queue", "ingredients", "dish_ingredients",
-            "web_sessions",
+            "web_sessions", "kitchen_settings", "kitchen_settings_audit", "order_resolution_audit",
+            "account_tokens", "account_link_requests", "account_mail_limits", "customer_recovery",
         })
 
 

@@ -27,7 +27,7 @@ function mountKitchenWorkspace(workspace) {
     const names = new Map(menuRows.map(dish => [dish.dish_id, dish.dish_name]));
     const groups = Object.fromEntries(Object.keys(stages).map(stage => [stage, new Map()]));
     for (const row of rows) {
-      const orders = groups[row.status];
+      const orders = groups[row.order_stage ?? row.status];
       if (!orders.has(row.order_id)) orders.set(row.order_id, []);
       orders.get(row.order_id).push(row);
     }
@@ -40,17 +40,17 @@ function mountKitchenWorkspace(workspace) {
       const tickets = [...orders].map(([order, lines]) => {
         const items = lines.map(line => '<li class="kitchen-item" data-stage="' + stage + '" data-kitchen-line="' +
           line.order_item_id + '"><div class="kitchen-item-copy"><strong>' +
-          line.quantity + ' × ' + esc(names.get(line.dish_id) ?? "Dish #" + line.dish_id) +
-          '</strong><span class="kitchen-item-stage">' + esc(status) + '</span>' +
+          line.quantity + ' × ' + esc(line.dish_name ?? names.get(line.dish_id) ?? "Dish #" + line.dish_id) +
+          '</strong><span class="kitchen-item-stage">' + esc(line.supply_issue ? 'Needs guest decision: ' + line.supply_issue : line.item_status === 'ready' ? 'Dish ready' : line.item_status === 'cooking' ? 'Cooking' : 'Not started') + '</span>' +
           (line.note ? '<p class="kitchen-note"><b>Note</b> ' + esc(line.note) + '</p>' : '') + '</div>' +
-          (action ? '<button type="button" class="kitchen-action" data-kitchen-item="' + line.order_item_id +
-            '" data-kitchen-version="' + line.order_version + '" data-kitchen-step="' + action + '">' + label + '</button>' : '') + '</li>').join("");
+          (line.item_status === "cooking" ? '<button type="button" class="kitchen-action" data-kitchen-item="' + line.order_item_id +
+            '" data-kitchen-version="' + line.order_version + '" data-kitchen-step="complete">Mark dish ready</button>' : line.item_status === 'waiting' && !line.supply_issue ? '<button type="button" class="kitchen-action" data-kitchen-item="' + line.order_item_id + '" data-kitchen-version="' + line.order_version + '" data-kitchen-step="unavailable">Cannot supply</button>' : '') + '</li>').join("");
         const table = tableLabel(lines[0].table_id);
         const orderLabel = (lines[0].order_type === "preorder" ? "Preorder #" : "Order #") + order;
         const metadata = [table && orderLabel, queueAge(lines)].filter(Boolean).join(" · ");
         return '<article class="kitchen-ticket" data-kitchen-ticket="' + order + '" data-stage="' + stage +
           '"><div class="kitchen-ticket-heading"><div><h3 tabindex="-1">' + esc(table ? 'Table ' + table : orderLabel) +
-          '</h3><p>' + esc(metadata) + '</p></div></div><ul class="kitchen-item-list">' + items + '</ul></article>';
+          '</h3><p>' + esc(metadata) + '</p></div>' + (lines.some(line => line.item_status === 'waiting' && !line.supply_issue) ? '<button type="button" class="kitchen-action" data-start-order="' + order + '" data-kitchen-version="' + lines[0].order_version + '">Start order</button>' : '') + '</div><ul class="kitchen-item-list">' + items + '</ul></article>';
       }).join("");
       const column = find('[data-kitchen-lane="' + stage + '"]');
       const markup = tickets || '<p class="kitchen-empty">' + ({ waiting: "Nothing to start.",
@@ -59,7 +59,7 @@ function mountKitchenWorkspace(workspace) {
         restoreFocus ||= column.contains(focused);
         column.innerHTML = markup;
       }
-      const quantity = [...orders.values()].flat().reduce((sum, row) => sum + row.quantity, 0);
+      const quantity = orders.size;
       const stageCount = find('[data-kitchen-stage="' + stage + '"]');
       if (stageCount.textContent !== String(quantity)) stageCount.textContent = quantity;
     }
@@ -104,13 +104,20 @@ function mountKitchenWorkspace(workspace) {
     const current = ++revision;
     try {
       if (view === "queue") await restaurantRefreshOperations();
-      const [menu, queue] = await Promise.all([
+      const [menu, queue, settings] = await Promise.all([
         restaurantRequest("/kitchen/menu"),
         view === "queue" ? restaurantRequest("/kitchen/queue?status=active") : null,
+        restaurantRequest("/kitchen/settings"),
       ]);
       if (current !== revision) return;
       if (view === "queue") renderQueue(queue.items, menu.items);
       else renderMenu(menu.items);
+      const capacity = find('[data-kitchen-capacity]');
+      if (!capacity.contains(document.activeElement)) {
+        capacity.elements.max_active_orders.value = settings.settings.max_active_orders;
+        capacity.elements.expected_version.value = settings.settings.version;
+      }
+      find('[data-kitchen-capacity-count]').textContent = settings.settings.active_orders + ' orders cooking / ' + settings.settings.max_active_orders + ' limit';
       if (refreshError) feedback.textContent = "";
       refreshError = false;
       syncNotice.textContent = view === "queue" ? "Auto-updates on" : "";
@@ -136,8 +143,8 @@ function mountKitchenWorkspace(workspace) {
       await refresh();
       return;
     }
-    const { kitchenItem, kitchenStep, kitchenVersion, kitchenDish, kitchenNext } = button.dataset;
-    if (!kitchenItem && !kitchenDish) return;
+    const { kitchenItem, kitchenStep, kitchenVersion, kitchenDish, kitchenNext, startOrder } = button.dataset;
+    if (!kitchenItem && !kitchenDish && !startOrder) return;
     pending = true;
     ++revision;
     const orderId = button.closest("[data-kitchen-ticket]")?.dataset.kitchenTicket;
@@ -146,12 +153,18 @@ function mountKitchenWorkspace(workspace) {
     refreshError = false;
     feedback.textContent = "";
     try {
-      if (kitchenItem) await restaurantRequest("/kitchen/items/" + kitchenItem + "/" + kitchenStep,
+      if (startOrder) await restaurantRequest('/kitchen/orders/' + startOrder + '/start', { expected_version: kitchenVersion });
+      else if (kitchenStep === 'unavailable') {
+        const reason = window.prompt('Why can this unstarted dish not be supplied?');
+        if (!reason?.trim()) return;
+        await restaurantRequest('/kitchen/items/' + kitchenItem + '/unavailable', { expected_version: kitchenVersion, reason });
+      }
+      else if (kitchenItem) await restaurantRequest("/kitchen/items/" + kitchenItem + "/" + kitchenStep,
         kitchenStep === "start" ? { expected_version: kitchenVersion } : {});
       else await restaurantRequest("/kitchen/menu/" + kitchenDish + "/availability", { is_available: kitchenNext });
       const refreshed = await refresh();
       if (!refreshed || requestedView !== view) return;
-      if (kitchenStep === "complete") feedback.textContent = "Dish ready. Front desk can now mark it served.";
+      if (kitchenStep === "complete") feedback.textContent = "Dish ready. The order reaches front desk when every remaining dish is ready.";
       const replacement = kitchenItem
         ? itemFocus(kitchenItem)
         : find('[data-kitchen-dish="' + kitchenDish + '"]');
@@ -163,6 +176,24 @@ function mountKitchenWorkspace(workspace) {
       button.removeAttribute("aria-disabled");
       pending = false;
     }
+  });
+
+  find('[data-kitchen-capacity]').addEventListener('submit', async event => {
+    event.preventDefault();
+    if (pending) return;
+    pending = true;
+    try {
+      await restaurantRequest('/kitchen/settings', Object.fromEntries(new FormData(event.target)));
+      await refresh();
+      feedback.textContent = 'Capacity saved. Existing work continues when the limit is lowered.';
+    } catch (error) {
+      feedback.textContent = error.message;
+      const latest = await restaurantRequest('/kitchen/settings').catch(() => null);
+      if (latest) {
+        event.target.elements.max_active_orders.value = latest.settings.max_active_orders;
+        event.target.elements.expected_version.value = latest.settings.version;
+      }
+    } finally { pending = false; }
   });
 
   async function poll() {

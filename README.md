@@ -14,15 +14,15 @@ Double Portion 是一个单店餐厅预约与点餐系统。顾客、前台、�
 | --- | --- |
 | 顾客 | 在 **Book a table** 选日期、人数、到店时间和桌位，可改约或取消。确认预约后可预点单，在 **Your visit** 查看入座进度、订单和本次桌账。 |
 | 前台 | 在 **Reservations** 代订、登记到店、确认备桌和安排入座。现场客人由前台取号、叫号及安排入座。在 **Table service** 代客加单、确认上菜、记录付款和关桌。 |
-| 厨房 | 在 **Queue** 分别处理待制作、制作中和待上菜的菜品。在 **Availability** 更新售罄和供应状态。 |
+| 厨房 | 在 **Queue** 处理待制作、制作中和整单待上菜；制作中逐菜标记备妥。在 **Availability** 更新售罄和供应状态。 |
 | 主管 | 在 **Orders** 查当天和历史订单，在 **Tables** 查桌况、时间轴和日历。在 **Dishes** 新增菜品或改价，也可管理库存和账号。 |
 
 ## 堂食演示流程
 
 1. 顾客线上订桌并预点单。
 2. 前台在预约签到窗口内登记到店，确认备桌后安排入座。
-3. 顾客实际入座且已到制作时间，预点单才进入厨房。厨房按菜品标记开始制作和备妥，前台确认上菜。
-4. 顾客核对本次桌账并记录模拟付款。前台处理完所有菜品和账单后关桌，主管可以按桌号和订单查看本次记录。
+3. 顾客实际入座且已到制作时间，预点单才进入厨房。厨房按单开始制作、逐菜备妥；整单备齐后前台确认上菜。
+4. 所有菜品上齐或取消、换菜协商已处理，顾客或前台核对整桌账单后记录模拟付款。前台关桌后进入清台，再手动确认清台完成才释放桌位。
 
 线上预约使用北京时间，以 15 分钟为到店时间间隔，至少提前 30 分钟。预约宽限为 10 分钟，现场叫号保留 1 分钟。
 
@@ -30,11 +30,13 @@ Double Portion 是一个单店餐厅预约与点餐系统。顾客、前台、�
 
 - **Vercel** 托管 Flask 和 Jinja 应用。GitHub `main` 是正式发布分支，PR 合并后由 Vercel 构建和部署。
 - **Neon PostgreSQL** 保存预约、等位、堂食、订单、菜单和库存。正式环境在 Vercel 配置 `DATABASE_URL`、`USURPERS_SECRET_KEY` 和 `USURPERS_HTTPS=1`。
-- 数据库结构变更通过 [增量迁移](restaurant/db/migrations/) 单独应用。启用可撤销会话前，在正式库应用 [005](restaurant/db/migrations/005_web_sessions.sql)。旧版登录会话在切换后需重新登录。
+- 数据库结构变更通过 [增量迁移](restaurant/db/migrations/) 单独应用。本轮从 005 升级到 008：先执行 `python -m restaurant.db.upgrade --dry-run`，再执行 `python -m restaurant.db.upgrade`，最后部署新应用。
 - PR 的 [自动测试](.github/workflows/ci.yml) 使用隔离 PostgreSQL 运行 Python 回归，并执行 JavaScript 测试。
 - 查询接口只读。工作台通过独立的、需要登录和 CSRF 验证的任务请求推进叫号、逾时和预点单。需要无人访问时持续推进，可以让单独的服务进程运行 `python -m restaurant.scheduler`，或由外部调度器运行 `python -m restaurant.scheduler --once`。
 
 并发处理和验收证据见 [组员交接记录](docs/concurrency-async-handoff.md) 和 [会话与任务边界修复 PR](https://github.com/HTZGKM/Usurpers/pull/35)。
+
+本轮营业规则、恢复邮箱配置和独立 worker 的部署边界见 [已确认规则](docs/confirmed-business-rules.md)。邮箱需要真实 SMTP，后台任务需要独立托管；没有外部服务时不宣称已上线启用。
 
 ## 项目结构
 

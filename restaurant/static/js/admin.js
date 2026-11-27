@@ -18,6 +18,9 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
   let orders = [];
   let historyDays = [];
   let historyOrders = [];
+  let salesOrders = [];
+  let visitDays = [];
+  let kitchenSettings = null;
   let serviceWindows = [];
   let kitchenOrders = [];
   let ledgerOrders = [];
@@ -110,8 +113,8 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
       if (!placed) return [];
       const items = row.items.map(line => ({
         id: String(line.dish_id), qty:line.quantity, name:line.dish_name, unit:Number(line.unit_price),
-        status:itemStatuses[line.status] || line.status, note:line.note,
-        category:categories[categoryKey(line.category, line.dish_name)],
+        status:itemStatuses[line.status] || line.status, note:line.note, issue:line.supply_issue,
+        category:categories[line.category],
         inKitchen: ['waiting','cooking'].includes(line.queue_status),
         readyAt: line.queue_status === 'ready' && line.ready_at ? localTimestamp(line.ready_at) : '',
       }));
@@ -122,7 +125,9 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
       const status = cancelled ? 'Cancelled' : served ? 'Served' :
         remaining.some(item => ['Queued','Cooking'].includes(item.status)) ? 'In queue' :
           remaining.some(item => item.status === 'Ready') ? 'Ready' : 'In queue';
-      return { id:String(row.order_id), table:tableName(row.table_id), day:placed.slice(0,10),
+      const paid = localTimestamp(row.paid_at);
+      return { id:String(row.order_id), version:row.version, table:tableName(row.table_id), day:placed.slice(0,10),
+        paidDay:paid.slice(0,10), paidTime:paid.slice(11,16),
         time:placed.slice(11,16), status, active:row.status === 'active', items,
         payment:cancelled && row.payment_status === 'unpaid' ? 'Not required' :
           paymentStatuses[row.payment_status] || 'Unpaid' };
@@ -217,6 +222,8 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
   async function refreshWorkspace() {
     await restaurantRefreshOperations();
     const data = await request(root.dataset.workspaceUrl);
+    kitchenSettings = (await request('/kitchen/settings')).settings;
+    visitDays = data.visit_days || [];
     const previousDate = serviceDate;
     serviceDate = data.service_date;
     serviceTime = data.service_time;
@@ -226,6 +233,8 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     const all = normalizeOrders(data.orders);
     invalidWorkspaceDates = data.orders.length - all.length;
     historyOrders = all.filter(order => order.day >= historyDays[0] && order.day <= serviceDate);
+    salesOrders = all.filter(order => isPaid(order) && order.status !== 'Cancelled' &&
+      order.paidDay >= historyDays[0] && order.paidDay <= serviceDate);
     orders = historyOrders.filter(order => order.day === serviceDate);
     kitchenOrders = all.filter(order => order.active);
     orderDays = new Set(data.order_days);
@@ -277,7 +286,11 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
   function salesBuckets(range, metric) {
     const daily = range === 'today';
     const hourOf = time => Math.floor(minute(time) / 60);
-    const hours = orders.map(order => hourOf(order.time));
+    const source = metric === 'revenue' ? salesOrders : historyOrders;
+    const dayOf = order => metric === 'revenue' ? order.paidDay : order.day;
+    const timeOf = order => metric === 'revenue' ? order.paidTime : order.time;
+    const scoped = source.filter(order => !daily || dayOf(order) === serviceDate);
+    const hours = scoped.map(order => hourOf(timeOf(order)));
     const firstHour = Math.min(hourOf(serviceWindows[0][0]), ...hours);
     const lastHour = Math.max(hourOf(serviceWindows.at(-1)[1]), ...hours);
     const keys = daily ? Array.from({length:lastHour - firstHour + 1},
@@ -285,10 +298,10 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     const buckets = keys.map(key => ({ label:daily ? key : shortDay(key),
       visible:!daily || key <= serviceTime, amounts:salesGroups.map(() => 0) }));
     const byKey = new Map(keys.map((key,index) => [key,buckets[index].amounts]));
-    for (const order of daily ? orders : historyOrders) {
+    for (const order of scoped) {
       if (order.status === 'Cancelled' || (metric === 'revenue' && !isPaid(order))) continue;
-      if (daily && order.time > serviceTime) continue;
-      const key = daily ? order.time.slice(0,2) + ':00' : order.day;
+      if (daily && timeOf(order) > serviceTime) continue;
+      const key = daily ? timeOf(order).slice(0,2) + ':00' : dayOf(order);
       const amounts = byKey.get(key);
       if (!amounts) continue;
       const touched = new Set();
@@ -363,11 +376,14 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
         selected(days === state.salesDays) + '>Last ' + days + ' days</button>').join('') + '</div>';
     const period = daily ? 'Today · ' + serviceWindows.map(window => window.join('–')).join(' / ') + ' · Hourly' :
       buckets[0].label + '–' + shortDay(serviceDate) + ' · Last ' + buckets.length + ' days';
-    const relevantOrders = daily ? orders : historyOrders.filter(order => order.day >= historyDays.at(-state.salesDays));
+    const relevantOrders = (revenue ? salesOrders : historyOrders).filter(order => {
+      const day = revenue ? order.paidDay : order.day;
+      return daily ? day === serviceDate : day >= historyDays.at(-state.salesDays);
+    });
     const uncategorized = relevantOrders.some(order =>
       order.status !== 'Cancelled' && (!revenue || isPaid(order)) &&
       order.items.some(item => item.status !== 'Cancelled' && !item.category));
-    const description = (revenue ? 'Paid items at order prices · by order time.' :
+    const description = (revenue ? 'Simulated receipts at order prices · by payment time (Beijing).' :
       'Orders counted once per category. Cancelled orders excluded.') +
       (uncategorized ? ' Uncategorized items are excluded.' : '');
     return '<section class="dp-panel dp-sales-panel' + (daily ? '' : ' dp-sales-week') + '" data-sales-panel="' +
@@ -419,7 +435,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
   }
   function popularDishes() {
     const today = state.rosePeriod === 'today';
-    const paidOrders = (today ? orders : historyOrders).filter(order => isPaid(order) && order.status !== 'Cancelled');
+    const paidOrders = salesOrders.filter(order => !today || order.paidDay === serviceDate);
     const volumes = new Map();
     for (const { items } of paidOrders) {
       for (const item of items) {
@@ -537,7 +553,7 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     return '<section class="dp-panel" data-room-summary>' + head('Dining room', more('Open floor plan', 'floor')) +
       '<div class="dp-room-counts"><span>' + dot('sage') + '<strong>' + occupied +
       '</strong> Seated</span><span>' + dot('amber') + '<strong>' + reserved +
-      '</strong> Reserved</span><span>' + dot('neutral') + '<strong>' + (floor.length - occupied - reserved) +
+      '</strong> Reserved</span><span>' + dot('neutral') + '<strong>' + floor.filter(table => table.status === 'available').length +
       '</strong> Available</span></div>' + ready +
       '<div class="dp-arrivals"><div class="dp-section-top"><h3>Arrivals · next hour</h3>' +
       more('Timeline', 'timeline', nextBookings ? 'data-booking="' + nextBookings[0].id + '"' : 'data-today') +
@@ -570,23 +586,31 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     const queue = queuedOrders.reduce((sum,order) =>
       sum + order.items.filter(item => item.status === 'Queued').length, 0);
     const oldest = queuedOrders.reduce((age,order) => Math.max(age, elapsedMinutes(order.day, order.time)), 0);
-    const paidOrders = orders.filter(isPaid);
+    const paidOrders = salesOrders.filter(order => order.paidDay === serviceDate);
     const paidAmount = paidOrders.reduce((sum,order) => sum + orderTotal(order), 0);
     const upcomingGuests = upcoming.reduce((sum,booking) => sum + booking.guests, 0);
     const firstBooking = upcoming[0];
     return title(titles.overview) +
       '<section class="dp-summary" aria-label="Current service figures">' +
-      stat('Occupied tables', occupied + ' / ' + floor.length, (floor.length - occupied - reserved) +
+      stat('Occupied tables', occupied + ' / ' + floor.length, floor.filter(table => table.status === 'available').length +
         ' available now', 'Floor plan', 'floor') +
       stat('Items awaiting prep', queue, queuedOrders.length ? 'Oldest order placed ' + oldest + ' min ago' :
         'No orders in preparation', 'Kitchen queue', 'queue') +
-       stat('Orders today', orders.length, paidOrders.length + ' paid · ' + money(paidAmount), 'Orders', 'orders', 'data-reset-orders="today"') +
+       stat('Orders today', orders.filter(order => order.status !== 'Cancelled').length,
+         orders.filter(order => order.status === 'Cancelled').length + ' cancelled · Simulated receipts ' + money(paidAmount), 'Orders', 'orders', 'data-reset-orders="today"') +
       stat('Guests in next hour', upcomingGuests, firstBooking
         ? upcoming.length + ' bookings · Next at ' + firstBooking.start : 'No upcoming bookings',
         'Reservation timeline', 'timeline', firstBooking ? 'data-booking="' + firstBooking.id + '"' : 'data-today') + '</section>' +
       '<div class="dp-overview-grid">' + diningRoomSummary(occupied, reserved, readyOrders, upcoming) +
       salesChart('today') + '</div><div class="dp-overview-grid dp-overview-lower">' +
-       recentOrdersPanel(orders.slice(0,5)) + popularDishes() + '</div>';
+       recentOrdersPanel(orders.slice(0,5)) + popularDishes() + '</div>' +
+       '<section class="dp-panel">' + head('Last 30 days · activity') +
+       '<p class="dp-caption">' + historyOrders.filter(order => order.status !== 'Cancelled').length + ' valid orders · ' +
+       historyOrders.filter(order => order.status === 'Cancelled').length + ' cancelled orders · ' +
+       visitDays.reduce((sum,day) => sum + day.visits,0) + ' seated visits · ' +
+       visitDays.reduce((sum,day) => sum + day.guests,0) + ' guests</p>' +
+       '<p>Simulated receipts ' + money(salesOrders.reduce((sum,order) => sum + orderTotal(order),0)) +
+       '</p><p class="dp-caption">Orders use creation date; visits use actual seating date; receipts use payment date. All dates use Beijing time.</p></section>';
   }
   function filteredOrders() {
     return ledgerOrders.filter(order => (!state.orderStatus || order.status === state.orderStatus) &&
@@ -742,11 +766,11 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     const ready = [];
     const prep = [];
     for (const order of kitchenOrders) {
-      const readyItems = order.items.filter(item => item.status === 'Ready');
-      const prepItems = order.items.filter(item => item.inKitchen && ['Queued','Cooking'].includes(item.status));
-      if (readyItems.length) ready.push({ ...order, items:readyItems,
-        readyAt:readyItems.map(item => item.readyAt).filter(Boolean).sort()[0] || '' });
-      if (prepItems.length) prep.push({ ...order, items:prepItems });
+      const items = order.items.filter(item => item.status !== 'Cancelled');
+      if (items.length && items.every(item => item.status === 'Ready' && !item.issue)) {
+        ready.push({ ...order, items,
+          readyAt:items.map(item => item.readyAt).filter(Boolean).sort().at(-1) || '' });
+      } else if (items.some(item => item.inKitchen || item.issue)) prep.push({ ...order, items });
     }
     ready.sort((a,b) => (a.readyAt || a.day + 'T' + a.time).localeCompare(b.readyAt || b.day + 'T' + b.time));
     return { ready, prep:prep.reverse() };
@@ -754,14 +778,20 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
 
   function queuePage() {
     const { ready, prep } = queueLanes();
-    const waiting = prep.reduce((sum,order) => sum + order.items.length, 0);
-    return title(titles.queue, '<span class="dp-caption">Read-only view</span>') +
-      '<div class="dp-queue"><section class="dp-panel dp-queue-lane" data-queue-lane="ready">' +
-      head('Ready to serve', '<span class="dp-caption">' + ready.length + ' orders</span>') +
-      (ready.map(order => ticket(order,true)).join('') || '<p class="dp-empty">No dishes ready to serve.</p>') +
-      '</section><section class="dp-panel dp-queue-lane" data-queue-lane="prep">' +
-      head('Awaiting preparation', '<span class="dp-caption">' + waiting + ' line items</span>') +
-      (prep.map(order => ticket(order,false)).join('') || '<p class="dp-empty">No dishes in preparation.</p>') + '</section></div>';
+    const cooking = prep.filter(order => order.items.some(item => ['Cooking','Ready'].includes(item.status)));
+    const waiting = prep.filter(order => !cooking.includes(order));
+    const settings = kitchenSettings ? '<section class="dp-panel"><form data-kitchen-capacity>' +
+      '<label>Orders cooking at once <input name="max_active_orders" type="number" min="1" max="100" required value="' +
+      kitchenSettings.max_active_orders + '"></label><input type="hidden" name="expected_version" value="' +
+      kitchenSettings.version + '"><button type="submit" class="dp-link">Save limit</button></form>' +
+      '<p class="dp-caption">' + kitchenSettings.active_orders + ' currently making. Lowering the limit does not interrupt existing work.</p></section>' : '';
+    return title(titles.queue) + settings + '<div class="dp-queue">' +
+      [['Waiting',waiting,false],['Making',cooking,false],['Ready to serve',ready,true]].map(([label,rows,canServe]) =>
+        '<section class="dp-panel dp-queue-lane">' + head(label, '<span class="dp-caption">' + rows.length + ' orders</span>') +
+        (rows.map(order => ticket(order,canServe) + '<p class="dp-caption">' +
+          order.items.map(item => es(item.name) + ': ' + es(item.issue ? 'Awaiting front desk resolution' : item.status)).join(' · ') + '</p>' +
+          (canServe ? '<button type="button" class="dp-link" data-admin-serve="' + order.id + '" data-version="' + order.version + '">Confirm whole order served</button>' : '')).join('') ||
+          '<p class="dp-empty">No orders in this queue.</p>') + '</section>').join('') + '</div>';
   }
   function tableTabs() {
     return '<nav class="dp-tabs" aria-label="Tables views">' +
@@ -1426,6 +1456,15 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
     userButton.focus();
   });
   root.addEventListener('click', (event) => {
+    const serve = event.target.closest('[data-admin-serve]');
+    if (serve) {
+      if (serve.disabled) return;
+      serve.disabled = true;
+      restaurantRequest('/frontdesk/orders/' + serve.dataset.adminServe + '/serve', {expected_version:serve.dataset.version})
+        .then(async () => { await refreshWorkspace(); show(state.view); setFeedback('Whole order marked served.'); })
+        .catch(error => { setFeedback(error.message); serve.disabled = false; });
+      return;
+    }
     if (!userProfile.hidden && !userMenu.contains(event.target)) setUserProfileOpen(false);
     const dateControl = event.target.closest('[data-order-date]');
     const openCalendar = main.querySelector('[data-order-calendar]:not([hidden])');
@@ -1689,6 +1728,19 @@ function mountAdminWorkspace(root, layout, catalog, navigate, reservationFlow) {
   });
   root.addEventListener('submit', (event) => {
     const form = event.target;
+    if (form.matches('[data-kitchen-capacity]')) {
+      event.preventDefault();
+      const button = form.querySelector('[type=submit]');
+      if (button.disabled) return;
+      button.disabled = true;
+      request('/kitchen/settings', new FormData(form)).then(async () => {
+        await refreshWorkspace(); show(state.view); setFeedback('Kitchen limit updated.');
+      }).catch(async error => {
+        setFeedback(error.message); button.disabled = false;
+        if (error.code === 'SETTINGS_CHANGED') { await refreshWorkspace(); show(state.view); }
+      });
+      return;
+    }
     if (form.matches('[data-add-ingredient],[data-adjust-ingredient],[data-save-recipe],[data-reset-password]')) {
       event.preventDefault();
       const submit = form.querySelector('[type="submit"]');

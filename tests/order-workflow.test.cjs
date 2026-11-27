@@ -7,15 +7,15 @@ const vm = require('node:vm');
 const script = name => readFileSync(path.join(__dirname, '../restaurant/static/js/', name), 'utf8');
 const section = (source, first, next) => source.slice(source.indexOf(first), source.indexOf(next));
 
-test('one kitchen order can show different dishes in all three lanes', async () => {
+test('one kitchen order stays in cooking until every dish is ready', async () => {
   const elements = new Map();
   const element = selector => {
-    if (!elements.has(selector)) elements.set(selector, { innerHTML:'', textContent:'', dataset:{}, contains:() => false });
+    if (!elements.has(selector)) elements.set(selector, { innerHTML:'', textContent:'', dataset:{}, contains:() => false, addEventListener() {}, elements:{max_active_orders:{},expected_version:{}} });
     return elements.get(selector);
   };
   const routes = [];
   const rows = ['waiting', 'cooking', 'ready'].map((status, index) => ({
-    status, order_id:9005, order_type:'preorder', order_item_id:index + 1, dish_id:index + 1,
+    status, item_status:status, order_stage:'cooking', order_version:1, order_id:9005, order_type:'preorder', order_item_id:index + 1, dish_id:index + 1,
     quantity:index + 1, table_id:1,
   }));
   const workspace = { querySelector:element, addEventListener() {} };
@@ -25,23 +25,27 @@ test('one kitchen order can show different dishes in all three lanes', async () 
     restaurantRefreshOperations:async () => { routes.push('POST /operations/refresh'); },
     restaurantRequest:async url => {
       routes.push(url);
-      return { items:url === '/kitchen/menu' ? [] : rows };
+      return { items:url === '/kitchen/menu' ? [] : rows, settings:{max_active_orders:5,version:1,active_orders:1} };
     },
   });
   vm.runInContext(script('kitchen.js'), context);
   context.mountKitchenWorkspace(workspace)('queue', false);
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(routes, ['POST /operations/refresh', '/kitchen/menu', '/kitchen/queue?status=active']);
-  for (const [index, stage] of ['waiting','cooking','ready'].entries()) {
-    const lane = element(`[data-kitchen-lane="${stage}"]`).innerHTML;
-    assert.match(lane, /Preorder #9005/);
-    assert.deepEqual([...lane.matchAll(/data-kitchen-line="(\d+)"/g)].map(match => Number(match[1])), [index + 1]);
-    assert.equal(element(`[data-kitchen-stage="${stage}"]`).textContent, index + 1);
+  assert.deepEqual(routes, ['POST /operations/refresh', '/kitchen/menu', '/kitchen/queue?status=active', '/kitchen/settings']);
+  for (const stage of ['waiting','ready']) {
+    assert.doesNotMatch(element(`[data-kitchen-lane="${stage}"]`).innerHTML, /data-kitchen-ticket/);
+    assert.equal(element(`[data-kitchen-stage="${stage}"]`).textContent, 0);
   }
+  const lane = element('[data-kitchen-lane="cooking"]').innerHTML;
+  assert.match(lane, /Preorder #9005/);
+  assert.deepEqual([...lane.matchAll(/data-kitchen-line="(\d+)"/g)].map(match => Number(match[1])), [1,2,3]);
+  assert.equal(element('[data-kitchen-stage="cooking"]').textContent, 1);
+  assert.match(lane, /Mark dish ready/);
+  assert.doesNotMatch(lane, /data-kitchen-step="serve"/);
   assert.equal(element('[data-kitchen-count]').textContent, '1 active order');
 });
 
-test('an unpaid past order still offers payment and a staged preorder explains the wait', () => {
+test('orders use table payment and staged preorders explain the wait', () => {
   const api = script('restaurant-api.js');
   const guest = script('guest.js');
   const context = vm.createContext({
@@ -60,13 +64,13 @@ test('an unpaid past order still offers payment and a staged preorder explains t
   assert.equal(context.orderLines({ ...order, items:[{ ...item, kitchen_status:'waiting' }] })[0].labels[0], 'Waiting for kitchen');
   const body = {};
   context.renderSubmittedOrder(body, { ...order, status:'completed', items:[{ ...item, status:'served' }] });
-  assert.match(body.innerHTML, /pay-submitted-order/);
+  assert.doesNotMatch(body.innerHTML, /pay-submitted-order/);
   context.renderSubmittedOrder(body, { ...order, visit_id:null });
   assert.doesNotMatch(body.innerHTML, /pay-submitted-order/);
 });
 
 test('the table bill includes only the open balance for the current visit', () => {
-  const context = vm.createContext({ btn:(label, action) => `<button data-action="${action}">${label}</button>` });
+  const context = vm.createContext({ esc:value => value, btn:(label, action) => `<button data-action="${action}">${label}</button>` });
   vm.runInContext([
     section(script('restaurant-api.js'), 'function restaurantCanPayOrder(', 'function restaurantPreorderWaiting('),
     section(script('guest.js'), 'function currentVisitBill(', 'function visitView('),
@@ -79,7 +83,7 @@ test('the table bill includes only the open balance for the current visit', () =
     { order_id:9009, visit_id:4, status:'completed', payment_status:'unpaid', total_amount:65 },
     { order_id:9010, visit_id:5, status:'cancelled', payment_status:'unpaid', total_amount:20 },
   ];
-  const bill = context.currentVisitBill({ visit_id:5 }, orders);
+  const bill = context.currentVisitBill({ visit_id:5 }, orders.map(order => ({...order, items:[{status:"served"}]})));
   assert.equal(bill.totalCents,11200);
   assert.deepEqual(Array.from(bill.orderIds),[9005,9006,9007]);
   assert.match(context.visitBillMarkup(bill), /3 unpaid orders for this visit.*Record ¥112\.00 payment/);
@@ -113,4 +117,12 @@ test('a lost order response is recovered with its original key and draft', async
   assert.deepEqual(calls[0], calls[2]);
   assert.equal(calls[2].quantity, 1);
   assert.equal(storage.size, 0);
+});
+
+
+test('operations refresh propagates busy errors instead of displaying stale success', async () => {
+  const api = script('restaurant-api.js');
+  const context = vm.createContext({restaurantRequest:async () => { throw Object.assign(new Error('busy'),{code:'DATABASE_BUSY'}); }});
+  vm.runInContext(section(api,'async function restaurantRefreshOperations(', 'const pendingRestaurantSubmissions'),context);
+  await assert.rejects(context.restaurantRefreshOperations(), error => error.code === 'DATABASE_BUSY');
 });

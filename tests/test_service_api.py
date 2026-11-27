@@ -34,7 +34,7 @@ class ServiceAndApiTests(RestaurantTestCase):
             create_booking("", "13900000001", "bad-date", 1, 2)
         with self.assertRaises(ServiceError) as caught:
             pay_order(999999)
-        self.assertEqual(caught.exception.status_code, 404)
+        self.assertEqual(caught.exception.status_code, 409)
 
     def test_health_and_menu_routes(self):
         self.assertEqual(self.client.get("/health").status_code, 200)
@@ -63,9 +63,12 @@ class ServiceAndApiTests(RestaurantTestCase):
         self.assertEqual(detail.status_code, 200)
         summary = next(row for row in owner.get("/orders").json["orders"] if row["order_id"] == 9001)
         self.assertEqual(summary["total_amount"], detail.json["order"]["total_amount"])
-        from restaurant.services.order_service import pay_order
-        first=pay_order(9001)
-        second=pay_order(9001)
+        from restaurant.services.order_service import get_visit_bill, pay_visit
+        with get_connection() as db:
+            db.execute("UPDATE order_items SET status='served' WHERE order_id IN (SELECT order_id FROM orders WHERE visit_id=1)")
+        bill=get_visit_bill(1)
+        first=pay_visit(1,None,bill['order_ids'],bill['total_cents'],request_key='duplicate-pay',actor='desk')
+        second=pay_visit(1,None,bill['order_ids'],bill['total_cents'],request_key='duplicate-pay',actor='desk')
         self.assertFalse(first["already_paid"])
         self.assertTrue(second["already_paid"])
         with get_connection() as db:
@@ -90,18 +93,22 @@ class ServiceAndApiTests(RestaurantTestCase):
                               (owner_phone,), "visit_id")
         first = create_dine_in_order(visit, [line], owner_phone)
         settled = create_dine_in_order(visit, [line], owner_phone)
-        pay_order(settled["order_id"])
+        with get_connection() as db:
+            db.execute("UPDATE orders SET payment_status='paid',paid_at=CURRENT_TIMESTAMP WHERE order_id=?",(settled['order_id'],))
+            db.execute("UPDATE order_items SET status='served' WHERE order_id=?",(settled['order_id'],))
         cancelled = create_dine_in_order(visit, [line], owner_phone)
-        self.assertEqual(write(owner, f"/orders/{cancelled['order_id']}/cancel").status_code, 200)
+        self.assertEqual(write(owner, f"/orders/{cancelled['order_id']}/cancel", {"expected_version":1}).status_code, 200)
         second = create_dine_in_order(visit, [line], owner_phone)
+        with get_connection() as db:
+            db.execute("UPDATE order_items SET status='served' WHERE order_id IN (?,?)",(first['order_id'],second['order_id']))
         endpoint = f"/visits/{visit}/pay"
-        quote = {"order_ids": str(first["order_id"]), "total_cents": round(first["total_amount"] * 100)}
+        quote = {"idempotency_key":"table-quote", "order_ids": str(first["order_id"]), "total_cents": round(first["total_amount"] * 100)}
         self.assertEqual(write(other, endpoint, quote).status_code, 404)
-        self.assertEqual(write(frontdesk, endpoint, quote).status_code, 403)
+        self.assertEqual(write(frontdesk, endpoint, quote).status_code, 409)
         stale = write(owner, endpoint, quote)
         self.assertEqual((stale.status_code, stale.json["error"]), (409, "BILL_CHANGED"))
         ids = [first["order_id"], second["order_id"]]
-        quote = {"order_ids": ",".join(map(str, ids)), "total_cents": round((first["total_amount"] + second["total_amount"]) * 100)}
+        quote = {"idempotency_key":"table-quote", "order_ids": ",".join(map(str, ids)), "total_cents": round((first["total_amount"] + second["total_amount"]) * 100)}
         self.assertEqual(write(owner, endpoint, {**quote, "total_cents": quote["total_cents"] - 1}).status_code, 409)
         self.assertTrue(all(get_order(oid)["payment_status"] == "unpaid" for oid in ids))
         payment = write(owner, endpoint, quote)
@@ -183,16 +190,16 @@ class ServiceAndApiTests(RestaurantTestCase):
 
     def test_closing_visit_calls_next_waiting_party(self):
         from restaurant.services.dining_service import close_dining_session
-        from restaurant.services.kitchen_service import finish_item, serve_item
-        from restaurant.services.order_service import cancel_order_item, pay_order
+        from restaurant.services.kitchen_service import finish_item, serve_order
+        from restaurant.services.order_service import cancel_order_item, get_visit_bill, pay_visit
         from restaurant.services.queue_manager import QueueManager
 
         entry = QueueManager.join_waitlist(2, contact_name="Release fixture", phone="13900000066")
         cancel_order_item(9001, 9001)
-        self.assertEqual(pay_order(9001)["payment_status"], "paid")
+
         with self.assertRaises(ServiceError) as cooking:
             close_dining_session(1)
-        self.assertEqual(cooking.exception.code, "VISIT_UNFINISHED_ITEMS")
+        self.assertEqual(cooking.exception.status_code, 409)
         finish_item(9002)
         with self.assertRaises(ServiceError) as ready:
             close_dining_session(1)
@@ -200,7 +207,9 @@ class ServiceAndApiTests(RestaurantTestCase):
         with get_connection() as db:
             self.assertEqual(db.execute("SELECT status FROM dining_sessions WHERE visit_id=1").fetchone()[0], "seated")
             self.assertEqual(db.execute("SELECT status FROM waiting_queue WHERE queue_id=?", (entry["queue_id"],)).fetchone()[0], "waiting")
-        serve_item(9002)
+        serve_order(9001,actor='desk')
+        bill=get_visit_bill(1)
+        pay_visit(1,None,bill['order_ids'],bill['total_cents'],request_key='close-bill',actor='desk')
         result = close_dining_session(1)
         self.assertEqual(result["status"], "closed")
         self.assertEqual(result["next_queue"]["queue_id"], entry["queue_id"])

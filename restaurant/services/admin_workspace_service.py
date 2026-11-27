@@ -12,7 +12,7 @@ def _order_rows(db, condition="", values=()):
     headers = [
         dict(row, items=[])
         for row in db.execute(
-            f"""SELECT h.order_id, h.table_id, h.created_at, h.status, h.payment_status
+            f"""SELECT h.order_id, h.table_id, h.created_at, h.paid_at, h.status, h.payment_status, h.version
                 FROM orders h {condition}
                 ORDER BY h.created_at DESC, h.order_id DESC""",
             values,
@@ -20,8 +20,10 @@ def _order_rows(db, condition="", values=()):
     ]
     orders = {order["order_id"]: order for order in headers}
     for row in db.execute(
-        f"""SELECT l.order_id, l.dish_id, l.quantity, l.unit_price, l.note, l.status,
-                   d.dish_name, d.category, q.status AS queue_status, q.completed_at AS ready_at
+        f"""SELECT l.order_id, l.dish_id, l.quantity, l.unit_price, l.note, l.status, l.supply_issue,
+                   COALESCE(l.dish_name_snapshot,d.dish_name) AS dish_name,
+                   CASE WHEN l.dish_name_snapshot IS NULL THEN d.category ELSE l.category_snapshot END AS category,
+                   q.status AS queue_status, q.completed_at AS ready_at
             FROM orders h
             JOIN order_items l ON l.order_id = h.order_id
             JOIN dishes d ON d.dish_id = l.dish_id
@@ -61,8 +63,9 @@ def get_workspace():
         orders = _order_rows(
             db,
             f"""WHERE {_service_day_sql('h.created_at')} BETWEEN ? AND ?
+                     OR {_service_day_sql('h.paid_at')} BETWEEN ? AND ?
                      OR h.status = 'active'""",
-            (first_day.isoformat(), today.isoformat()),
+            (first_day.isoformat(), today.isoformat(), first_day.isoformat(), today.isoformat()),
         )
         days = [
             row[0]
@@ -92,6 +95,14 @@ def get_workspace():
                    FROM dining_sessions WHERE status = 'seated' ORDER BY arrived_at"""
             )
         ]
+        seated_column = "seated_at" if allocation.enabled(db) else "arrived_at"
+        visit_days = [dict(row) for row in db.execute(
+            f"""SELECT {_service_day_sql(seated_column)} AS day, COUNT(*) AS visits,
+                       SUM(party_size) AS guests FROM dining_sessions
+                WHERE {_service_day_sql(seated_column)} BETWEEN ? AND ?
+                AND status IN ('seated','closed') GROUP BY {_service_day_sql(seated_column)} ORDER BY day""",
+            (first_day.isoformat(), today.isoformat()),
+        )]
     return {
         "service_date": today.isoformat(),
         "service_time": now.strftime("%H:%M"),
@@ -103,4 +114,5 @@ def get_workspace():
         "tables": tables,
         "bookings": bookings,
         "visits": visits,
+        "visit_days": visit_days,
     }

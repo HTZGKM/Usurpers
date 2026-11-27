@@ -80,7 +80,7 @@ def close_dining_session(visit_id):
         unpaid=db.execute("SELECT 1 FROM orders WHERE visit_id=? AND status<>'cancelled' AND payment_status<>'paid'",(vid,)).fetchone()
         if unpaid: raise ServiceError("仍有未结清订单，不能释放餐桌。",409)
         unfinished = db.execute("""SELECT 1 FROM orders JOIN order_items USING(order_id)
-            WHERE visit_id=? AND order_items.status NOT IN ('served','cancelled') LIMIT 1""", (vid,)).fetchone()
+            WHERE visit_id=? AND (order_items.status NOT IN ('served','cancelled') OR order_items.supply_issue IS NOT NULL) LIMIT 1""", (vid,)).fetchone()
         if unfinished:
             raise ServiceError("仍有未上菜的菜品，不能释放餐桌。", 409, code="VISIT_UNFINISHED_ITEMS")
         db.execute("UPDATE dining_sessions SET status='closed',closed_at=CURRENT_TIMESTAMP WHERE visit_id=? AND status='seated'",(vid,))
@@ -96,7 +96,12 @@ def get_frontdesk_visits():
     with get_connection() as db:
         rows = db.execute("""
             SELECT v.visit_id, v.booking_id, v.table_id, v.contact_name, v.party_size, v.status,
-                   SUM(CASE WHEN i.status='ready' THEN i.quantity ELSE 0 END) AS ready_count,
+                   COUNT(DISTINCT CASE WHEN EXISTS (
+                       SELECT 1 FROM order_items ri WHERE ri.order_id=o.order_id AND ri.status='ready'
+                   ) AND NOT EXISTS (
+                       SELECT 1 FROM order_items ui WHERE ui.order_id=o.order_id
+                         AND (ui.status NOT IN ('ready','served','cancelled') OR ui.supply_issue IS NOT NULL)
+                   ) THEN o.order_id END) AS ready_count,
                    COUNT(DISTINCT CASE WHEN o.payment_status='unpaid' THEN o.order_id END) AS unpaid_count
             FROM dining_sessions v
             LEFT JOIN orders o ON o.visit_id=v.visit_id AND o.status<>'cancelled'

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>{{ title }} · Double Portion</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/account-settings.css') }}">
+</head>
+<body class="recovery-page"><main class="recovery-card">
+  <a href="{{ url_for('home') }}">Double Portion</a>
+  <h1>{{ title }}</h1><p>{{ explanation }}</p>
+  {% if message %}<p role="{{ 'alert' if failed else 'status' }}">{{ message }}</p>{% endif %}
+  {% if form %}
+  <form method="post" action="{{ request.path }}">
+    {{ form.hidden_tag() }}
+    {% for field in form if field.type not in ('HiddenField','CSRFTokenField','SubmitField') %}
+    <label>{{ field.label.text }} {{ field(autocomplete='new-password' if field.type == 'PasswordField' else 'tel') }}</label>
+    {% endfor %}
+    {% for field_name,errors in form.errors.items() %}{% for error in errors %}<p role="alert">{{ error }}</p>{% endfor %}{% endfor %}
+    {{ form.submit() }}
+  </form>
+  {% endif %}
+  <p><a href="{{ url_for('home',_anchor='My account') }}">Return to sign in</a> · <a href="{{ url_for('auth.forgot_password') }}">Request a new reset link</a></p>
+</main></body></html>
