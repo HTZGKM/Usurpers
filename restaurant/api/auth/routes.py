@@ -1,4 +1,4 @@
-from restaurant.route_utils import require_form_request
+from restaurant.route_utils import require_form_request, require_api_role, validated_data
 
 from contextlib import closing
 from sqlite3 import IntegrityError
@@ -19,6 +19,9 @@ from restaurant.db.database import get_connection
 from restaurant.services import session_service
 from restaurant.services.common import ServiceError
 from .forms import LoginForm, LogoutForm, RegisterForm
+from .forms import (ProfileForm, RecoveryEmailForm, ForgotPasswordForm, VerifyEmailForm,
+                    ResetPasswordForm, LinkRequestForm, LinkConfirmationForm)
+from restaurant.services import account_recovery, account_linking
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -101,3 +104,103 @@ def logout():
     session_service.revoke_session(session.get("session_token"))
     session.clear()
     return redirect(url_for("auth.login"), code=303)
+
+
+@auth_bp.get("/settings")
+def settings():
+    denied = require_api_role("customer")
+    if denied is not None:
+        return denied
+    return jsonify(ok=True, profile=account_recovery.profile(g.account["username"]))
+
+
+@auth_bp.post("/profile")
+def update_profile():
+    denied = require_api_role("customer")
+    if denied is not None:
+        return denied
+    data = validated_data(ProfileForm)
+    return jsonify(ok=True, **account_recovery.change_name(g.account["username"], data["name"]))
+
+
+@auth_bp.post("/recovery-email")
+def change_recovery_email():
+    denied = require_api_role("customer")
+    if denied is not None:
+        return denied
+    data = validated_data(RecoveryEmailForm)
+    return jsonify(ok=True, **account_recovery.request_email_change(g.account["username"], data["email"], data["current_password"]))
+
+
+@auth_bp.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        require_form_request()
+    form = ForgotPasswordForm()
+    message, failed, status = "", False, 200
+    if form.validate_on_submit():
+        try:
+            message = account_recovery.request_password_reset(form.phone_number.data, request.remote_addr or "unknown")["message"]
+        except ServiceError as error:
+            message, failed, status = error.message, True, error.status_code
+    return render_template("auth/recovery.html", form=form, title="Reset your password", message=message, failed=failed,
+                           explanation="Enter your sign-in phone number. Reset links go only to the recovery email you previously verified."), status
+
+
+@auth_bp.route("/verify-email", methods=["GET", "POST"])
+def verify_recovery_email():
+    if request.method == "POST":
+        require_form_request()
+    form = VerifyEmailForm()
+    if request.method == "GET":
+        form.token.data = request.args.get("token", "")
+    message, failed = "", False
+    if form.validate_on_submit():
+        try:
+            message = account_recovery.verify_email(form.token.data)["message"]
+            form = None
+        except ServiceError as error:
+            message, failed = error.message, True
+    return render_template("auth/recovery.html", form=form, title="Verify recovery email", message=message, failed=failed,
+                           explanation="Confirm to bind this recovery email. Your phone number remains your sign-in identifier.")
+
+
+@auth_bp.route("/reset-password", methods=["GET", "POST"])
+def reset_customer_password():
+    if request.method == "POST":
+        require_form_request()
+    form = ResetPasswordForm()
+    if request.method == "GET":
+        form.token.data = request.args.get("token", "")
+    message, failed = "", False
+    if form.validate_on_submit():
+        try:
+            message = account_recovery.reset_password(form.token.data, form.password.data)["message"]
+            session.clear()
+            form = None
+        except ServiceError as error:
+            message, failed = error.message, True
+    return render_template("auth/recovery.html", form=form, title="Choose a new password", message=message, failed=failed,
+                           explanation="Use 6 to 128 characters. After resetting, all old sessions are signed out; your restaurant records are kept.")
+
+
+@auth_bp.route("/link-requests", methods=["GET", "POST"])
+def link_requests():
+    denied = require_api_role("customer") if request.method == "GET" else require_api_role("frontdesk", "admin")
+    if denied is not None:
+        return denied
+    if request.method == "GET":
+        return jsonify(ok=True, requests=account_linking.pending_links(g.account["username"]))
+    data = validated_data(LinkRequestForm)
+    result = account_linking.request_link(data["target_type"], data["target_id"], data["candidate_phone"],
+                                          g.account["role"] + ":" + g.account["username"])
+    return jsonify(ok=True, request=result), 201
+
+
+@auth_bp.post("/link-requests/<int:link_id>/<action>")
+def resolve_link_request(link_id, action):
+    denied = require_api_role("customer")
+    if denied is not None:
+        return denied
+    data = validated_data(LinkConfirmationForm)
+    return jsonify(ok=True, **account_linking.resolve_link(link_id,g.account["username"],action,data.get("expected_version") or None))

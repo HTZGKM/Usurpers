@@ -76,6 +76,12 @@ let state = blank(),
   pendingCreation = null,
   focusedBookingId = null;
 const key = customer ? "double-portion-order-draft." + customer.username : null;
+document.addEventListener("restaurant-profile-updated", event => {
+  if (!customer || typeof event.detail?.name !== "string") return;
+  const previousName = customer.name;
+  customer.name = event.detail.name;
+  if (!state.draft.name || state.draft.name === previousName) state.draft.name = customer.name;
+});
 try {
   const saved = key && JSON.parse(sessionStorage.getItem(key));
   if (saved?.draft) {
@@ -309,6 +315,15 @@ function bookingSummary(d) {
 function bookingView() {
   mount("booking");
   if (!customer) return;
+  if (!state.booking && (customerQueue || customerVisit)) {
+    app.querySelector(".panel h2").textContent = "Your current visit";
+    const summary = document.createElement("section");
+    summary.innerHTML = '<p>Your account already has an active table or waitlist ticket. Finish this visit before making another reservation.</p>' +
+      btn("View your visit", "Your table", "primary");
+    app.querySelector("#reservation").replaceWith(summary);
+    app.querySelectorAll(".seat").forEach(button => { button.disabled = true; });
+    return;
+  }
   const locked = !!state.booking && !editingBooking && !pendingCreation;
   const d = locked ? state.booking : state.draft;
   const form = app.querySelector("#reservation");
@@ -704,10 +719,10 @@ function mealLineMarkup(line, editable = false) {
       btn("Remove", "remove-line:" + line.id, "bag-line-button") + '</div>' : '') +
     '</article>';
 }
-const bookingLabels = { booked: "Reserved", arrived: "Checked in", cancelled: "Cancelled" };
+const bookingLabels = { booked: "Reserved", arrived: "Checked in", cancelled: "Cancelled", no_show: "Missed reservation", transferred: "Moved to waitlist" };
 const phaseLabels = { reserved: "Reserved", ready: "Table ready", waiting_to_seat: "Arrived · waiting to be seated",
   seated: "Seated", closed: "Visit ended", no_show: "Missed reservation", cancelled: "Cancelled",
-  arrival_unresolved: "Arrived · seating not recorded", past: "Past reservation" };
+  arrival_unresolved: "Arrived · seating not recorded", past: "Past reservation", transferred: "Moved to waitlist" };
 const activeReservation = booking => booking.status === "booked" &&
   (reservationFlow ? ["reserved", "ready", "waiting_to_seat"].includes(booking.phase) : booking.date >= today());
 const orderLabels = { active: "In service", completed: "Served", cancelled: "Cancelled" };
@@ -729,7 +744,9 @@ function orderLines(row) {
   };
   return row.items.map(item => ({
     name: item.dish_name, quantity: item.quantity, unitPrice: Number(item.unit_price), note: item.note,
-    labels: [restaurantPreorderWaiting(row, item) || dishStatuses[item.status]].filter(Boolean),
+    labels: [item.supply_issue ? "Front desk is arranging a cancellation or replacement" :
+      row.queue_id && !row.visit_id ? "Held until you are seated from the waitlist" :
+        restaurantPreorderWaiting(row, item) || dishStatuses[item.status]].filter(Boolean),
   }));
 }
 
@@ -738,6 +755,8 @@ function customerPage() {
 }
 
 let customerQueue = null;
+let customerBill = null;
+let customerSyncError = "";
 let resumeOrderHistory = null;
 let checkingVisit = false;
 const visitUpdatesAllowed = () => route() === "Your table" && !document.hidden && !customerPending &&
@@ -752,11 +771,16 @@ async function refreshCustomer({ background = false } = {}) {
       reservationFlow ? { queue: null } : restaurantRequest("/waiting-queue/mine"),
     ]);
     const visit = (reservationFlow ? reservationData.visit : visits[0]) ?? null;
+    const billData = visit ? await restaurantRequest("/visits/" + visit.visit_id + "/bill") : null;
     const orders = orderData.orders;
     if (version !== customerRefreshVersion || (background && !visitUpdatesAllowed())) return;
     const snapshot = background && JSON.stringify([customerVisit, customerQueue, state.bookingHistory, state.orderHistory]);
     customerVisit = visit;
-    customerQueue = waitlist.queue;
+    customerQueue = reservationFlow ? reservationData.queue : waitlist.queue;
+    customerBill = billData ? { hasOrders: orders.some(row => row.visit_id === visit.visit_id && row.status !== "cancelled"),
+      orderIds: billData.bill.order_ids, totalCents: billData.bill.total_cents,
+      canPay: billData.bill.can_pay, blockedReason: billData.bill.blocked_reason } : null;
+    customerSyncError = "";
     const reservations = reservationData.bookings.map(bookingRecord);
     state.booking = reservations.find(row => row.id === visit?.booking_id) ??
       reservations.find(row => row.id === focusedBookingId && activeReservation(row)) ??
@@ -766,7 +790,12 @@ async function refreshCustomer({ background = false } = {}) {
     customerLoaded = true;
     if (background && snapshot === JSON.stringify([customerVisit, customerQueue, reservations, orders])) return;
   } catch (error) {
-    if (background) return;
+    if (background) {
+      customerSyncError = "Updates are delayed. " + error.message;
+      const status = app.querySelector("[data-visit-sync]");
+      if (status) status.textContent = customerSyncError;
+      return;
+    }
     if (version === customerRefreshVersion) customerFeedback = error.message;
   }
   if (version === customerRefreshVersion && customerPage() && !editingBooking) show(false);
@@ -798,6 +827,9 @@ async function runCustomer(control, work) {
     }
     if (["TABLE_UNAVAILABLE", "CAPACITY_INSUFFICIENT"].includes(error.code) && app.querySelector("#reservation")) {
       syncAvailability(true);
+    }
+    if (["ORDER_CHANGED", "BOOKING_CHANGED", "STALE_VERSION", "VERSION_CONFLICT", "BILL_CHANGED", "BILL_NOT_READY"].includes(error.code)) {
+      await refreshCustomer();
     }
   } finally {
     customerPending = false;
@@ -839,7 +871,7 @@ async function resolveReservationCreation() {
   try {
     ({ booking } = await restaurantRequest(reservationBase, request));
   } catch (error) {
-    if (["TABLE_UNAVAILABLE", "CAPACITY_INSUFFICIENT", "BOOKING_DATE_IN_PAST", "ARRIVAL_TOO_SOON",
+    if ([400, 403, 404, 409, 422].includes(error.status) || ["TABLE_UNAVAILABLE", "CAPACITY_INSUFFICIENT", "BOOKING_DATE_IN_PAST", "ARRIVAL_TOO_SOON",
       "OUTSIDE_SERVICE", "RESERVATION_REFRESH"].includes(error.code)) {
       pendingCreation = null;
       persist();
@@ -863,8 +895,9 @@ async function resolveReservationCreation() {
       customerFeedback = "Reservation recovered. Review and save any changes you still want.";
     } else {
       state.draft = { ...recovered };
-      customerFeedback = recovered.status === "cancelled"
-        ? "The recovered reservation has already been cancelled." : "Reservation confirmed.";
+      customerFeedback = recovered.status === "booked" && ["reserved", "ready", "waiting_to_seat", undefined].includes(recovered.phase)
+        ? "Reservation confirmed." : "Reservation recovered. Current status: " +
+          (phaseLabels[recovered.phase] ?? bookingLabels[recovered.status] ?? recovered.status) + ".";
     }
     persist();
     if (app.querySelector("#reservation")) syncAvailability(true);
@@ -947,7 +980,8 @@ function renderVisitHistory() {
   for (const order of state.orderHistory) {
     const belongsToVisit = customerVisit && order.visit_id === customerVisit.visit_id;
     const upcomingPreorder = order.order_type === "preorder" && !order.visit_id && upcomingIds.has(order.booking_id);
-    const group = order.status !== "cancelled" && (belongsToVisit || upcomingPreorder) ? currentOrders : pastOrders;
+    const heldForQueue = customerQueue && !order.visit_id && order.queue_id === customerQueue.queue_id;
+    const group = order.status !== "cancelled" && (belongsToVisit || upcomingPreorder || heldForQueue) ? currentOrders : pastOrders;
     group.push(orderRecord(order));
   }
   function bookingRecordMarkup(booking) {
@@ -963,11 +997,11 @@ function renderVisitHistory() {
     const date = validDate ? placed.toLocaleDateString("en-GB", { timeZone, dateStyle: "medium" }) : "";
     const time = validDate ? placed.toLocaleTimeString("en-GB", { timeZone, timeStyle: "short" }) : "";
     const awaitingCheckIn = order.order_type === "preorder" && !order.visit_id && order.status === "active";
-    const status = awaitingCheckIn ? "Awaiting check-in" : orderLabels[order.status] ?? order.status;
+    const status = awaitingCheckIn ? (order.queue_id ? "Held for waitlist seating" : "Awaiting check-in") : orderLabels[order.status] ?? order.status;
     const number = (order.order_type === "preorder" ? "Preorder #" : "Order #") + order.order_id;
     const paid = order.payment_status === "paid";
     const payment = order.status === "cancelled" ? "" : paid ? "Paid" : restaurantCanPayOrder(order) ? "Payment due" :
-      ({ unpaid: "Pay after seating", refunded: "Refunded", partially_refunded: "Partially refunded" })[order.payment_status];
+      ({ unpaid: "Pay after all dishes are served", refunded: "Refunded", partially_refunded: "Partially refunded" })[order.payment_status];
     const amount = Number(order.total_amount);
     const table = tableLabel(order.table_id);
     return '<details class="history-record" data-order-record="' + order.order_id + '"><summary>' +
@@ -1016,19 +1050,12 @@ function renderSubmittedOrder(body, order) {
   }).join("") + pair("Total", "¥" + order.total_amount) + restaurantCancelledItems(order.items) +
     (restaurantCanEditOrder(order)
       ? btn("Edit order", "edit-submitted-order") + btn("Cancel order", "cancel-submitted-order") : "") +
-    (restaurantCanPayOrder(order) ? btn("Record ¥" + order.total_amount + " payment", "pay-submitted-order", "primary") : "");
+    (order.payment_status === "unpaid" && order.visit_id
+      ? '<p>Settle all orders together using the table bill after every item has been served or cancelled.</p>' : "");
   body.onclick = event => {
     const button = event.target.closest("button[data-action]");
     if (!button) return;
     const action = button.dataset.action;
-    if (action === "pay-submitted-order") {
-      return runCustomer(button, async () => {
-        await restaurantRequest(base + "/pay", {});
-        customerFeedback = "Payment recorded.";
-        resumeOrderHistory = order.order_id;
-        await refreshCustomer();
-      });
-    }
     if (action === "edit-submitted-order") {
       const available = dishes.filter(dish => !dish.sold)
         .map(dish => ({ dish_id: dish.id, dish_name: dish.name, price: dish.price }));
@@ -1042,7 +1069,7 @@ function renderSubmittedOrder(body, order) {
     if (!window.confirm(action === "cancel-submitted-order" ? "Cancel this order?" : "Cancel this item?")) return;
     const suffix = action === "cancel-submitted-order" ? "/cancel" : "/items/" + action.split(":")[1] + "/cancel";
     runCustomer(button, async () => {
-      await restaurantRequest(base + suffix, {});
+      await restaurantRequest(base + suffix, { expected_version: order.version });
       customerFeedback = action === "cancel-submitted-order" ? "Order cancelled." : "Item cancelled.";
       resumeOrderHistory = order.order_id;
       await refreshCustomer();
@@ -1051,7 +1078,7 @@ function renderSubmittedOrder(body, order) {
 }
 
 function waitlistMarkup() {
-  if (reservationFlow) return state.booking ? "" :
+  if (reservationFlow && !customerQueue) return state.booking ? "" :
     '<section class="visit-access visit-summary"><h3>Visiting without a reservation?</h3>' +
     '<p>Ask the front desk for a table or a waitlist ticket when you arrive.</p></section>';
   if (customerQueue) {
@@ -1067,7 +1094,9 @@ function waitlistMarkup() {
     return '<section class="visit-access visit-summary" aria-labelledby="visit-ticket-title">' +
       '<div class="visit-summary-heading"><h3 id="visit-ticket-title">Waitlist ticket #' + esc(customerQueue.queue_id) + '</h3>' +
       guestStatus(called ? "called" : "waiting", status) + '</div>' + guestFacts(facts) +
-      '<p>' + esc(instruction) + '</p><div class="visit-shortcuts">' + btn("Leave the waitlist", "leave-waitlist") + '</div></section>';
+      '<p>' + esc(instruction) + '</p>' + (reservationFlow
+        ? '<p>This ticket is valid for this meal period. Ask the front desk to leave the queue; any held preorder is cancelled together.</p>'
+        : '<div class="visit-shortcuts">' + btn("Leave the waitlist", "leave-waitlist") + '</div>') + '</section>';
   }
   if (state.booking) return "";
   const capacity = Math.max(0, ...tables.map(row => row[1]));
@@ -1103,7 +1132,7 @@ function visitSummary() {
     '<div class="visit-summary-heading"><h3 id="visit-summary-title">' + heading + '</h3>' + status + '</div>' + facts +
     (seated || !instructions ? '' : '<div class="visit-check-in"><h4>' + esc(instructions[0]) + '</h4>' +
       '<p>' + esc(instructions[1]) + '</p>' +
-      '<p class="visit-update-note">This page updates automatically while you’re here.</p></div>') + '</section>';
+      '<p class="visit-update-note" data-visit-sync>' + esc(customerSyncError || "This page updates automatically while you’re here.") + '</p></div>') + '</section>';
 }
 
 function preorderMarkup(blocked) {
@@ -1117,11 +1146,13 @@ function preorderMarkup(blocked) {
 function currentVisitBill(visit, orders) {
   if (!visit) return null;
   const current = orders.filter(order => order.visit_id === visit.visit_id && order.status !== "cancelled");
-  const due = current.filter(restaurantCanPayOrder);
+  const due = current.filter(order => order.payment_status === "unpaid");
   return {
     hasOrders: current.length > 0,
     orderIds: due.map(order => order.order_id),
     totalCents: due.reduce((total, order) => total + Math.round(Number(order.total_amount) * 100), 0),
+    canPay: due.length > 0 && due.every(restaurantCanPayOrder),
+    blockedReason: "Payment is available after all dishes have been served or cancelled and any replacements are resolved.",
   };
 }
 
@@ -1132,7 +1163,7 @@ function visitBillMarkup(bill) {
   return '<section class="visit-access visit-summary visit-bill" aria-labelledby="visit-bill-title">' +
     '<div class="visit-summary-heading"><h3 id="visit-bill-title">Table bill</h3><strong>' + amount + '</strong></div>' +
     (count ? '<p>' + count + (count === 1 ? ' unpaid order' : ' unpaid orders') + ' for this visit</p>' +
-      btn("Record " + amount + " payment", "pay-visit", "primary") : '<p>No balance due for this visit.</p>') + '</section>';
+      (bill.canPay ? btn("Record " + amount + " payment", "pay-visit", "primary") : '<p>' + esc(bill.blockedReason || "Waiting for all dishes to be served or cancelled.") + '</p>') : '<p>No balance due for this visit.</p>') + '</section>';
 }
 
 function visitView() {
@@ -1144,7 +1175,7 @@ function visitView() {
   const lines = state.bag;
   const value = mealTotal(lines);
   const blocked = lines.some((line) => menu.get(line.key)?.sold);
-  let body = visitSummary() + visitBillMarkup(currentVisitBill(customerVisit, state.orderHistory));
+  let body = visitSummary() + visitBillMarkup(customerBill);
   if (lines.length) {
     body += '<div id="lines">' + lines.map((line) => mealLineMarkup(line, true)).join("") + "</div>";
     body += '<div class="pair"><span>Bag total</span><strong class="rolling-price" data-bag-total aria-live="polite" aria-atomic="true"></strong></div>';
@@ -1167,7 +1198,7 @@ function visitView() {
   if (state.booking || customerVisit || customerQueue || customerFeedback) {
     body += '<div class="visit-shortcuts">' + btn("Check for updates", "refresh-visit") + '</div>';
   }
-  body += '<p class="statusline" role="status">' + esc(customerFeedback) + '</p>';
+  body += '<p class="statusline" data-visit-sync role="status">' + esc(customerFeedback || customerSyncError) + '</p>';
   mount("table");
   app.querySelector(".panel h2").textContent = lines.length ? "Your bag" : "Your visit";
   app.querySelector("[data-details]").innerHTML = body;
@@ -1646,7 +1677,7 @@ document.addEventListener("click", (e) => {
   if (a === "cancel") {
     if (!state.booking || customerVisit?.booking_id === state.booking.id) return;
     runCustomer(b, async () => {
-      await restaurantRequest(reservationBase + "/" + state.booking.id + "/cancel", {});
+      await restaurantRequest(reservationBase + "/" + state.booking.id + "/cancel", { expected_version: state.booking.version });
       state.booking = null;
       focusedBookingId = null;
       state.draft.table = "";
@@ -1720,15 +1751,15 @@ document.addEventListener("click", (e) => {
     return;
   }
   if (a === "pay-visit" && customerVisit) {
-    const bill = currentVisitBill(customerVisit, state.orderHistory);
-    if (!bill?.orderIds.length) return;
+    const bill = customerBill;
+    if (!bill?.canPay || !bill.orderIds.length) return;
     runCustomer(b, async () => {
       try {
-        const { payment } = await restaurantRequest("/visits/" + customerVisit.visit_id + "/pay", {
+        const { payment, recoveredPrevious } = await restaurantSubmitOnce("/visits/" + customerVisit.visit_id + "/pay", {
           order_ids: bill.orderIds.join(","), total_cents: bill.totalCents,
         });
         const count = payment.order_ids.length;
-        customerFeedback = payment.already_paid ? "Those orders are already paid." :
+        customerFeedback = recoveredPrevious ? "Previous payment recovered. Review any remaining balance before making another payment." : payment.already_paid ? "Those orders are already paid." :
           "Payment recorded for " + count + (count === 1 ? " order." : " orders.");
       } catch (error) {
         if (error.code === "BILL_CHANGED") await refreshCustomer();

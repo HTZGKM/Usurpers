@@ -1,6 +1,6 @@
 from flask_wtf import FlaskForm
-from wtforms import IntegerField, SelectField, SubmitField
-from wtforms.validators import InputRequired, NumberRange
+from wtforms import IntegerField, SelectField, SubmitField, StringField
+from wtforms.validators import InputRequired, NumberRange, Length
 
 
 class FinishCookingForm(FlaskForm):
@@ -18,3 +18,10 @@ class DishAvailabilityForm(FlaskForm):
         validators=[InputRequired("Select an availability status.")],
     )
     submit = SubmitField("Update Availability")
+
+
+class CapacityForm(StartCookingForm):
+    max_active_orders = IntegerField("Order capacity",validators=[InputRequired(),NumberRange(min=1,max=100)])
+
+class SupplyIssueForm(StartCookingForm):
+    reason = StringField("Reason",validators=[InputRequired(),Length(max=500)])

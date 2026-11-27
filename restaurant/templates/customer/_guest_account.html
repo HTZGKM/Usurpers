@@ -27,6 +27,7 @@
           </div>
         </div>
       </section>
+      {% include 'customer/_account_settings.html' %}
       <div data-account-reservation></div>
     {% else %}
       <div class="account-modes" role="group" aria-label="Account options">
@@ -40,6 +41,7 @@
         {{ account_field(login_form.password, 'guest-login-password', 'current-password') }}
         <p class="account-error" data-form-feedback role="alert" tabindex="-1" hidden></p>
         <button type="submit" class="primary" data-pending-label="Signing in…">Sign in</button>
+        <a href="{{ url_for('auth.forgot_password') }}">Forgot password?</a>
       </form>
       <form id="guest-register" class="account-form" data-account-form="register" method="post" action="{{ url_for('auth.register') }}" novalidate hidden>
         {{ register_form.csrf_token(id='guest-register-csrf') }}

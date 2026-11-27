@@ -83,7 +83,7 @@ function adminSales(overrides) {
     historyDays: ['2026-11-18','2026-11-19','2026-11-20','2026-11-21','2026-11-22',
       '2026-11-23','2026-11-24','2026-11-25','2026-11-26'],
     state: { salesDays:30, salesMetric:{ today:'revenue', history:'orders' }, rosePeriod:'history', roseLimit:5 },
-    orders: [], historyOrders: [], dishes: [],
+    orders: [], historyOrders: [], salesOrders: [], dishes: [],
     head: (title, options) => title + options,
     selected: current => ` aria-pressed="${current}"`,
     es: value => value,
@@ -103,8 +103,21 @@ function adminSales(overrides) {
   return context;
 }
 
-const paidBurger = { day:'2026-11-18', time:'12:07', payment:'Paid', status:'Served',
+const paidBurger = { day:'2026-11-18', time:'12:07', paidDay:'2026-11-18', paidTime:'12:07', payment:'Paid', status:'Served',
   items:[{ name:'Burger', qty:3, unit:10, category:'Burgers', status:'Served' }] };
+
+test('an uncategorized historical item does not inherit its current menu category', () => {
+  const context = vm.createContext({
+    localTimestamp:value => value || '', categories:{burgers:'Burgers'},
+    categoryKey:() => 'burgers', itemStatuses:{served:'Served'}, paymentStatuses:{paid:'Paid'},
+    tableName:() => 'A1',
+  });
+  vm.runInContext(section('function normalizeOrders(', 'function readReservations('),context);
+  const [order] = context.normalizeOrders([{order_id:1,table_id:1,created_at:'2026-11-18T12:00:00',
+    paid_at:'2026-11-18T13:00:00',status:'completed',payment_status:'paid',items:[
+      {dish_id:1,dish_name:'Burger',category:null,quantity:1,unit_price:10,status:'served'}]}]);
+  assert.equal(order.items[0].category,undefined);
+});
 
 test('today sales keep service hours and distinguish empty and incomplete service', () => {
   const view = adminSales({});
@@ -117,6 +130,7 @@ test('today sales keep service hours and distinguish empty and incomplete servic
 
   view.serviceTime = '12:35';
   view.orders = [{ ...paidBurger, day:view.serviceDate }];
+  view.salesOrders = [{ ...paidBurger, paidDay:view.serviceDate }];
   const current = view.salesBuckets('today', 'revenue');
   assert.equal(current[1].label, '12:00');
   assert.equal(current[1].amounts[0], 30);
@@ -124,13 +138,27 @@ test('today sales keep service hours and distinguish empty and incomplete servic
 });
 
 test('historical sales and popular dishes retain past paid orders when today has no orders', () => {
-  const view = adminSales({ historyOrders:[paidBurger] });
+  const view = adminSales({ historyOrders:[paidBurger], salesOrders:[paidBurger] });
   assert.equal(view.salesBuckets('history', 'orders')[0].amounts[0], 1);
   assert.match(view.popularDishes(), /\[\["Burger",3\]\]/);
   view.state.rosePeriod = 'today';
   assert.match(view.popularDishes(), /No portions sold today/);
   view.state.salesDays = 7;
   assert.ok(view.salesBuckets('history', 'orders').every(bucket => bucket.amounts[0] === 0));
+});
+
+test('receipts follow payment date while order counts retain creation date', () => {
+  const order = { ...paidBurger, paidDay:'2026-11-26', paidTime:'13:20' };
+  const view = adminSales({ historyOrders:[order], salesOrders:[order], serviceTime:'14:00' });
+  const receipts = view.salesBuckets('history','revenue');
+  assert.equal(receipts[0].amounts[0],0);
+  assert.equal(receipts.at(-1).amounts[0],30);
+  const counts = view.salesBuckets('history','orders');
+  assert.equal(counts[0].amounts[0],1);
+  assert.equal(counts.at(-1).amounts[0],0);
+  assert.equal(view.salesBuckets('today','revenue').find(bucket => bucket.label === '13:00').amounts[0],30);
+  view.state.rosePeriod = 'today';
+  assert.match(view.popularDishes(), /\[\["Burger",3\]\]/);
 });
 
 test('returning to the recent order range keeps the monthly rows when a date request finishes late', async () => {

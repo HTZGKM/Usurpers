@@ -86,6 +86,7 @@ class PaymentForm(FlaskForm):
 
 
 class VisitPaymentForm(FlaskForm):
+    idempotency_key = StringField("Payment submission ID", validators=[InputRequired(), Length(max=80)])
     order_ids = StringField("Orders in this bill", validators=[InputRequired()])
     total_cents = IntegerField("Bill amount", validators=[InputRequired(), NumberRange(min=0)])
 
@@ -106,3 +107,7 @@ class WaitlistForm(FlaskForm):
     table_type = IntegerField(
         "Table capacity", validators=[Optional(), NumberRange(min=1)]
     )
+
+
+class OrderVersionForm(FlaskForm):
+    expected_version = IntegerField("Order version",validators=[InputRequired(),NumberRange(min=1)])

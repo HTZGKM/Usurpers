@@ -47,9 +47,9 @@ class ReservationRebuildTests(unittest.TestCase):
     def upgrade(self):
         import psycopg
 
-        migration = postgres.DB_SQL / "migrations" / "002_reservation_allocation.sql"
         with psycopg.connect(self.dsn, autocommit=True) as db:
-            db.execute(migration.read_text(encoding="utf-8"))
+            for name in ("002_reservation_allocation.sql", "006_reservation_rules.sql"):
+                db.execute((postgres.DB_SQL / "migrations" / name).read_text(encoding="utf-8"))
 
     def test_at_1908_arrival_is_recorded_separately_from_seating(self):
         self.upgrade()
@@ -180,9 +180,9 @@ class ReservationRebuildTests(unittest.TestCase):
             first = self.call_party(desk)
             second = self.issue_ticket(desk)
         with clock(17, 1, 1):
-            denied = self.send(desk, f"{DESK}/tickets/{first}/seat", {"table_id": 1})
+            denied = self.send(desk, f"{DESK}/tickets/{first}/seat", {"table_id": 1, "expected_version": 2})
             self.assertEqual((denied.status_code, denied.json["error"]), (409, "WAITLIST_CHANGED"))
-            self.assertEqual(self.send(desk, f"{DESK}/tickets/{second}/pass").status_code, 200)
+            self.assertEqual(self.send(desk, f"{DESK}/tickets/{second}/pass", {"expected_version": 2}).status_code, 200)
         with get_connection() as db:
             self.assertEqual([row[0] for row in db.execute("SELECT status FROM waiting_queue ORDER BY queue_id")],
                              ["expired", "passed"])
@@ -191,7 +191,7 @@ class ReservationRebuildTests(unittest.TestCase):
         with clock(17, 3):
             third = self.call_party(desk)
         with clock(17, 4):
-            self.assertEqual(self.send(desk, f"{DESK}/tickets/{third}/seat", {"table_id": 1}).status_code, 201)
+            self.assertEqual(self.send(desk, f"{DESK}/tickets/{third}/seat", {"table_id": 1, "expected_version": 2}).status_code, 201)
 
     def test_versions_recovery_and_approved_replacement(self):
         self.upgrade()
@@ -239,10 +239,12 @@ class ReservationRebuildTests(unittest.TestCase):
                 with ThreadPoolExecutor(max_workers=count) as pool:
                     responses = list(pool.map(submit, range(count), timeout=25))
                 self.assertEqual(sum(response.status_code == 201 for response in responses), 1)
-                self.assertEqual(sum(response.status_code == 409 and response.json["error"] == "TABLE_UNAVAILABLE"
+                self.assertEqual(sum(response.status_code == 409 and response.json["error"] in ("TABLE_UNAVAILABLE", "ACTIVE_RESERVATION_EXISTS")
                                      for response in responses), count-1)
                 self.assertEqual([response.status_code for response in responses if response.status_code >= 500], [])
-            self.assertEqual(self.reserve(actors[0], "19:45", 1, "overlapping").json["error"], "TABLE_UNAVAILABLE")
+            # A fresh account isolates interval overlap from whichever competitor won.
+            overlap = self.reserve(self.actor(index=20), "19:45", 1, "overlapping")
+            self.assertEqual((overlap.status_code, overlap.json["error"]), (409, "TABLE_UNAVAILABLE"))
         with get_connection() as db:
             self.assertEqual([row[0] for row in db.execute("SELECT table_id FROM table_holds ORDER BY table_id")], [1, 2])
 
@@ -274,8 +276,8 @@ class ReservationRebuildTests(unittest.TestCase):
 
         with clock(17, 1), ThreadPoolExecutor(max_workers=2) as pool:
             desk1, desk2 = self.actor(staff=True), self.actor(staff=True)
-            seat = pool.submit(submit, desk1, "/seat", {"table_id": 1})
-            passed = pool.submit(submit, desk2, "/pass", {})
+            seat = pool.submit(submit, desk1, "/seat", {"table_id": 1, "expected_version": 2})
+            passed = pool.submit(submit, desk2, "/pass", {"expected_version": 2})
             seating, passing = seat.result(timeout=10), passed.result(timeout=10)
         self.assertIn((seating.status_code, passing.status_code), ((201, 409), (409, 200)))
         with get_connection() as db:
@@ -290,7 +292,7 @@ class ReservationRebuildTests(unittest.TestCase):
             self.assertEqual(self.send(desk, DESK + "/walk-ins", {"table_id": 1, "party_size": 2}).status_code, 201)
         with clock(17, 5):
             reservation = self.reserve(guest).json["booking"]["booking_id"]
-        with clock(18, 50):
+        with clock(19):
             reported = self.send(desk, f"{DESK}/bookings/{reservation}/arrive")
             self.assertEqual(reported.json["booking"]["phase"], "waiting_to_seat")
             ticket = self.issue_ticket(desk)
@@ -312,7 +314,7 @@ class ReservationRebuildTests(unittest.TestCase):
                                                          "idempotency_key": "legacy-window"})
             self.assertEqual(same.json, original.json)
             self.assertEqual(self.reserve(guest, "17:45", key="overlaps-window").status_code, 409)
-            self.assertEqual(self.reserve(guest, "19:00", key="after-window").status_code, 201)
+            self.assertEqual(self.reserve(self.actor(index=1), "19:00", key="after-window").status_code, 201)
             legacy = self.send(guest, GUEST + "/bookings", method="GET").json["bookings"][0]
         self.assertEqual((legacy["arrival_at"], legacy["arrival_label"], legacy["deadline_label"]), (None, "17:00-19:00", "19:00"))
 
@@ -346,7 +348,9 @@ class ReservationRebuildTests(unittest.TestCase):
         with clock(17, 10):
             with patch("restaurant.services.allocation._call_next", side_effect=RuntimeError("simulated interruption")):
                 self.assertEqual(self.send(desk, DESK + "/snapshot", method="GET").status_code, 200)
-                self.assertEqual(self.send(desk, "/operations/refresh").status_code, 500)
+                self.assertEqual(self.send(desk, "/operations/refresh").status_code, 200)
+                self.assertEqual(self.send(desk, DESK + "/tables/1/clear", {
+                    "visit_id": visit["visit_id"], "idempotency_key": "clear-once"}).status_code, 500)
             with get_connection() as db:
                 self.assertIsNone(db.execute("SELECT clearance_processed_at FROM dining_sessions").fetchone()[0])
                 self.assertEqual(db.execute("SELECT status FROM waiting_queue").fetchone()[0], "waiting")
@@ -355,7 +359,8 @@ class ReservationRebuildTests(unittest.TestCase):
             self.app = create_app()
             desk = self.actor(staff=True)
             for _ in range(2):
-                self.assertEqual(self.send(desk, "/operations/refresh").status_code, 200)
+                self.assertEqual(self.send(desk, DESK + "/tables/1/clear", {
+                    "visit_id": visit["visit_id"], "idempotency_key": "clear-once"}).status_code, 200)
                 queue = self.send(desk, DESK + "/snapshot", method="GET").json["queue"]
                 self.assertEqual([(row["queue_id"], row["status"]) for row in queue], [(ticket, "called")])
         with get_connection() as db:

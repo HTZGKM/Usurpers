@@ -55,6 +55,8 @@
   </style>
   {% endif %}
   <script defer src="{{ url_for('static', filename='js/guest-meal.js') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/account-settings.css') }}">
+  <script defer src="{{ url_for('static', filename='js/account-settings.js') }}"></script>
   {% if role == 'customer' %}<script defer src="{{ url_for('static', filename='js/guest-calendar.js') }}"></script>{% endif %}
   <script defer src="{{ url_for('static', filename='js/guest.js') }}"></script>
 </head>

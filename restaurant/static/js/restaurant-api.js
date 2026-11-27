@@ -21,6 +21,7 @@ async function restaurantRequest(path, fields, method = fields === undefined ? "
     VISIT_UNFINISHED_ITEMS: "Serve all remaining dishes before releasing this table.",
     CAPACITY_INSUFFICIENT: "That table is too small for this party.",
     STATE_CONFLICT: "This record has changed. Refresh and try again.",
+    DATABASE_BUSY: "Restaurant updates are busy. Wait a moment, then refresh and try again.",
   };
   if (path.startsWith("/frontdesk/reservation-api/")) delete messages.TABLE_UNAVAILABLE;
   if (path.startsWith("/reservation-api/")) {
@@ -59,11 +60,7 @@ async function restaurantSeating() {
 }
 
 async function restaurantRefreshOperations() {
-  try {
-    await restaurantRequest("/operations/refresh", {});
-  } catch (error) {
-    if (error.code !== "DATABASE_BUSY") throw error;
-  }
+  await restaurantRequest("/operations/refresh", {});
 }
 
 const pendingRestaurantSubmissions = new Map();
@@ -119,7 +116,7 @@ function restaurantCanEditOrder(order) {
 
 function restaurantCanPayOrder(order) {
   return order.status !== "cancelled" && order.payment_status === "unpaid" &&
-    (order.order_type !== "preorder" || Boolean(order.visit_id));
+    Boolean(order.visit_id) && order.items?.every(item => ["served", "cancelled"].includes(item.status) && !item.supply_issue);
 }
 
 function restaurantPreorderWaiting(order, item) {
@@ -216,8 +213,8 @@ function restaurantOrderEditor(order, path, menuItems, onSaved) {
       note: row.querySelector('[name="note"]').value,
       unitPrice: prices.get(Number(row.querySelector("select").value)),
     }));
-    if (!lines.length || lines.some(line => !allowed.has(Number(line.dishId)))) {
-      feedback.textContent = "Keep at least one dish and remove or replace any unavailable dishes.";
+    if (!lines.length) {
+      feedback.textContent = "Keep at least one dish. Existing unavailable dishes can be retained.";
       return;
     }
     save.disabled = true;

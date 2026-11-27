@@ -92,10 +92,9 @@ def enum_value(value: Any, choices: set[str] | tuple[str, ...], field: str) -> s
 
 
 def phone_number(value: Any, field: str = "phone_number") -> str:
-    phone = required_text(value, field, limit=20)
-    if not re.fullmatch(r"\+?[0-9 -]{7,20}", phone):
-        raise ServiceError("手机号格式不正确。", field=field)
-    return phone
+    from restaurant.services.phone_identity import normalize_phone
+
+    return normalize_phone(value, field=field)
 
 
 def order_items(value: Any) -> list[dict[str, Any]]:

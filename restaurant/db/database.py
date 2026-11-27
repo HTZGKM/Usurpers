@@ -158,6 +158,13 @@ def begin_write(connection, *, legacy_allocation=False):
 
             legacy_write_guard(connection)
 
+    # Account deactivation and business mutations share the same write boundary.
+    # Re-read after acquiring the lock: a request authenticated before deactivation
+    # must not commit a new mutation afterwards.
+    from restaurant.services.session_service import assert_current_actor_active
+
+    assert_current_actor_active(connection)
+
 
 def begin_read(connection):
     connection.execute("BEGIN" if isinstance(connection, sqlite3.Connection) else
@@ -332,6 +339,12 @@ def create_schema(connection: sqlite3.Connection) -> None:
         known = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
         if field not in known:
             connection.execute(f"ALTER TABLE {table} ADD COLUMN {field} {declaration}")
+
+    from restaurant.db.business_schema import ensure_sqlite_business_schema
+    from restaurant.services.account_schema import ensure_sqlite_schema
+
+    ensure_sqlite_business_schema(connection)
+    ensure_sqlite_schema(connection)
 
 
 def seed_defaults(connection: sqlite3.Connection) -> None:

@@ -7,6 +7,12 @@
         <button type="button" class="kitchen-action" data-kitchen-refresh>Refresh</button></div>
     </div>
     <p role="status" data-kitchen-feedback></p>
+    <form data-kitchen-capacity class="kitchen-section-heading">
+      <label>Simultaneous orders <input name="max_active_orders" type="number" min="1" max="100" required value="5"></label>
+      <input name="expected_version" type="hidden" value="1">
+      <button type="submit" class="kitchen-action">Save capacity</button>
+      <span data-kitchen-capacity-count></span>
+    </form>
 
     <section id="kitchen-queue" aria-labelledby="kitchen-queue-title">
       <div class="kitchen-section-heading">

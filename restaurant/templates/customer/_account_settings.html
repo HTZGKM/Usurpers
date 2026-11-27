@@ -1,0 +1,18 @@
+<section class="account-settings" data-account-settings aria-label="Account settings">
+  <h3>Account settings</h3>
+  <p data-settings-summary role="status">Loading account settings…</p>
+  <form data-profile-settings class="account-form">
+    <label>Name<input name="name" required maxlength="100" autocomplete="name"></label>
+    <button type="submit" class="secondary">Save name</button>
+  </form>
+  <details><summary>Bind or change recovery email</summary>
+    <p>Your current email stays active until you verify the new address. Your sign-in phone number cannot be changed here.</p>
+    <form data-email-settings class="account-form">
+      <label>Recovery email<input type="email" name="email" required maxlength="254" autocomplete="email"></label>
+      <label>Current password<input type="password" name="current_password" required maxlength="128" autocomplete="current-password"></label>
+      <button type="submit" class="secondary">Send verification email</button>
+    </form>
+  </details>
+  <p data-settings-feedback role="alert" tabindex="-1"></p>
+  <section data-account-link-requests aria-label="Front desk account link requests"></section>
+</section>

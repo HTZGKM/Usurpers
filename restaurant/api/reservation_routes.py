@@ -58,14 +58,14 @@ def booking(booking_id):
 @reservation_bp.post(DESK + "/bookings/<int:booking_id>/edit")
 def edit(booking_id):
     owner = g.account["username"] if g.account["role"] == "customer" else None
-    return jsonify(ok=True, booking=allocation.update_booking(booking_id, request.form, owner))
+    return jsonify(ok=True, booking=allocation.update_booking(booking_id, request.form, owner, g.account["role"] + ":" + g.account["username"]))
 
 
 @reservation_bp.post(GUEST + "/bookings/<int:booking_id>/cancel")
 @reservation_bp.post(DESK + "/bookings/<int:booking_id>/cancel")
 def cancel(booking_id):
     owner = g.account["username"] if g.account["role"] == "customer" else None
-    return jsonify(ok=True, booking=allocation.cancel_booking(booking_id, owner))
+    return jsonify(ok=True, booking=allocation.cancel_booking(booking_id, owner, request.form.get("expected_version")))
 
 
 @reservation_bp.get(DESK + "/snapshot")
@@ -77,7 +77,7 @@ def snapshot():
 def booking_action(booking_id, action):
     if action not in {"arrive", "ready", "seat", "offer", "accept_offer"}:
         raise ServiceError("Reservation action not found.", 404, code="NOT_FOUND")
-    data = allocation.set_booking_phase(booking_id, action, request.form)
+    data = allocation.set_booking_phase(booking_id, action, request.form, g.account["role"] + ":" + g.account["username"])
     return (jsonify(ok=True, visit=data), 201) if action == "seat" else jsonify(ok=True, booking=data)
 
 
@@ -115,10 +115,28 @@ def ticket_action(ticket_id, action):
     if action not in {"cancel", "pass", "seat"}:
         raise ServiceError("Ticket action not found.", 404, code="NOT_FOUND")
     table = positive_int(request.form.get("table_id"), "table_id") if action == "seat" else None
-    data = allocation.finish_ticket(ticket_id, action, table)
+    data = allocation.finish_ticket(ticket_id, action, table, request.form.get("expected_version"))
     return (jsonify(ok=True, visit=data), 201) if action == "seat" else jsonify(ok=True, queue=data)
 
 
 @reservation_bp.get(ADMIN + "/timeline")
 def timeline():
     return jsonify(ok=True, **allocation.timeline(request.args.get("start"), request.args.get("end")))
+
+
+@reservation_bp.post(DESK + "/bookings/<int:booking_id>/party-size")
+def party_size(booking_id):
+    return jsonify(ok=True, booking=allocation.change_party_size(
+        booking_id, request.form, g.account["role"] + ":" + g.account["username"]))
+
+
+@reservation_bp.post(DESK + "/bookings/<int:booking_id>/transfer-to-waitlist")
+def transfer(booking_id):
+    return jsonify(ok=True, transfer=allocation.transfer_to_waitlist(
+        booking_id, request.form, g.account["role"] + ":" + g.account["username"])), 201
+
+
+@reservation_bp.post(DESK + "/tables/<int:table_id>/clear")
+def clear(table_id):
+    return jsonify(ok=True, clearance=allocation.clear_table(table_id, request.form.get("visit_id"),
+        g.account["role"] + ":" + g.account["username"], request.form.get("idempotency_key")))

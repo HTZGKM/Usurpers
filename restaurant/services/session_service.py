@@ -7,6 +7,8 @@ from time import time
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from restaurant.db.database import begin_write, get_connection, hash_password
+from .phone_identity import normalize_phone
+from .common import ServiceError
 
 
 SESSION_SECONDS = 12 * 60 * 60
@@ -14,6 +16,34 @@ SESSION_SECONDS = 12 * 60 * 60
 
 def _token_hash(token):
     return sha256(token.encode("utf-8")).hexdigest()
+
+
+def password_matches(stored, password):
+    if not isinstance(password, str):
+        return False
+    return compare_digest(stored, hash_password(password)) if "$" not in stored else check_password_hash(stored, password)
+
+
+def assert_current_actor_active(db):
+    """Recheck the authenticated actor after acquiring the shared write lock.
+
+    Public login/recovery and workers have no authenticated request actor. Staff
+    acting for a disabled customer are checked as staff, not as that customer.
+    """
+    from flask import g, has_request_context, session
+
+    if not has_request_context() or not getattr(g, "account", None):
+        return
+    token = session.get("session_token")
+    row = db.execute("""SELECT COALESCE(s.email,c.customer_phone) AS username,
+                        COALESCE(s.role,'customer') AS role,COALESCE(s.is_active,c.is_active) AS is_active
+                        FROM web_sessions w LEFT JOIN staff s USING(staff_id)
+                        LEFT JOIN customers c ON c.customer_phone=w.customer_phone
+                        WHERE w.token_hash=? AND w.expires_at>?""",
+                     (_token_hash(token) if token else "", int(time()))).fetchone()
+    if not row or not row["is_active"] or row["role"] != g.account["role"] or row["username"] != g.account["username"]:
+        raise ServiceError("Your account or session changed. Sign in again; contact the front desk if your account is inactive.",
+                           403, code="ACCOUNT_INACTIVE")
 
 
 def create_session(db, *, staff_id=None, customer_phone=None):
@@ -29,6 +59,11 @@ def create_session(db, *, staff_id=None, customer_phone=None):
 
 def sign_in(account, password, previous_token=None):
     staff = "@" in account
+    if not staff:
+        try:
+            account = normalize_phone(account)
+        except ServiceError:
+            return None
     # These identifiers are selected by the server. Account values are bound parameters.
     table, key, lookup = ("staff", "staff_id", "email") if staff else (
         "customers", "customer_phone", "customer_phone"
@@ -42,7 +77,7 @@ def sign_in(account, password, previous_token=None):
         return None
     stored = member["password_hash"]
     legacy = "$" not in stored
-    valid = compare_digest(stored, hash_password(password)) if legacy else check_password_hash(stored, password)
+    valid = password_matches(stored, password)
     if not valid:
         return None
     replacement = generate_password_hash(password) if legacy else None
@@ -83,4 +118,5 @@ def session_account(token):
 def revoke_session(token):
     if token:
         with get_connection() as db:
+            begin_write(db)
             db.execute("DELETE FROM web_sessions WHERE token_hash=?", (_token_hash(token),))

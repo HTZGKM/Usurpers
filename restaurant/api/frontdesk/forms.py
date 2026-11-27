@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from wtforms import BooleanField, DecimalField, IntegerField, StringField, SubmitField
+from wtforms import BooleanField, DecimalField, IntegerField, StringField, SubmitField, SelectField, FieldList, FormField
 from wtforms.validators import (
     DataRequired,
     InputRequired,
@@ -9,8 +9,9 @@ from wtforms.validators import (
     Regexp,
 )
 from restaurant.forms import monetary_amount
+from restaurant.api.auth.forms import phone_identity
 
-from ..customer.forms import BookingEditForm, BookingForm, OrderCreateForm
+from ..customer.forms import BookingEditForm, BookingForm, OrderCreateForm, OrderVersionForm, OrderItemForm
 
 
 class StaffBookingForm(BookingForm):
@@ -25,9 +26,7 @@ class StaffBookingForm(BookingForm):
         filters=[lambda value: (value or "").strip()],
         validators=[
             DataRequired("Enter the contact phone number."),
-            Regexp(
-                r"\+?[0-9]+\Z", message="Enter digits only, with an optional leading +."
-            ),
+            phone_identity,
         ],
     )
     submit = SubmitField("Book for Customer")
@@ -53,7 +52,7 @@ class CheckInForm(FlaskForm):
 
 class WalkInForm(FlaskForm):
     contact_name = StringField("Contact name", validators=[Optional(), Length(max=100)])
-    phone_number = StringField("Phone number", validators=[Optional(), Length(max=20)])
+    phone_number = StringField("Phone number", validators=[Optional(), phone_identity])
     party_size = IntegerField(
         "Party size",
         validators=[InputRequired("Enter the party size."), NumberRange(min=1)],
@@ -73,11 +72,11 @@ class StaffOrderForm(OrderCreateForm):
     submit = SubmitField("Place Order for Customer")
 
 
-class CancelOrderItemForm(FlaskForm):
+class CancelOrderItemForm(OrderVersionForm):
     submit = SubmitField("Cancel Item")
 
 
-class ServeItemForm(FlaskForm):
+class ServeItemForm(OrderVersionForm):
     submit = SubmitField("Mark as Served")
 
 
@@ -106,3 +105,11 @@ class RefundForm(RemakeForm):
     idempotency_key = StringField(
         "Refund request ID", validators=[DataRequired(), Length(max=120)]
     )
+
+
+class ResolveSupplyForm(OrderVersionForm):
+    action=SelectField("Resolution",choices=[("cancel","Cancel"),("replace","Replace")],validators=[InputRequired()])
+    customer_agreed=BooleanField("Guest agreed",validators=[DataRequired()])
+    reason=StringField("Reason",validators=[InputRequired(),Length(max=500)])
+    idempotency_key=StringField("Submission ID",validators=[InputRequired(),Length(max=80)])
+    items=FieldList(FormField(OrderItemForm),max_entries=50)

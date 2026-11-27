@@ -8,6 +8,7 @@ from .forms import (
     PaymentForm,
     PreorderForm,
     VisitPaymentForm,
+    OrderVersionForm,
     WaitlistForm,
 )
 from restaurant.api.frontdesk.forms import StaffBookingForm
@@ -203,12 +204,9 @@ def pay_order(order_id):
 
 @customer_bp.post("/visits/<int:visit_id>/pay")
 def pay_visit(visit_id):
-    denied = require_api_role("customer")
-    if denied is not None:
-        return denied
     data = validated_data(VisitPaymentForm)
     order_ids = {positive_int(value, "order_ids") for value in data["order_ids"].split(",")}
-    payment = order_service.pay_visit(visit_id, g.account["username"], order_ids, data["total_cents"])
+    payment = order_service.pay_visit(visit_id, g.account["username"] if g.account["role"]=="customer" else None, order_ids, data["total_cents"], request_key=data["idempotency_key"], actor=g.account["role"]+":"+g.account["username"])
     return jsonify(ok=True, payment=payment)
 
 
@@ -235,11 +233,11 @@ def order_status(order_id):
 
 @customer_bp.post("/orders/<int:order_id>/cancel")
 def cancel_order(order_id):
-    data = validated_data(ActionForm)
+    data = validated_data(OrderVersionForm)
     owner = (
         g.account["username"] if g.account["role"] == "customer" else None
     )
-    return jsonify({"ok": True, "order": order_service.cancel_order(order_id, owner)})
+    return jsonify({"ok": True, "order": order_service.cancel_order(order_id, owner, expected_version=data["expected_version"])})
 
 
 @customer_bp.post("/orders/<int:order_id>/edit")
@@ -258,12 +256,12 @@ def edit_order(order_id):
 
 @customer_bp.post("/orders/<int:order_id>/items/<int:item_id>/cancel")
 def cancel_item(order_id, item_id):
-    data = validated_data(ActionForm)
+    data = validated_data(OrderVersionForm)
     owner = (
         g.account["username"] if g.account["role"] == "customer" else None
     )
     return jsonify(
-        {"ok": True, "item": order_service.cancel_order_item(order_id, item_id, owner)}
+        {"ok": True, "item": order_service.cancel_order_item(order_id, item_id, owner, expected_version=data["expected_version"])}
     )
 
 
@@ -336,3 +334,9 @@ def _booking_details(booking_id):
     if booking is None:
         raise ServiceError("Booking not found.", 404)
     return jsonify({"ok": True, "booking": booking})
+
+
+@customer_bp.get("/visits/<int:visit_id>/bill")
+def visit_bill(visit_id):
+    owner=g.account["username"] if g.account["role"]=="customer" else None
+    return jsonify(ok=True,bill=order_service.get_visit_bill(visit_id,owner))

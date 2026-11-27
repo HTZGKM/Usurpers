@@ -7,6 +7,8 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
   const phoneFilter = find("[data-desk-search]");
   const dialog = find(".desk-dialog");
   const editor = find("[data-desk-editor]");
+  const linkDialog = find("[data-account-link-dialog]");
+  const linkForm = find("[data-account-link-form]");
   const walkIn = find("[data-desk-walk-in]");
   const cancellation = find("[data-desk-cancellation]");
   const serviceForm = find("[data-service-form]");
@@ -56,8 +58,8 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
   const deskButton = (label, attrs) => '<button type="button" class="desk-subtle" ' + attrs + '>' + label + '</button>';
   const readyVisits = () => visits.filter(row => row.status === "seated" && row.ready_count > 0)
     .sort((a, b) => a.table_id - b.table_id);
-  const readyDishes = (count) => count + (count === 1 ? " dish ready" : " dishes ready");
-  const hasReadyItems = (order) => order.items.some(item => item.status === "ready");
+  const readyDishes = (count) => count + (count === 1 ? " order ready" : " orders ready");
+  const hasReadyItems = (order) => order.kitchen_stage === "ready";
 
   function replaceList(target, markup, background) {
     if (target.innerHTML === markup) return;
@@ -119,7 +121,11 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
       tile.dataset.tone = row?.status ?? "available";
       const tableStatus = tile.dataset.tone;
       const status = tile.querySelector("small");
-      status.textContent = tableStatus[0].toUpperCase() + tableStatus.slice(1);
+      const reasonLabels = {cleaning:"Cleaning", closed:"Service ended", service_closed:"Service ended", reservation:"Protected",
+        disabled:"Disabled", occupied:"Occupied", call:"Called party", offer:"Replacement held", reported:"Guest waiting", replacement:"Replacement priority", capacity:"Too small"};
+      status.textContent = row?.reason === "cleaning" && row.cleaning_overdue ? "Cleaning overdue" :
+        reasonLabels[row?.reason] ?? tableStatus[0].toUpperCase() + tableStatus.slice(1);
+      tile.dataset.state = row?.reason ?? tableStatus;
       tile.setAttribute("aria-label", "Table " + tile.dataset.deskTable + " · " + status.textContent +
         (row?.capacity ? " · " + row.capacity + " seats" : ""));
       tile.setAttribute("aria-pressed", id === tableId);
@@ -128,10 +134,12 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
     find('[data-desk-open="walk-in"]').hidden = selectedTable?.status !== "available";
     find('[data-desk-open="service"]').hidden = !visits.some(row => row.table_id === tableId && row.status === "seated");
     const row = chosenBooking();
+    find('[data-link-request="booking"]').hidden = !row || Boolean(row.customer_phone) || !["booked", "arrived", "transferred"].includes(row.status);
     if (reservationFlow) {
       checkIn.hidden = true;
       const disable = find("[data-desk-disable-table]");
       disable.hidden = !selectedTable;
+      find("[data-desk-clear-table]").hidden = !selectedTable?.clearance_visit_id;
       disable.textContent = selectedTable?.is_disabled ? "Enable table" : "Disable table";
       feedback.textContent = selectedTable ? "Table " + tableLabel(selectedTable.table_id) +
         (selectedTable.reason_text ? " · " + selectedTable.reason_text : " · Available for seating") +
@@ -140,6 +148,7 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
       const active = row?.status === "booked";
       find("[data-desk-booking-actions]").hidden = !active;
       find('[data-desk-open="edit"]').hidden = Boolean(row?.checked_in_at);
+      find('[data-desk-party-size]').hidden = !row?.checked_in_at;
       flowActions.hidden = !active || (!row.can_check_in && !row.checked_in_at);
       const visibility = { arrive: !row?.can_check_in, ready: !row?.can_prepare || Boolean(row?.ready_at),
         seat: !row?.checked_in_at || !row?.ready_at || !row?.can_prepare,
@@ -202,11 +211,12 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
         const status = called ? "Called for " + esc(tableLabel(row.called_table_id)) +
           ' · <strong data-call-deadline="' + esc(row.call_expires_at) + '"></strong>' :
           "Waiting · Position " + row.position + " · " + esc(visitEstimate(row.estimate));
-        const attributes = ' data-flow-ticket="' + ticket + '" data-called-table="' + (row.called_table_id ?? "") + '"';
+        const attributes = ' data-ticket-version="' + row.version + '" data-flow-ticket="' + ticket + '" data-called-table="' + (row.called_table_id ?? "") + '"';
         return '<li><span><strong>' + label + '</strong><small>' + status + '</small></span><div class="desk-arrival-actions">' +
           (called ? deskButton("Seat party", attributes + ' data-ticket-action="seat"') +
             deskButton("Pass &amp; call next", attributes + ' data-ticket-action="pass"') : '') +
-          deskButton("Cancel ticket", attributes + ' data-ticket-action="cancel"') + '</div></li>';
+          deskButton("Cancel ticket", attributes + ' data-ticket-action="cancel"') +
+          (!row.customer_phone ? deskButton("Request account link", 'data-link-request="queue" data-link-id="' + ticket + '"') : '') + '</div></li>';
       }
       const chairs = Math.max(row.party_size, row.table_type || 0);
       const choices = row.called_table_id
@@ -216,7 +226,8 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
         ' · ' + row.party_size + ' guests · ' + (called ? "Called" : "Waiting") + '</span>' +
         (called && choices ? '<form class="desk-check-in" data-seat-ticket="' + row.queue_id +
           '"><label>Table <select name="table_id" required>' + (row.called_table_id ? "" : option("", "Choose a table")) + choices +
-          '</select></label><button type="submit" class="desk-confirm">Seat party</button></form>' : '') + '</li>';
+          '</select></label><button type="submit" class="desk-confirm">Seat party</button></form>' : '') +
+        (!row.customer_phone ? deskButton("Request account link", 'data-link-request="queue" data-link-id="' + row.queue_id + '"') : '') + '</li>';
     }).join(""), background);
     if (reservationFlow) {
       find("[data-desk-recent-tickets]").textContent = recentTickets.map(row =>
@@ -229,34 +240,63 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
     for (const clock of workspace.querySelectorAll("[data-call-deadline]")) {
       const remaining = Date.parse(clock.dataset.callDeadline) - (Date.now() + deskClockOffset);
       const left = Math.ceil(remaining / 1000);
-      clock.textContent = remaining >= 0 ? left + "s left" : "Call ended";
+      clock.textContent = remaining > 0 ? left + "s left" : "Call ended";
       const seat = clock.closest("li").querySelector('[data-ticket-action="seat"]');
-      if (seat) seat.disabled = remaining < 0;
+      if (seat) seat.disabled = remaining <= 0;
     }
   }
 
   function orderCard(order) {
-    const items = order.items.filter(item => item.status !== "cancelled")
-      .sort((a, b) => Number(b.status === "ready") - Number(a.status === "ready")).map(item => {
+    const items = order.items.filter(item => item.status !== "cancelled").map(item => {
       const path = "/frontdesk/orders/" + order.order_id + "/items/" + item.order_item_id;
       return '<li data-item-stage="' + esc(item.status) + '"><div><strong>' + item.quantity + ' × ' + esc(item.dish_name) +
-        '</strong><span class="desk-item-status">' +
-        esc(restaurantPreorderWaiting(order, item) ||
-          ({ waiting: "Waiting", cooking: "Cooking", ready: "Ready to serve", served: "Served" })[item.status] || item.status) +
+        '</strong><span class="desk-item-status">' + esc(item.supply_issue ? "Needs guest decision: " + item.supply_issue :
+          restaurantPreorderWaiting(order, item) || ({ waiting: "Waiting", cooking: "Cooking", ready: "Dish ready", served: "Served" })[item.status] || item.status) +
         '</span>' + (item.note ? '<small>' + esc(item.note) + '</small>' : '') + '</div>' +
-        (item.status === "ready" ? '<button type="button" class="desk-confirm" data-desk-write="' + path + '/serve">Mark served</button>' :
-          item.status === "waiting" && order.payment_status === "unpaid"
-            ? deskButton("Cancel item", 'data-desk-write="' + path + '/cancel"') : '') + '</li>';
+        (item.supply_issue ? deskButton("Resolve with guest", 'data-resolve-item="' + item.order_item_id + '" data-order-id="' + order.order_id + '"') :
+          item.status === "waiting" && order.payment_status === "unpaid" ? deskButton("Cancel item", 'data-desk-write="' + path + '/cancel" data-order-version="' + order.version + '"') : '') + '</li>';
     }).join("");
     return '<article class="desk-service-order" data-service-order="' + order.order_id + '" data-ready="' + hasReadyItems(order) + '"><h4 tabindex="-1">' +
-      (order.order_type === "preorder" ? "Preorder #" : "Order #") +
-      order.order_id + ' · ¥' + esc(order.total_amount) + '</h4><p>' +
-      esc(orderLabels[order.status] ?? order.status) + ' · ' +
-      (order.payment_status === "paid" ? "Paid" : "Unpaid") + '</p><ul class="desk-service-list">' +
+      (order.order_type === "preorder" ? "Preorder #" : "Order #") + order.order_id + ' · ¥' + esc(order.total_amount) + '</h4><p>' +
+      esc(order.kitchen_stage ?? order.status) + ' · ' + (order.payment_status === "paid" ? "Paid" : "Unpaid") + '</p><ul class="desk-service-list">' +
       items + '</ul>' + restaurantCancelledItems(order.items) + (restaurantCanEditOrder(order) ?
         deskButton("Edit order", 'data-desk-edit-order="' + order.order_id + '"') : '') +
-      (restaurantCanPayOrder(order)
-        ? deskButton("Record payment", 'data-desk-write="/frontdesk/orders/' + order.order_id + '/pay"') : '') + '</article>';
+      (hasReadyItems(order) ? deskButton("Confirm whole order served", 'data-desk-write="/frontdesk/orders/' + order.order_id + '/serve" data-order-version="' + order.version + '"') : '') + '</article>';
+  }
+
+  function resolveItem(order, item) {
+    const box = document.createElement("dialog");
+    box.className = "restaurant-order-dialog";
+    box.innerHTML = '<h2>Resolve unavailable dish</h2><p>' + esc(item.dish_name) + ' · ' + esc(item.supply_issue) + '</p><form>' +
+      '<label>Resolution<select name="action"><option value="cancel">Cancel this dish</option><option value="replace">Replace with a new order</option></select></label>' +
+      '<fieldset data-replacement hidden><label>Replacement dish<select name="dish_id">' + serviceMenu.map(d => option(d.dish_id, d.dish_name + " · ¥" + d.price)).join("") +
+      '</select></label><label>Quantity<input name="quantity" type="number" min="1" max="99" value="1"></label><p data-price></p></fieldset>' +
+      '<label>Reason<input name="reason" required maxlength="500"></label><label><input name="customer_agreed" type="checkbox" required> Guest agrees to this resolution and replacement price</label>' +
+      '<p role="alert"></p><button type="button" data-close>Close</button><button type="submit">Confirm resolution</button></form>';
+    const form = box.querySelector("form"), submit = form.querySelector('[type="submit"]');
+    const showPrice = () => {
+      const dish = serviceMenu.find(d => d.dish_id === Number(form.elements.dish_id.value));
+      form.querySelector("[data-replacement]").hidden = form.elements.action.value !== "replace";
+      form.querySelector("[data-price]").textContent = dish ? "Replacement total: ¥" + (Number(dish.price) * Number(form.elements.quantity.value)).toFixed(2) : "No replacement dishes available";
+    };
+    form.addEventListener("input", showPrice); showPrice();
+    form.querySelector("[data-close]").onclick = () => box.close();
+    form.onsubmit = async event => {
+      event.preventDefault(); if (submit.disabled) return;
+      const fields = {action:form.elements.action.value,reason:form.elements.reason.value,customer_agreed:"true",expected_version:order.version};
+      if (fields.action === "replace") {
+        const dish = serviceMenu.find(d => d.dish_id === Number(form.elements.dish_id.value));
+        if (!dish) { form.querySelector('[role="alert"]').textContent = "Choose an available replacement."; return; }
+        Object.assign(fields, restaurantOrderFields([{dishId:dish.dish_id,quantity:Number(form.elements.quantity.value),unitPrice:Number(dish.price),note:""}]));
+      }
+      submit.disabled = true;
+      try {
+        await restaurantSubmitOnce("/frontdesk/orders/" + order.order_id + "/items/" + item.order_item_id + "/resolve", fields);
+        box.close(); await update(async () => "Resolution saved. Any replacement is a separate order.");
+      } catch (error) { form.querySelector('[role="alert"]').textContent = error.message + " Close and reload this table to review the latest order and prices."; }
+      finally { submit.disabled = false; }
+    };
+    box.addEventListener("close", () => box.remove(), {once:true}); document.body.append(box); box.showModal();
   }
 
   function renderBilling(orders) {
@@ -275,7 +315,7 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
     if (!orders) message = "Checking whether this table can be released…";
     else if (orders.some(order => order.status !== "cancelled" && order.payment_status !== "paid")) {
       message = "Settle all open orders before releasing this table.";
-    } else if (orders.some(order => order.items.some(item => !["served", "cancelled"].includes(item.status)))) {
+    } else if (orders.some(order => order.items.some(item => item.supply_issue || !["served", "cancelled"].includes(item.status)))) {
       message = "Serve all remaining dishes before releasing this table.";
     }
     const releaseNotice = find("[data-service-feedback]");
@@ -426,7 +466,7 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
     } catch (error) {
       workspaceNotice.textContent = error.message;
       if (["BOOKING_CHANGED", "CHECK_IN_REFRESH_REQUIRED", "WAITLIST_CHANGED", "TABLE_UNAVAILABLE",
-        "WAITLIST_PRIORITY", "ARRIVAL_WINDOW", "TABLE_NOT_READY"].includes(error.code)) {
+        "WAITLIST_PRIORITY", "ARRIVAL_WINDOW", "TABLE_NOT_READY", "ORDER_CHANGED", "BILL_CHANGED"].includes(error.code)) {
         try { await refresh(); } catch {}
       }
       if (dialog.open) {
@@ -524,6 +564,24 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
     }
   }
 
+  linkForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    const send = linkForm.querySelector('[type="submit"]');
+    if (pending || send.disabled) return;
+    pending = true;
+    send.disabled = true;
+    const notice = find("[data-account-link-feedback]");
+    notice.textContent = "Sending request…";
+    try {
+      await restaurantRequest("/auth/link-requests", fieldValues(linkForm));
+      notice.textContent = "Request pending. Ask the guest to sign in and confirm it in their account. The record remains unlinked until they agree.";
+    } catch (error) {
+      notice.textContent = error.message;
+      send.disabled = false;
+    } finally { pending = false; }
+  });
+  linkDialog.addEventListener("cancel", event => { if (pending) event.preventDefault(); });
+
   workspace.addEventListener("submit", (event) => {
     const form = event.target;
     if (![editor, checkIn, walkIn, cancellation, serviceForm, callForm, ticketForm].includes(form) &&
@@ -582,7 +640,7 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
       return "Reservation saved.";
     });
     if (form === cancellation) update(async () => {
-      await restaurantRequest(bookingBase + "/" + bookingId + "/cancel", {});
+      await restaurantRequest(bookingBase + "/" + bookingId + "/cancel", { expected_version: chosenBooking()?.version });
       dialog.close();
       return "Reservation cancelled.";
     });
@@ -619,6 +677,65 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
     const button = event.target.closest("button");
     if (!button || button.disabled || pending) return;
     const data = button.dataset;
+    if (button.matches("[data-account-link-close]")) return linkDialog.close();
+    if (data.linkRequest) {
+      const kind = data.linkRequest;
+      const row = kind === "booking" ? chosenBooking() : kind === "visit" ? chosenVisit() : queue.find(q => q.queue_id === Number(data.linkId));
+      if (!row) return;
+      linkForm.reset();
+      linkForm.elements.target_type.value = kind;
+      const id = row[kind === "booking" ? "booking_id" : kind === "visit" ? "visit_id" : "queue_id"];
+      linkForm.elements.target_id.value = id;
+      linkForm.elements.candidate_phone.value = row.phone_number ?? "";
+      find("[data-account-link-record]").textContent = ({booking:"Reservation",visit:"Visit",queue:"Waitlist ticket"})[kind] + " #" + id +
+        (row.contact_name ? " · " + row.contact_name : "");
+      find("[data-account-link-feedback]").textContent = "Confirm the account phone number with the guest.";
+      linkForm.querySelector('[type="submit"]').disabled = false;
+      linkDialog.showModal();
+      linkForm.elements.candidate_phone.focus();
+      return;
+    }
+    if (data.resolveItem) {
+      const order = serviceOrders.find(o => o.order_id === Number(data.orderId));
+      if (order) resolveItem(order, order.items.find(i => i.order_item_id === Number(data.resolveItem)));
+      return;
+    }
+    if (button.matches("[data-pay-table]") || data.payVisit) return update(async () => {
+      const id = data.payVisit || visitId;
+      const {bill} = await restaurantRequest("/visits/" + id + "/bill");
+      if (!bill.can_pay) return bill.blocked_reason;
+      if (!window.confirm("Record full table payment of ¥" + (bill.total_cents / 100).toFixed(2) + " for " + bill.order_ids.length + " orders?")) return;
+      const result = await restaurantSubmitOnce("/visits/" + id + "/pay", {order_ids:bill.order_ids.join(","),total_cents:bill.total_cents});
+      return result.recoveredPrevious ? "Previous payment recovered. Review any remaining table balance before another payment." : "Full table payment recorded.";
+    });
+    if (button.matches("[data-desk-clear-table]")) return update(async () => {
+      const row = occupancy.find(t => t.table_id === tableId);
+      if (!row?.clearance_visit_id || !window.confirm("Has table " + tableLabel(tableId) + " been fully cleared and cleaned?")) return;
+      await restaurantSubmitOnce(flowBase + "/tables/" + tableId + "/clear", {visit_id:row.clearance_visit_id});
+      return "Table clearing confirmed.";
+    });
+    if (button.matches("[data-desk-party-size]")) {
+      const row = chosenBooking();
+      const entered = window.prompt("Current party size", row.party_size);
+      if (entered === null) return;
+      const size = Number(entered);
+      if (!Number.isInteger(size) || size < 1 || size > 20) { workspaceNotice.textContent = "Enter a party size from 1 to 20."; return; }
+      return update(async () => {
+        const fields = {party_size:size,expected_version:row.version};
+        try { await restaurantRequest(bookingBase + "/" + row.booking_id + "/party-size", fields); return "Party size updated."; }
+        catch (error) {
+          if (error.code !== "PARTY_CHANGE_REQUIRES_WAITLIST") throw error;
+          const alternative = occupancy.find(t => t.table_id === tableId && t.table_id !== row.table_id && t.capacity >= size && t.status === "available");
+          if (alternative && window.confirm("Has the guest agreed to change to selected table " + tableLabel(tableId) + " for " + size + " guests?")) {
+            await restaurantRequest(bookingBase + "/" + row.booking_id + "/party-size", {...fields,table_id:tableId,customer_agreed:"true"});
+            return "Party size and agreed replacement table updated.";
+          }
+          if (!window.confirm("The reserved table cannot accommodate this party. Has the guest agreed to give up this reservation and join the current meal's waitlist?")) return "Reservation kept unchanged.";
+          const result = await restaurantSubmitOnce(bookingBase + "/" + row.booking_id + "/transfer-to-waitlist", fields);
+          return "Reservation transferred to waitlist ticket #" + result.transfer.queue_id + ". Existing preorders are retained.";
+        }
+      });
+    }
     if (data.bookingPhase) {
       const row = chosenBooking();
       if (!row) return;
@@ -641,7 +758,7 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
     }
     if (data.flowTicket) return update(async () => {
       const result = await restaurantRequest(flowBase + "/tickets/" + data.flowTicket + "/" + data.ticketAction,
-        data.ticketAction === "seat" ? { table_id: data.calledTable } : {});
+        { expected_version: data.ticketVersion, ...(data.ticketAction === "seat" ? { table_id: data.calledTable } : {}) });
       if (result.visit) {
         tableId = result.visit.table_id;
         selectServiceVisit(result.visit.visit_id);
@@ -750,8 +867,8 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
     });
     if (data.deskWrite) return update(async () => {
       const table = tableLabel(chosenVisit()?.table_id);
-      await restaurantRequest(data.deskWrite, {});
-      if (data.deskWrite.endsWith("/serve")) return "Dish served" + (table ? " at table " + table : "") + ".";
+      await restaurantRequest(data.deskWrite, {expected_version:data.orderVersion});
+      if (data.deskWrite.endsWith("/serve")) return "Whole order served" + (table ? " at table " + table : "") + ".";
       return data.deskWrite.endsWith("/pay") ? "Payment recorded." : "Item cancelled.";
     });
     const closeConfirmation = find("[data-confirm-desk-close]");
@@ -761,7 +878,7 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
     if (button.matches("[data-release-desk-table]")) return update(async () => {
       const { visit } = await restaurantRequest("/frontdesk/visits/" + visitId + "/close", {});
       selectServiceVisit(undefined);
-      if (reservationFlow) return "Table closed. The cleaning buffer has started.";
+      if (reservationFlow) return "Table closed. Confirm clearing after the table has been cleaned.";
       return visit.next_queue ? "Table released. Ticket #" + visit.next_queue.queue_id + " was called." : "Table released.";
     });
   });
@@ -775,8 +892,8 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
       const { order } = await restaurantRequest("/frontdesk/orders/" + record.dataset.billingOrder);
       detail.innerHTML = '<p>Total · ¥' + esc(order.total_amount) + '</p><ul class="desk-service-list">' + order.items
         .filter(item => item.status !== "cancelled").map(item => '<li>' + item.quantity + ' × ' + esc(item.dish_name) + '</li>').join("") + '</ul>' +
-        restaurantCancelledItems(order.items) + (restaurantCanPayOrder(order)
-          ? deskButton("Record payment", 'data-desk-write="/frontdesk/orders/' + order.order_id + '/pay"') : '');
+        restaurantCancelledItems(order.items) + (order.visit_id && order.payment_status === "unpaid"
+          ? deskButton("Review table payment", 'data-pay-visit="' + order.visit_id + '"') : '');
       record.dataset.loaded = "true";
     } catch (error) {
       detail.textContent = error.message;

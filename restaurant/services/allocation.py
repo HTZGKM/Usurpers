@@ -129,9 +129,13 @@ def _table_reason(db, table, size, start, end, now, *, immediate=False, booking_
         if immediate or (start.date() == now.astimezone(RESTAURANT_TIME).date()
                          and (projected is None or projected <= now or projected > start)):
             return "occupied"
-    closed_at = db.execute("SELECT max(closed_at) FROM dining_sessions WHERE table_id=?", (table_id,)).fetchone()[0]
-    if closed_at and timestamp(closed_at) + CLEANING > start:
-        return "cleaning"
+    uncleared = db.execute("""SELECT closed_at FROM dining_sessions WHERE table_id=?
+        AND status='closed' AND clearance_processed_at IS NULL ORDER BY closed_at DESC LIMIT 1""", (table_id,)).fetchone()
+    if uncleared:
+        projected = timestamp(uncleared["closed_at"]) + CLEANING
+        if immediate or (start.date() == now.astimezone(RESTAURANT_TIME).date()
+                         and (projected <= now or projected > start)):
+            return "cleaning"
     holds = db.execute("""SELECT h.kind FROM table_holds h LEFT JOIN bookings b ON b.booking_id=h.booking_id
         WHERE h.table_id=? AND h.protected_during && tstzrange(?, ?, '[)')
         AND (CAST(? AS integer) IS NULL OR h.booking_id IS DISTINCT FROM ?)
@@ -145,8 +149,10 @@ def _table_reason(db, table, size, start, end, now, *, immediate=False, booking_
     if check_waiting:
         reported = db.execute("""SELECT b.party_size FROM bookings b WHERE b.table_id=? AND b.status='booked'
             AND b.checked_in_at IS NOT NULL AND b.booking_date=?
-            AND (CAST(? AS integer) IS NULL OR b.booking_id<>?) ORDER BY b.checked_in_at LIMIT 1""",
-            (table_id, now.astimezone(RESTAURANT_TIME).date(), booking_id, booking_id)).fetchone()
+            AND COALESCE(b.arrival_at, (b.booking_date + split_part(b.time_slot,'-',1)::time) AT TIME ZONE 'Asia/Shanghai')<=?
+            AND (CAST(? AS integer) IS NULL OR b.booking_id<>?)
+            ORDER BY b.arrival_at NULLS LAST,b.checked_in_at,b.booking_id LIMIT 1""",
+            (table_id, now.astimezone(RESTAURANT_TIME).date(), now, booking_id, booking_id)).fetchone()
         if reported and (immediate or start < now + protection(reported["party_size"])):
             return "reported"
     return None
@@ -172,7 +178,7 @@ def _call_next(db, table, now):
         if end > cutoff or _table_reason(db, table, size, now, end, now, immediate=True):
             continue
         db.execute("""UPDATE waiting_queue SET status='called',called_at=(?::timestamptz AT TIME ZONE 'UTC'),
-            called_table_id=?,call_expires_at=? WHERE queue_id=? AND status='waiting'""",
+            called_table_id=?,call_expires_at=?,version=version+1 WHERE queue_id=? AND status='waiting'""",
             (now, table["table_id"], until, ticket["queue_id"]))
         _add_hold(db, table["table_id"], "call", now, end, queue_id=ticket["queue_id"], expires_at=until)
         return dict(queue_id=ticket["queue_id"], table_id=table["table_id"], status="called",
@@ -191,7 +197,7 @@ def _call_tables(db, table_ids, now):
 
 
 def _cancel_unseated_preorders(db, booking_id, now):
-    orders = db.execute("""UPDATE orders SET status='cancelled'
+    orders = db.execute("""UPDATE orders SET status='cancelled',version=version+1
         WHERE booking_id=? AND visit_id IS NULL AND order_type='preorder' AND status='active'
         AND payment_status='unpaid' AND NOT EXISTS(SELECT 1 FROM order_items i WHERE i.order_id=orders.order_id
             AND i.status IN ('cooking','ready','served')) RETURNING order_id""", (booking_id,)).fetchall()
@@ -211,9 +217,15 @@ def _reconcile(db, now):
         _cancel_unseated_preorders(db, row["booking_id"], now)
         released.update(hold["table_id"] for hold in holds)
         released.add(row["table_id"])
-    for row in db.execute("""UPDATE waiting_queue SET status='expired',ended_at=?
+    for row in db.execute("""UPDATE waiting_queue SET status='service_ended',ended_at=?,version=version+1
+        WHERE status IN ('waiting','called') AND service_ends_at<=? RETURNING queue_id,called_table_id""", (now, now)).fetchall():
+        db.execute("DELETE FROM table_holds WHERE queue_id=?", (row["queue_id"],))
+        _cancel_queue_preorders(db, row["queue_id"], now)
+        released.add(row["called_table_id"])
+    for row in db.execute("""UPDATE waiting_queue SET status='expired',ended_at=?,version=version+1
         WHERE status='called' AND call_expires_at < ? RETURNING queue_id,called_table_id""", (now, now)).fetchall():
         db.execute("DELETE FROM table_holds WHERE queue_id=?", (row["queue_id"],))
+        _cancel_queue_preorders(db, row["queue_id"], now)
         released.add(row["called_table_id"])
     for row in db.execute("""UPDATE bookings SET offered_table_id=NULL,offer_expires_at=NULL,version=version+1
         WHERE status='booked' AND offer_expires_at < ? RETURNING booking_id""", (now,)).fetchall():
@@ -221,11 +233,6 @@ def _reconcile(db, now):
                           (row["booking_id"],)).fetchone()
         if hold:
             released.add(hold["table_id"])
-    for row in db.execute("""UPDATE dining_sessions SET clearance_processed_at=?
-        WHERE status='closed' AND clearance_processed_at IS NULL
-        AND closed_at <= (?::timestamptz AT TIME ZONE 'UTC')
-        RETURNING table_id""", (now, now - CLEANING)).fetchall():
-        released.add(row["table_id"])
     return _call_tables(db, released, now)
 
 
@@ -309,11 +316,17 @@ def _customer_for_phone(db, phone):
     return db.execute("SELECT customer_phone FROM customers WHERE customer_phone=? AND is_active=1", (phone,)).fetchone()
 
 
-def _booking_table(db, size, start, end, now, table_id, booking_id=None):
+def _booking_table(db, size, start, end, now, table_id, booking_id=None, *, online=False):
     tables = [_table(db, table_id)] if table_id else db.execute(
         "SELECT * FROM dining_tables ORDER BY capacity,table_id").fetchall()
+    allowed_capacity = _online_capacity(db, size) if online else None
     replacements = _replacement_priorities(db, now)
     for table in tables:
+        if allowed_capacity is not None and table["capacity"] != allowed_capacity:
+            if table_id:
+                raise ServiceError("Choose a table size suited to your party. Contact the front desk for exceptions.",
+                                   409, "table_id", "TABLE_SIZE_POLICY")
+            continue
         reason = _table_reason(db, table, size, start, end, now, booking_id=booking_id)
         replacement = replacements.get(table["table_id"])
         if reason is None and replacement and replacement[0] != booking_id and start < replacement[1]:
@@ -330,6 +343,44 @@ def _legacy_slot(fields):
     return TIME_SLOT_MAP.get(raw, raw)
 
 
+def assert_can_link_booking(db, booking_id, phone):
+    """Caller holds the shared write lock; transferred tickets retain the original booking entitlement."""
+    now = database_now(db) if using_postgres() else datetime.now(timezone.utc)
+    if booking_id:
+        target = db.execute("SELECT * FROM bookings WHERE booking_id=?", (booking_id,)).fetchone()
+        if target and target["status"] == "booked" and not target["checked_in_at"] and target["arrival_deadline"] and timestamp(target["arrival_deadline"]) < now:
+            raise ServiceError("This reservation's arrival deadline has passed.", 409, code="LINK_UNAVAILABLE")
+    row = db.execute("""SELECT b.booking_id FROM bookings b
+        WHERE b.customer_phone=? AND (CAST(? AS integer) IS NULL OR b.booking_id<>?)
+        AND ((b.status='booked' AND (b.checked_in_at IS NOT NULL OR b.arrival_deadline IS NULL OR b.arrival_deadline>=?)) OR
+            (b.status='arrived' AND EXISTS(SELECT 1 FROM dining_sessions v WHERE v.booking_id=b.booking_id AND v.status='seated')) OR
+            (b.status='transferred' AND EXISTS(SELECT 1 FROM waiting_queue q WHERE q.queue_id=b.transferred_queue_id
+                 AND q.status IN ('waiting','called')))) LIMIT 1""", (phone, booking_id, booking_id, now)).fetchone()
+    if row:
+        raise ServiceError("This account already has an active reservation. Finish or cancel it before booking another table.",
+                           409, code="ACTIVE_RESERVATION_EXISTS")
+
+
+def _online_capacity(db, size):
+    # A temporarily occupied or disabled smaller table must not change the online table-size policy.
+    capacity = db.execute("SELECT min(capacity) FROM dining_tables WHERE capacity>=?", (size,)).fetchone()[0]
+    if capacity is None:
+        raise ServiceError("No table can accommodate this party size. Contact the front desk.",
+                           409, "party_size", "CAPACITY_INSUFFICIENT")
+    return capacity
+
+
+def _cancel_queue_preorders(db, queue_id, now):
+    orders = db.execute("""UPDATE orders SET status='cancelled',version=version+1
+        WHERE queue_id=? AND visit_id IS NULL AND order_type='preorder' AND status='active'
+        AND payment_status='unpaid' AND NOT EXISTS(SELECT 1 FROM order_items i WHERE i.order_id=orders.order_id
+            AND i.status IN ('cooking','ready','served')) RETURNING order_id""", (queue_id,)).fetchall()
+    for order in orders:
+        db.execute("UPDATE order_items SET status='cancelled' WHERE order_id=? AND status='waiting'", (order[0],))
+        db.execute("""UPDATE kitchen_queue SET status='cancelled',completed_at=(?::timestamptz AT TIME ZONE 'UTC')
+            WHERE order_id=? AND status='waiting'""", (now, order[0]))
+
+
 def create_booking(fields, user):
     online = user["role"] == "customer"
     owner = user["username"] if online else None
@@ -342,7 +393,7 @@ def create_booking(fields, user):
     name = user["name"] if online else required_text(fields.get("contact_name"), "contact_name", limit=100)
     phone = owner if online else phone_number(fields.get("phone_number"))
     actor = user["role"] + ":" + user["username"]
-    staff_payload = [date, arrival, size, table_id, name, phone]
+    staff_payload = [date, arrival, size, table_id, name, phone, fields.get("request_account_link") == "true"]
 
     def create(db, now):
         if not online:
@@ -359,13 +410,17 @@ def create_booking(fields, user):
         if not arrival:
             legacy_write_guard(db)
         start, deadline, end = booking_interval(date, arrival, size, now, online)
-        selected = _booking_table(db, size, start, end, now, table_id)
-        customer = _customer_for_phone(db, phone)
+        if online:
+            assert_can_link_booking(db, None, owner)
+        selected = _booking_table(db, size, start, end, now, table_id, online=online)
         booking_id = insert_id(db, """INSERT INTO bookings(contact_name,phone_number,customer_phone,
             booking_date,time_slot,party_size,table_id,arrival_at,arrival_deadline)
-            VALUES(?,?,?,?,?,?,?,?,?)""", (name, phone, customer[0] if customer else None, date,
+            VALUES(?,?,?,?,?,?,?,?,?)""", (name, phone, owner, date,
             f"{arrival}-{end:%H:%M}", size, selected, start, deadline), "booking_id")
         _add_hold(db, selected, "reservation", start, end, booking_id=booking_id)
+        if not online and fields.get("request_account_link") == "true":
+            from .account_linking import request_booking_link
+            request_booking_link(db, booking_id, phone, actor)
         if online and request_key:
             db.execute("""INSERT INTO booking_create_requests(customer_phone,request_key,request_fields,booking_id,initial_table_id)
                 VALUES(?,?,?,?,?)""", (owner, request_key, request_fields, booking_id, selected))
@@ -375,7 +430,7 @@ def create_booking(fields, user):
     return _run(create)
 
 
-def update_booking(booking_id, fields, owner=None):
+def update_booking(booking_id, fields, owner=None, actor=None):
     version = positive_int(fields.get("expected_version"), "expected_version")
     size = positive_int(fields.get("party_size"), "party_size")
     table_id = positive_int(fields["table_id"], "table_id") if fields.get("table_id") else None
@@ -388,14 +443,18 @@ def update_booking(booking_id, fields, owner=None):
         if old["checked_in_at"]:
             raise ServiceError("This party has already arrived. Use the seating actions.", 409, code="STATE_CONFLICT")
         start, deadline, end = booking_interval(date, arrival, size, now, bool(owner))
-        selected = _booking_table(db, size, start, end, now, table_id, booking_id)
+        selected = _booking_table(db, size, start, end, now, table_id, booking_id, online=bool(owner))
         released = db.execute("DELETE FROM table_holds WHERE booking_id=? RETURNING table_id", (booking_id,)).fetchall()
         db.execute("""UPDATE bookings SET booking_date=?,time_slot=?,party_size=?,table_id=?,arrival_at=?,arrival_deadline=?,
             ready_at=NULL,ready_table_id=NULL,offered_table_id=NULL,offer_expires_at=NULL,table_consent_at=NULL,version=version+1
             WHERE booking_id=? AND version=?""",
             (date, f"{arrival}-{end:%H:%M}", size, selected, start, deadline, booking_id, version))
         _add_hold(db, selected, "reservation", start, end, booking_id=booking_id)
-        db.execute("""UPDATE orders SET table_id=? WHERE booking_id=? AND order_type='preorder'
+        if old["table_id"] != selected:
+            db.execute("""INSERT INTO booking_table_changes(booking_id,from_table_id,to_table_id,actor,changed_at,reason)
+                VALUES(?,?,?,?,?,?)""", (booking_id, old["table_id"], selected, actor or ("customer:" + owner if owner else "staff"),
+                                           now, "reservation amended"))
+        db.execute("""UPDATE orders SET table_id=?,version=version+1 WHERE booking_id=? AND order_type='preorder'
             AND visit_id IS NULL AND status='active'""", (selected, booking_id))
         db.execute("""UPDATE order_items SET estimated_ready_at=(?::timestamptz AT TIME ZONE 'UTC')
             WHERE status='waiting' AND order_id IN (SELECT order_id FROM orders WHERE booking_id=?
@@ -406,9 +465,12 @@ def update_booking(booking_id, fields, owner=None):
     return _run(update)
 
 
-def cancel_booking(booking_id, owner=None):
+def cancel_booking(booking_id, owner=None, expected_version=None):
+    version = positive_int(expected_version, "expected_version")
     def cancel(db, now):
         row = _booking(db, booking_id, owner)
+        if row["version"] != version:
+            raise booking_conflict()
         if row["status"] != "booked" or (owner and row["checked_in_at"]):
             raise ServiceError("This reservation can no longer be cancelled here.", 409, code="STATE_CONFLICT")
         if db.execute("""SELECT 1 FROM orders JOIN order_items USING(order_id)
@@ -425,7 +487,7 @@ def cancel_booking(booking_id, owner=None):
     return _run(cancel)
 
 
-def set_booking_phase(booking_id, action, fields):
+def set_booking_phase(booking_id, action, fields, actor="staff"):
     def change(db, now):
         row = _booking(db, booking_id)
         if row["status"] != "booked":
@@ -470,8 +532,10 @@ def set_booking_phase(booking_id, action, fields):
                 db.execute("""UPDATE bookings SET table_id=?,ready_table_id=NULL,ready_at=NULL,table_consent_at=?,
                     offered_table_id=NULL,offer_expires_at=NULL,version=version+1 WHERE booking_id=?""",
                     (replacement, now, booking_id))
-                db.execute("UPDATE orders SET table_id=? WHERE booking_id=? AND visit_id IS NULL AND order_type='preorder'",
+                db.execute("UPDATE orders SET table_id=?,version=version+1 WHERE booking_id=? AND visit_id IS NULL AND order_type='preorder'",
                            (replacement, booking_id))
+                db.execute("""INSERT INTO booking_table_changes(booking_id,from_table_id,to_table_id,actor,changed_at,reason)
+                    VALUES(?,?,?,?,?,?)""", (booking_id, table_id, replacement, actor, now, "guest-approved replacement"))
                 _call_tables(db, [table_id], now)
             return _visible(_booking(db, booking_id), now)
 
@@ -490,7 +554,7 @@ def set_booking_phase(booking_id, action, fields):
         offered = row["offered_table_id"]
         db.execute("DELETE FROM table_holds WHERE booking_id=?", (booking_id,))
         visit = _insert_visit(db, now, row, table_id, booking_id=booking_id)
-        db.execute("""UPDATE orders SET visit_id=?,table_id=? WHERE booking_id=? AND order_type='preorder'
+        db.execute("""UPDATE orders SET visit_id=?,table_id=?,version=version+1 WHERE booking_id=? AND order_type='preorder'
             AND visit_id IS NULL AND status<>'cancelled'""", (visit["visit_id"], table_id, booking_id))
         _call_tables(db, [offered], now)
         return visit
@@ -498,7 +562,7 @@ def set_booking_phase(booking_id, action, fields):
     return _run(change)
 
 
-def _booking_seat_check(db, row, table_id, now, *, offer_until=None):
+def _booking_seat_check(db, row, table_id, now, *, offer_until=None, check_priority=True):
     start = _schedule_start(row)
     deadline = timestamp(row["arrival_deadline"])
     local = now.astimezone(RESTAURANT_TIME)
@@ -515,20 +579,26 @@ def _booking_seat_check(db, row, table_id, now, *, offer_until=None):
                            immediate=True, booking_id=row["booking_id"])
     if reason:
         raise conflict(reason)
+    if check_priority:
+        priority = _replacement_priorities(db, now).get(table_id)
+        if priority and priority[0] != row["booking_id"]:
+            raise conflict("replacement")
     return end
 
 
 def _replacement_priorities(db, now):
     date = now.astimezone(RESTAURANT_TIME).date()
     arrivals = db.execute("""SELECT * FROM bookings WHERE status='booked' AND booking_date=? AND checked_in_at IS NOT NULL
-        AND offered_table_id IS NULL ORDER BY checked_in_at,booking_id""", (date,)).fetchall()
+        AND offered_table_id IS NULL
+        AND COALESCE(arrival_at,(booking_date + split_part(time_slot,'-',1)::time) AT TIME ZONE 'Asia/Shanghai')<=?
+        ORDER BY COALESCE(arrival_at,(booking_date + split_part(time_slot,'-',1)::time) AT TIME ZONE 'Asia/Shanghai'),checked_in_at,booking_id""", (date, now)).fetchall()
     if not arrivals:
         return {}
     tables = db.execute("SELECT * FROM dining_tables WHERE NOT is_disabled ORDER BY capacity,table_id").fetchall()
     priorities = {}
     for booking in arrivals:
         try:
-            _booking_seat_check(db, booking, booking["table_id"], now)
+            _booking_seat_check(db, booking, booking["table_id"], now, check_priority=False)
             continue
         except ServiceError:
             pass
@@ -537,7 +607,7 @@ def _replacement_priorities(db, now):
             if table_id == booking["table_id"] or table_id in priorities or table["capacity"] < booking["party_size"]:
                 continue
             try:
-                end = _booking_seat_check(db, booking, table_id, now)
+                end = _booking_seat_check(db, booking, table_id, now, check_priority=False)
             except ServiceError:
                 continue
             priorities[table_id] = (booking["booking_id"], end)
@@ -576,9 +646,8 @@ def walk_in(table_id, size, name=None, phone=None, visit_id=None):
             return dict(visit_id=visit_id, table_id=table_id, status="seated")
         contact_name = required_text(name, "contact_name", limit=100) if name else None
         contact_phone = phone_number(phone) if phone else None
-        account = _customer_for_phone(db, contact_phone) if contact_phone else None
         return _insert_visit(db, now, dict(party_size=count, contact_name=contact_name, phone_number=contact_phone,
-                                          customer_phone=account[0] if account else None), table_id)
+                                          customer_phone=None), table_id)
 
     visit = _run(seat)
     if visit is None:
@@ -598,18 +667,21 @@ def join_waitlist(size, name=None, phone=None, table_type=None, *, actor, reques
         recovered = submission.replay(db, "staff-waitlist", actor, request_key, payload)
         if recovered is not None:
             return recovered
+        cutoff = service_cutoff(now)
+        if cutoff is None or now + CALL_HOLD + protection(max(count, preference or 0)) > cutoff:
+            raise ServiceError("There is not enough time left in this service. Please book the next service.",
+                               409, code="SERVICE_CLOSED")
         if not db.execute("SELECT 1 FROM dining_tables WHERE capacity>=? AND NOT is_disabled",
                           (max(count, preference or 0),)).fetchone():
             raise conflict("capacity")
         if contact_phone and db.execute("""SELECT 1 FROM waiting_queue WHERE phone_number=?
             AND status IN ('waiting','called')""", (contact_phone,)).fetchone():
             raise ServiceError("This guest already has an active ticket.", 409, code="DUPLICATE")
-        account = _customer_for_phone(db, contact_phone) if contact_phone else None
         position = db.execute("SELECT coalesce(max(queue_position),0)+1 FROM waiting_queue").fetchone()[0]
         ticket = insert_id(db, """INSERT INTO waiting_queue(party_size,contact_name,phone_number,customer_phone,
-            table_type,queue_position) VALUES(?,?,?,?,?,?)""",
-            (count, contact_name, contact_phone, account[0] if account else None, preference, position), "queue_id")
-        result = dict(queue_id=ticket, status="waiting")
+            table_type,queue_position,service_ends_at,created_at) VALUES(?,?,?,?,?,?,?,(?::timestamptz AT TIME ZONE 'UTC'))""",
+            (count, contact_name, contact_phone, None, preference, position, cutoff, now), "queue_id")
+        result = dict(queue_id=ticket, status="waiting", version=1, service_ends_at=cutoff.isoformat())
         return submission.record(db, "staff-waitlist", actor, request_key, payload, result)
 
     return _run(join)
@@ -626,11 +698,12 @@ def call_next(table_id):
     return _run(call)
 
 
-def finish_ticket(ticket_id, action, table_id=None):
+def finish_ticket(ticket_id, action, table_id=None, expected_version=None):
+    version = positive_int(expected_version, "expected_version")
     def finish(db, now):
         row = db.execute("SELECT * FROM waiting_queue WHERE queue_id=?", (ticket_id,)).fetchone()
         allowed = ("called",) if action in ("seat", "pass") else ("waiting", "called")
-        if not row or row["status"] not in allowed:
+        if not row or row["status"] not in allowed or row["version"] != version:
             raise ServiceError("This waitlist ticket is no longer available.", 409, code="WAITLIST_CHANGED")
         called_table = row["called_table_id"]
         if action == "seat":
@@ -643,13 +716,123 @@ def finish_ticket(ticket_id, action, table_id=None):
             status = "seated"
         else:
             status = "passed" if action == "pass" else "cancelled"
-        db.execute("UPDATE waiting_queue SET status=?,ended_at=? WHERE queue_id=?", (status, now, ticket_id))
+        db.execute("UPDATE waiting_queue SET status=?,ended_at=?,version=version+1 WHERE queue_id=?", (status, now, ticket_id))
         db.execute("DELETE FROM table_holds WHERE queue_id=?", (ticket_id,))
         if action == "seat":
-            return _insert_visit(db, now, row, table_id, queue_id=ticket_id)
+            visit = _insert_visit(db, now, row, table_id, queue_id=ticket_id, booking_id=row["source_booking_id"])
+            if row["source_booking_id"]:
+                db.execute("UPDATE bookings SET status='arrived',version=version+1 WHERE booking_id=?", (row["source_booking_id"],))
+            db.execute("""UPDATE orders SET visit_id=?,table_id=?,version=version+1 WHERE queue_id=?
+                AND visit_id IS NULL AND status='active'""", (visit["visit_id"], table_id, ticket_id))
+            return visit
+        _cancel_queue_preorders(db, ticket_id, now)
         return dict(queue_id=ticket_id, status=status, next_queue=_call_tables(db, [called_table], now))
 
     return _run(finish)
+
+
+def change_party_size(booking_id, fields, actor):
+    version = positive_int(fields.get("expected_version"), "expected_version")
+    size = positive_int(fields.get("party_size"), "party_size")
+
+    def change(db, now):
+        row = _booking(db, booking_id)
+        if row["version"] != version:
+            raise booking_conflict()
+        if row["status"] != "booked" or not row["checked_in_at"]:
+            raise ServiceError("Record arrival before correcting the actual party size.", 409, code="STATE_CONFLICT")
+        table_id = positive_int(fields.get("table_id") or row["table_id"], "table_id")
+        if table_id != row["table_id"] and fields.get("customer_agreed") != "true":
+            raise ServiceError("Confirm the guest has agreed to change tables.", field="customer_agreed")
+        changed = {**row, "party_size": size}
+        try:
+            end = _booking_seat_check(db, changed, table_id, now)
+        except ServiceError as error:
+            if error.code == "TABLE_UNAVAILABLE" and size > row["party_size"]:
+                raise ServiceError("The larger party cannot use this table now. Agree on another suitable table or transfer to the current service waitlist.",
+                                   409, "party_size", "PARTY_CHANGE_REQUIRES_WAITLIST") from error
+            raise
+        released = db.execute("DELETE FROM table_holds WHERE booking_id=? RETURNING table_id", (booking_id,)).fetchall()
+        _add_hold(db, table_id, "reservation", now, end, booking_id=booking_id)
+        db.execute("""UPDATE bookings SET party_size=?,table_id=?,ready_at=NULL,ready_table_id=NULL,
+            offered_table_id=NULL,offer_expires_at=NULL,version=version+1 WHERE booking_id=?""", (size, table_id, booking_id))
+        db.execute("UPDATE orders SET table_id=?,version=version+1 WHERE booking_id=? AND visit_id IS NULL AND status='active'",
+                   (table_id, booking_id))
+        if table_id != row["table_id"]:
+            db.execute("""INSERT INTO booking_table_changes(booking_id,from_table_id,to_table_id,actor,changed_at,reason)
+                VALUES(?,?,?,?,?,?)""", (booking_id, row["table_id"], table_id, actor, now, "guest-approved party-size correction"))
+        _call_tables(db, [entry["table_id"] for entry in released], now)
+        return _visible(_booking(db, booking_id), now)
+    return _run(change)
+
+
+def transfer_to_waitlist(booking_id, fields, actor):
+    version = positive_int(fields.get("expected_version"), "expected_version")
+    size = positive_int(fields.get("party_size"), "party_size")
+    key = required_text(fields.get("idempotency_key"), "idempotency_key", limit=80)
+    payload = [booking_id, version, size]
+
+    def transfer(db, now):
+        recovered = submission.replay(db, "booking-transfer", actor, key, payload)
+        if recovered is not None:
+            return recovered
+        row = _booking(db, booking_id)
+        if row["version"] != version:
+            raise booking_conflict()
+        if row["status"] != "booked" or not row["checked_in_at"] or size <= row["party_size"]:
+            raise ServiceError("Only an arrived reservation with an increased party size can transfer to the waitlist.",
+                               409, code="STATE_CONFLICT")
+        cutoff = service_cutoff(now)
+        if cutoff is None or now + CALL_HOLD + protection(size) > cutoff:
+            raise ServiceError("There is not enough time left in this service. Discuss the next service with the guest.",
+                               409, code="SERVICE_CLOSED")
+        if not db.execute("SELECT 1 FROM dining_tables WHERE capacity>=? AND NOT is_disabled", (size,)).fetchone():
+            raise ServiceError("No table can accommodate the larger party.", 409, "party_size", "CAPACITY_INSUFFICIENT")
+        if db.execute("""SELECT 1 FROM waiting_queue WHERE phone_number=? AND status IN ('waiting','called')""",
+                      (row["phone_number"],)).fetchone():
+            raise ServiceError("This guest already has an active ticket. Resolve that ticket first.", 409, code="DUPLICATE")
+        if db.execute("""SELECT 1 FROM orders o JOIN order_items i USING(order_id) WHERE o.booking_id=?
+            AND o.status<>'cancelled' AND (o.visit_id IS NOT NULL OR o.payment_status<>'unpaid' OR i.status IN ('cooking','ready','served'))""",
+                      (booking_id,)).fetchone():
+            raise ServiceError("Resolve paid or started orders before transferring this reservation.", 409, code="STATE_CONFLICT")
+        position = db.execute("SELECT coalesce(max(queue_position),0)+1 FROM waiting_queue").fetchone()[0]
+        ticket_id = insert_id(db, """INSERT INTO waiting_queue(contact_name,phone_number,customer_phone,party_size,
+            queue_position,source_booking_id,service_ends_at,created_at) VALUES(?,?,?,?,?,?,?,(?::timestamptz AT TIME ZONE 'UTC'))""",
+            (row["contact_name"], row["phone_number"], row["customer_phone"], size, position, booking_id, cutoff, now), "queue_id")
+        released = db.execute("DELETE FROM table_holds WHERE booking_id=? RETURNING table_id", (booking_id,)).fetchall()
+        db.execute("""UPDATE bookings SET status='transferred',transferred_queue_id=?,transferred_at=?,ready_at=NULL,
+            ready_table_id=NULL,offered_table_id=NULL,offer_expires_at=NULL,version=version+1 WHERE booking_id=?""",
+            (ticket_id, now, booking_id))
+        db.execute("""UPDATE orders SET queue_id=?,table_id=NULL,version=version+1 WHERE booking_id=?
+            AND visit_id IS NULL AND order_type='preorder' AND status='active'""", (ticket_id, booking_id))
+        # A transferred preorder remains held until the new ticket actually seats.
+        db.execute("""DELETE FROM kitchen_queue WHERE status='waiting' AND order_id IN
+            (SELECT order_id FROM orders WHERE queue_id=? AND visit_id IS NULL)""", (ticket_id,))
+        _call_tables(db, [entry["table_id"] for entry in released], now)
+        result = {"booking_id": booking_id, "status": "transferred", "queue_id": ticket_id,
+                  "version": version + 1, "service_ends_at": cutoff.isoformat()}
+        return submission.record(db, "booking-transfer", actor, key, payload, result)
+    return _run(transfer)
+
+
+def clear_table(table_id, visit_id, actor, request_key):
+    visit_id = positive_int(visit_id, "visit_id")
+    key = required_text(request_key, "idempotency_key", limit=80)
+    payload = [table_id, visit_id]
+    def clear(db, now):
+        recovered = submission.replay(db, "table-clear", actor, key, payload)
+        if recovered is not None:
+            return recovered
+        row = db.execute("SELECT * FROM dining_sessions WHERE visit_id=? AND table_id=?", (visit_id, table_id)).fetchone()
+        if not row or row["status"] != "closed" or row["clearance_processed_at"] is not None:
+            raise ServiceError("This table's clearance changed. Refresh before confirming it.", 409, code="CLEARANCE_CHANGED")
+        if db.execute("SELECT 1 FROM dining_sessions WHERE table_id=? AND status IN ('waiting','seated')", (table_id,)).fetchone():
+            raise conflict("occupied")
+        db.execute("UPDATE dining_sessions SET clearance_processed_at=?,cleared_by_actor=? WHERE visit_id=?",
+                   (now, actor, visit_id))
+        result = dict(table_id=table_id, visit_id=visit_id, status="cleared", next_queue=_call_tables(db, [table_id], now))
+        return submission.record(db, "table-clear", actor, key, payload, result)
+    return _run(clear)
 
 
 def close_visit(visit_id):
@@ -662,7 +845,7 @@ def close_visit(visit_id):
             raise ServiceError("""Settle the visit's remaining orders before closing the table.""", 409,
                                code="STATE_CONFLICT")
         if db.execute("""SELECT 1 FROM orders JOIN order_items USING(order_id)
-            WHERE visit_id=? AND order_items.status NOT IN ('served','cancelled') LIMIT 1""", (visit_id,)).fetchone():
+            WHERE visit_id=? AND (order_items.status NOT IN ('served','cancelled') OR order_items.supply_issue IS NOT NULL) LIMIT 1""", (visit_id,)).fetchone():
             raise ServiceError("Serve all remaining dishes before closing the table.", 409, code="VISIT_UNFINISHED_ITEMS")
         db.execute("""UPDATE dining_sessions SET status='closed',closed_at=(?::timestamptz AT TIME ZONE 'UTC'),
             clearance_processed_at=NULL WHERE visit_id=?""", (now, visit_id))
@@ -694,6 +877,7 @@ def available_tables(day, arrival, size, user, edit_id=None):
         now = database_now(db)
         if edit_id:
             _booking(db, edit_id, user["username"] if online else None)
+        allowed_capacity = _online_capacity(db, count) if online else None
         choices = []
         for choice in arrival_times():
             try:
@@ -706,7 +890,8 @@ def available_tables(day, arrival, size, user, edit_id=None):
             start, _, end = booking_interval(day, arrival, count, now, online)
             replacements = _replacement_priorities(db, now)
             rows = [dict(table) for table in db.execute("SELECT * FROM dining_tables ORDER BY capacity,table_id")
-                    if not _table_reason(db, table, count, start, end, now, booking_id=edit_id)
+                    if (allowed_capacity is None or table["capacity"] == allowed_capacity)
+                    and not _table_reason(db, table, count, start, end, now, booking_id=edit_id)
                     and (table["table_id"] not in replacements
                          or replacements[table["table_id"]][0] == edit_id or replacements[table["table_id"]][1] <= start)]
         return dict(times=choices, tables=rows, server_now=now.isoformat())
@@ -738,7 +923,9 @@ def _estimate_context(db, now):
         AND (b.arrival_deadline IS NULL OR b.checked_in_at IS NOT NULL OR b.arrival_deadline>=?)""", (now, now, now)):
         holds.setdefault(row["table_id"], []).append((timestamp(row["starts"]), timestamp(row["ends"]), row["booking_id"]))
     bookings = db.execute("""SELECT booking_id,party_size FROM bookings WHERE status='booked' AND checked_in_at IS NOT NULL
-        AND booking_date=? ORDER BY checked_in_at,booking_id""", (now.astimezone(RESTAURANT_TIME).date(),)).fetchall()
+        AND booking_date=?
+        AND COALESCE(arrival_at,(booking_date + split_part(time_slot,'-',1)::time) AT TIME ZONE 'Asia/Shanghai')<=?
+        ORDER BY COALESCE(arrival_at,(booking_date + split_part(time_slot,'-',1)::time) AT TIME ZONE 'Asia/Shanghai'),checked_in_at,booking_id""", (now.astimezone(RESTAURANT_TIME).date(), now)).fetchall()
     return tables, samples, occupied, cleaned, holds, bookings, _pending_tickets(db), cutoff
 
 
@@ -808,6 +995,10 @@ def _bookings(db, now, *, owner=None, day=None, booking_id=None, staff=False):
     result = []
     for row in rows:
         data = _visible(row, now)
+        if row["transferred_queue_id"]:
+            ticket = db.execute("SELECT queue_id,status,version,party_size,called_table_id,call_expires_at,service_ends_at FROM waiting_queue WHERE queue_id=?",
+                                (row["transferred_queue_id"],)).fetchone()
+            data["transferred_ticket"] = dict(ticket) if ticket else None
         if row["visit_status"] == "closed":
             data["phase"] = "closed"
         if ((staff or row["ready_at"]) and row["status"] == "booked"
@@ -835,11 +1026,14 @@ def customer_bookings(owner, booking_id=None):
         visit = db.execute("""SELECT visit_id,booking_id,table_id FROM dining_sessions
             WHERE customer_phone=? AND status='seated' ORDER BY COALESCE(seated_at,arrived_at AT TIME ZONE 'UTC') DESC LIMIT 1""",
             (owner,)).fetchone() if owner and booking_id is None else None
+        ticket = db.execute("""SELECT * FROM waiting_queue WHERE customer_phone=? AND status IN ('waiting','called')
+            ORDER BY queue_position,queue_id LIMIT 1""", (owner,)).fetchone() if owner and booking_id is None else None
     if booking_id is not None:
         if not rows:
             raise ServiceError("Reservation not found.", 404, code="NOT_FOUND")
         return rows[0]
-    return dict(bookings=rows, server_now=now.isoformat(), visit=dict(visit) if visit else None)
+    return dict(bookings=rows, server_now=now.isoformat(), visit=dict(visit) if visit else None,
+                queue=dict(ticket) if ticket else None)
 
 
 def advance_service():
@@ -883,7 +1077,12 @@ def table_projection(db, now):
             next_booking = dict(upcoming)
             next_booking["label"] = (timestamp(upcoming["arrival_at"]).astimezone(RESTAURANT_TIME).strftime("%H:%M")
                                      if upcoming["arrival_at"] else upcoming["time_slot"])
-        tables.append(dict(row, reason=reason, reason_text=TABLE_REASONS.get(reason),
+        clearance = db.execute("""SELECT visit_id,closed_at FROM dining_sessions WHERE table_id=? AND status='closed'
+            AND clearance_processed_at IS NULL ORDER BY closed_at DESC LIMIT 1""", (row["table_id"],)).fetchone()
+        tables.append(dict(row, clearance_visit_id=clearance["visit_id"] if clearance else None,
+                           cleaning_since=clearance["closed_at"] if clearance else None,
+                           cleaning_overdue=bool(clearance and timestamp(clearance["closed_at"]) + CLEANING < now),
+                           reason=reason, reason_text=TABLE_REASONS.get(reason),
                            next_booking=next_booking, replacement_for=replacement[0] if replacement else None,
                            status=("occupied" if reason == "occupied" else "disabled" if reason == "disabled"
                                    else "reserved" if reason else "available")))
@@ -899,7 +1098,7 @@ def desk_snapshot(day=None):
         tickets = [dict(row) for row in db.execute("""SELECT * FROM waiting_queue
             WHERE status IN ('waiting','called') ORDER BY queue_position,queue_id""")]
         recent = [dict(row) for row in db.execute("""SELECT queue_id,status,called_table_id,ended_at FROM waiting_queue
-            WHERE ended_at>=? AND status IN ('expired','passed','cancelled') ORDER BY ended_at DESC LIMIT 8""",
+            WHERE ended_at>=? AND status IN ('expired','passed','cancelled','service_ended') ORDER BY ended_at DESC LIMIT 8""",
             (now-timedelta(minutes=10),))]
         context = _estimate_context(db, now) if tickets else None
         for index, ticket in enumerate(tickets):
