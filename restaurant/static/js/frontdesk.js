@@ -531,7 +531,8 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
     if (pending) return;
     const fields = fieldValues(form);
     if (form === ticketForm) return update(async () => {
-      const { queue: ticket } = await restaurantRequest(flowBase + "/tickets", fields);
+      const { queue: ticket, recoveredPrevious } = await restaurantSubmitOnce(flowBase + "/tickets", fields);
+      if (recoveredPrevious) return "Previous ticket #" + ticket.queue_id + " recovered. Review this draft before sending it.";
       ticketForm.reset();
       return "Ticket #" + ticket.queue_id + " issued.";
     });
@@ -566,7 +567,7 @@ function mountFrontdeskWorkspace(workspace, navigate, reservationFlow) {
       if (editBooking) fields.expected_version = editBooking.version;
       let booking;
       try {
-        const result = await (!editBooking && reservationFlow ? restaurantSubmitOnce(path, fields) : restaurantRequest(path, fields));
+        const result = await (editBooking ? restaurantRequest(path, fields) : restaurantSubmitOnce(path, fields));
         booking = result.booking;
         if (result.recoveredPrevious) return "Previous reservation #" + booking.booking_id + " recovered. Review this draft before sending it.";
       } catch (error) {

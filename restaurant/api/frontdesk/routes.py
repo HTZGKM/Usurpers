@@ -58,6 +58,8 @@ def create_booking():
                     data.get("party_size", data.get("guests")),
                     customer_phone,
                     data.get("table_id"),
+                    idempotency_key=data["idempotency_key"],
+                    actor=user["role"] + ":" + user["username"],
                 ),
             }
         ),
@@ -232,13 +234,13 @@ def seat_waiting(queue_id):
 @frontdesk_bp.post("/orders/<int:order_id>/items/<int:order_item_id>/remakes")
 def create_remake(order_id, order_item_id):
     # 补做功能已移除（remake_tickets 表已删除）
-    return jsonify({"ok": False, "error": "补做功能已移除。"}), 501
+    raise ServiceError("The remake feature has been removed.", 501)
 
 
 @frontdesk_bp.post("/orders/<int:order_id>/refunds")
 def refund_order(order_id):
     # 退款功能已移除（payments/refunds 表已删除）
-    return jsonify({"ok": False, "error": "退款功能已移除。"}), 501
+    raise ServiceError("The refund feature has been removed.", 501)
 
 
 @frontdesk_bp.get("/orders/<int:order_id>/refunds")

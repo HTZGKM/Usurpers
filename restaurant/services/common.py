@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
+from http import HTTPStatus
 from typing import Any
 
 
@@ -13,7 +14,14 @@ class ServiceError(ValueError):
     message: str
     status_code: int = 400
     field: str | None = None
-    code: str = "VALIDATION_ERROR"
+    code: str | None = None
+
+    def __post_init__(self):
+        if self.code is None:
+            self.code = {
+                400: "VALIDATION_ERROR",
+                401: "UNAUTHENTICATED",
+            }.get(self.status_code) or HTTPStatus(self.status_code).name
 
     def as_dict(self) -> dict[str, Any]:
         body: dict[str, Any] = {"ok": False, "success": False, "error": self.code, "message": self.message}

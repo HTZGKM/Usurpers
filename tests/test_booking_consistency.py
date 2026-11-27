@@ -93,7 +93,9 @@ class BookingConsistencyTests(RestaurantTestCase):
         self.assertEqual((just_before[0], just_after[0]), ("2040-01-01", "2040-01-02"))
         previous_day, day = just_before[0], just_after[0]
         tomorrow = (datetime.fromisoformat(day) + timedelta(days=1)).date().isoformat()
-        desk_fields = {"contact_name": "Date fixture", "phone_number": "13900000002"}
+        desk_fields = {
+            "contact_name": "Date fixture", "phone_number": "13900000002", "idempotency_key": "staff-date-test",
+        }
         with patch("restaurant.services.booking_service.current_table_window", return_value=just_before):
             previous = write(self.guest, "/bookings", self.booking(booking_date=previous_day)).json["booking"]
         with (

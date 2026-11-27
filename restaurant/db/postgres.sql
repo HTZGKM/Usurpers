@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS dishes (
     price NUMERIC NOT NULL CHECK (price >= 0),
     is_available INTEGER NOT NULL DEFAULT 1 CHECK (is_available IN (0, 1)),
     is_archived INTEGER NOT NULL DEFAULT 0 CHECK (is_archived IN (0,1)),
+    version INTEGER NOT NULL DEFAULT 1 CHECK(version > 0),
     ingredients TEXT NOT NULL DEFAULT '', prep_time_minutes INTEGER NOT NULL DEFAULT 10,
     image_url TEXT,
     category TEXT

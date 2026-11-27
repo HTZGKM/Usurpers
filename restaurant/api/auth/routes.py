@@ -16,6 +16,7 @@ from flask import (
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 from restaurant.db.database import get_connection, hash_password
+from restaurant.services.common import ServiceError
 from .forms import LoginForm, LogoutForm, RegisterForm
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
@@ -146,7 +147,7 @@ def me():
     user = current_account()
     if user is None:
         session.pop("user", None)
-        return (jsonify(ok=False, message="You are not logged in."), 401)
+        raise ServiceError("You are not logged in.", 401)
     if user["role"] == "customer":
         with closing(get_connection()) as connection:
             row = connection.execute(
@@ -155,14 +156,7 @@ def me():
             ).fetchone()
         if not row or not row["is_active"]:
             session.clear()
-            return (
-                jsonify(
-                    ok=False,
-                    error="FORBIDDEN",
-                    message="The customer account is inactive.",
-                ),
-                403,
-            )
+            raise ServiceError("The customer account is inactive.", 403)
     session["user"] = user
     return jsonify(ok=True, user=user)
 

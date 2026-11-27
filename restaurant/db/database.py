@@ -310,6 +310,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
         ("staff", "is_active", "INTEGER NOT NULL DEFAULT 1"),
         ("customers", "is_active", "INTEGER NOT NULL DEFAULT 1"),
         ("dishes", "is_archived", "INTEGER NOT NULL DEFAULT 0"),
+        ("dishes", "version", "INTEGER NOT NULL DEFAULT 1 CHECK(version > 0)"),
         ("order_items", "estimated_ready_at", "TEXT"),
         ("waiting_queue", "called_table_id", "INTEGER REFERENCES dining_tables(table_id)"),
         ("dishes", "ingredients", "TEXT NOT NULL DEFAULT ''"),
